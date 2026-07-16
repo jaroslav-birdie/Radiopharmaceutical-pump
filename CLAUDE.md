@@ -39,8 +39,8 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 | D11 | Klávesnice – 10 ml |
 | D12 | Klávesnice – 20 ml |
 | D13 | Klávesnice – START |
-| A0  | Klávesnice – NOUZOVÝ STOP |
-| A1  | Klávesnice – 5. pin (common/GND řízení) |
+| A0  | Klávesnice – STOP (nouzové zastavení, 2. stupeň) |
+| A1  | Klávesnice – PAUSE / PLAY (nouzové pozastavení a obnovení, 1. stupeň) |
 | A2  | volný |
 | A3  | volný |
 | A4  | I2C SDA (OLED + FDC1004) |
@@ -71,61 +71,94 @@ Výchozí stav musí být vždy fyzicky zajištěn obsluhou před stiskem START.
 
 ```cpp
 enum State {
-    ST_INIT,             // zapnutí, serva do výchozí polohy (0°)
+    ST_INIT,             // zapnutí; serva okamžitě do definovaných BEZPEČNÝCH
+                         // (izolačních) poloh – NIKOLI do syrového 0° servo-defaultu
     ST_WAIT_READY,       // čekání na osazení systému a stisk START
     ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička)
-    ST_SET_VOLUME,       // zadávání objemu enkodérem (volitelné)
+    ST_SET_VOLUME,       // zadávání objemu enkodérem, potvrzení stiskem
 
-    // Fáze 1 – jednorázová
-    ST_P1_PUSH_AIR,      // vytlačení vzduchem (7 ml pro 10ml, 1. část pro 20ml)
-    ST_P1_REFILL_AIR,    // pouze 20ml varianta: doplnění vzduchové stříkačky
-    ST_P1_PUSH_AIR2,     // pouze 20ml varianta: druhý vzduchový zdvih
+    // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
+    ST_P1_PUSH_AIR,      // tlačení vzduchu do lahvičky, dokud FDC1004 nehlásí
+                         // kritickou hladinu (3 ml)
+    ST_P1_EQUALIZE,      // vyrovnání tlaku přes filtr (nutné doplnění vzduchu)
+    ST_P1_FILL_AIR,      // nasátí dalšího vzduchu do stříkačky z atmosféry
     ST_P1_ADD_SALINE,    // přidání 3 ml fyziologického roztoku
 
     // Iterativní cyklus – opakuje se 9×
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes vzduchový filtr
-    ST_ITER_FILL_AIR,    // nasátí 3 ml vzduchu do stříkačky
-    ST_ITER_PUSH_AIR,    // vytlačení 3 ml kapaliny do pacienta
+    ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky (5 ml v 1. iteraci,
+                         // dále dle naučeného objemu z předchozí iterace)
+    ST_ITER_PUSH_AIR,    // vytlačení kapaliny do pacienta až na kritickou hladinu
     ST_ITER_ADD_SALINE,  // přidání 3 ml fyziologického roztoku
 
     // Konec a chyby
     ST_COMPLETE,         // procedura dokončena
-    ST_ALARM_NO_FLOW,    // hladina neklesá – výzva obsluze
-    ST_EMERGENCY_STOP,   // nouzové zastavení
+    ST_PAUSED,           // 1. stupeň nouzového zastavení – vše pozastaveno,
+                         // obnovení tlačítkem PLAY, pokračuje automaticky
+    ST_ALARM_EXCESS_AIR, // Fáze 1: vyčerpán bezpečnostní limit počtu doplnění
+                         // vzduchu bez dosažení kritické hladiny (možná netěsnost)
+    ST_EMERGENCY_STOP,   // 2. stupeň – trvalé zastavení, nutný ruční zásah
     ST_ERROR             // obecná chyba
 };
 ```
+
+> `ST_PAUSED` se používá jak pro ruční stisk **PAUSE**, tak pro automatickou
+> reakci na chybějící pokles hladiny během `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`.
+> Po zmáčknutí **PLAY** se automat vrací do stavu, ze kterého byl pozastaven,
+> a pokračuje bez zásahu obsluhy.
 
 ---
 
 ## Ventily – povolené polohy
 
-### Pacientský ventil (Servo D9)
-| Stav | Úhel |
-|------|------|
-| UZAVŘENO (bezpečná výchozí poloha) | 0° |
-| OTEVŘENO k pacientovi | 90° |
+> ⚠️ **Zásadní korekce:** trojcestný ventil NIKDY nemá polohu „uzavřeno vůči
+> všem třem ramenům". V každé rotační poloze jsou spojena vždy právě 2 ze 3
+> ramen a třetí je zaslepené vnitřní geometrií ventilu. Servo pozice **0°
+> (výchozí poloha po zapnutí) proto NENÍ bezpečně izolační** – u obou ventilů
+> odpovídá reálně otevřené průtokové cestě. Konstanty proto nepojmenováváme
+> OPEN/CLOSED, ale podle toho, **které dvě větve jsou spojeny**. Přesné úhly
+> se určí experimentálně; níže je pouze sémantika stavů.
 
-> ⚠️ Zaslepené rameno ventilu nesmí být NIKDY propojeno s jehlou.
-> Servo smí přejít POUZE mezi 0° a 90°. Nikdy nepřekračuj 90°.
+### Pacientský ventil (Servo D9)
+Tři ramena: **V** (lahvička/dno), **P** (pacient), **C** (zaslepená slepá větev – nikdy nepoužívat)
+
+| Stav | Spojení | Volný/zaslepený port | Použití |
+|------|---------|----------------------|---------|
+| `PATIENT_VALVE_OPEN` | V ↔ P | C zaslepen | aktivní vytlačování k pacientovi |
+| `PATIENT_VALVE_ISOLATE` | V ↔ C | P zaslepen | **bezpečný klidový stav** – pacient plně izolován |
+
+> ⚠️ Poloha spojující **P ↔ C** (pacient ↔ slepá větev) se v kódu **nikdy
+> nesmí objevit** – ani jako mezipoloha při přejezdu mezi definovanými stavy,
+> pokud by procházela touto kombinací nekontrolovaně (u L-portového ventilu
+> s pouze 2 používanými polohami k tomu při přímém pohybu nedochází, ale
+> ověř to při návrhu skutečných úhlů).
+> Klidový/instalační stav systému = `PATIENT_VALVE_ISOLATE`, NIKOLI servo 0°.
 
 ### Vzduchový ventil (Servo D10)
-| Stav | Úhel |
-|------|------|
-| UZAVŘENO (bezpečná výchozí poloha) | 0° |
-| Stříkačka ↔ penicilinka | 90° |
-| Stříkačka ↔ vzduchový filtr (rovnotlak / nasávání) | 180° |
+Tři ramena: **S** (vzduchová stříkačka), **V** (lahvička/dno), **F** (vzduchový filtr/atmosféra)
+
+| Stav | Spojení | Volný/zaslepený port | Použití |
+|------|---------|----------------------|---------|
+| `AIR_VALVE_SYRINGE_TO_VIAL` | S ↔ V | F zaslepen | tlačení vzduchu do lahvičky |
+| `AIR_VALVE_SYRINGE_TO_FILTER` | S ↔ F | V zaslepen | nasátí vzduchu z atmosféry do stříkačky |
+| `AIR_VALVE_VIAL_TO_FILTER` | V ↔ F | S zaslepen | vyrovnání tlaku lahvičky s atmosférou; **bezpečný klidový stav** – stříkačka izolována |
+
+> Klidový/instalační stav systému = `AIR_VALVE_VIAL_TO_FILTER`, NIKOLI servo 0°.
 
 ---
 
 ## Bezpečnostní pravidla (projektová)
 
-- ❌ Pacientský ventil se otevírá **výhradně** při aktivním stlačování vzduchové stříkačky
-- ❌ Pacientský ventil se **nikdy** nepohybuje, dokud FDC1004 hlásí kritickou hladinu
-- ❌ Vzduchová stříkačka se **nikdy** nestlačuje, pokud je pacientský ventil uzavřen a lahvička je přetlakovaná bez otevřeného filtrového ramene
-- ❌ Servo D9 nikdy nesmí dostat úhel > 90° (zaslepené rameno)
-- ✅ Při ST_EMERGENCY_STOP: okamžitě uzavřít obě serva (0°), zastavit oba krokové motory
-- ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, zavřít pacientský ventil, přejít do ST_ALARM_NO_FLOW
+- ❌ Pacientský ventil je v `PATIENT_VALVE_OPEN` **výhradně** při aktivním stlačování vzduchové stříkačky (`ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`) – ve všech ostatních stavech musí být v `PATIENT_VALVE_ISOLATE`
+- ❌ Vzduchový ventil nikdy nesmí zůstat v `AIR_VALVE_SYRINGE_TO_VIAL` mimo aktivní tlačení – po dokončení kroku okamžitě přejít do `AIR_VALVE_VIAL_TO_FILTER`
+- ❌ Poloha spojující pacientskou jehlu se zaslepenou větví ventilu (P↔C) se v kódu **nikdy nepoužívá** – v `config.h` pro ni neexistuje konstanta
+- ❌ Ihned po `ST_INIT` (ještě před instalací lahvičky a stříkaček obsluhou) musí být oba ventily explicitně nastaveny do `PATIENT_VALVE_ISOLATE` a `AIR_VALVE_VIAL_TO_FILTER` – **spoléhat na mechanický 0° default serva je nebezpečné**, protože ten odpovídá otevřené průtokové cestě
+- ✅ Při `ST_EMERGENCY_STOP`: okamžitě `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_VIAL_TO_FILTER`, zastavit oba krokové motory
+- ✅ Při `ST_PAUSED`: zastavit oba krokové motory, ventily ponechat v aktuální poloze (na rozdíl od STOP se nemusí uzavírat, protože PAUSE má pokračovat automaticky ve stejném kroku)
+- ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
+- ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
+- ✅ Ve Fázi 1 (`ST_P1_PUSH_AIR`) se počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE` → `ST_P1_FILL_AIR`) počítá; po překročení `MAX_PHASE1_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
+- ✅ Systém si po každé iteraci ukládá skutečně spotřebovaný objem vzduchu (kroky motoru) potřebný k dosažení kritické hladiny – tato hodnota určuje nasávaný objem pro **následující** iteraci (1. iterace používá pevnou počáteční hodnotu `VOL_AIR_ITER1_ML`)
 
 ---
 
@@ -201,7 +234,7 @@ radiopharmaceutical-pump/
 ├── servo_valve.h / .cpp          # řízení ventilů servomotory
 ├── capacitive.h / .cpp           # FDC1004 kapacitní senzor
 ├── display.h / .cpp              # OLED displej
-├── keyboard.h / .cpp             # 4-tlačítková klávesnice
+├── keyboard.h / .cpp             # 5-tlačítková klávesnice (10ml, 20ml, START, PAUSE, STOP)
 ├── encoder.h / .cpp              # rotační enkodér
 └── CLAUDE.md                     # tento soubor
 ```
@@ -242,23 +275,27 @@ radiopharmaceutical-pump/
 #define PIN_SERVO_PATIENT  9
 #define PIN_SERVO_AIR     10
 
-// === PINY – KLÁVESNICE ===
+// === PINY – KLÁVESNICE (5 samostatných tlačítek) ===
 #define PIN_KEY_10ML     11
 #define PIN_KEY_20ML     12
 #define PIN_KEY_START    13
-#define PIN_KEY_STOP     A0
-#define PIN_KEY_COMMON   A1
+#define PIN_KEY_STOP     A0   // nouzový STOP – 2. stupeň
+#define PIN_KEY_PAUSE    A1   // PAUSE/PLAY – 1. stupeň
 
 // === PINY – I2C (fixní pro Uno) ===
 #define PIN_SDA          A4
 #define PIN_SCL          A5
 
-// === SERVA – POVOLENÉ ÚHLY ===
-#define SERVO_PATIENT_CLOSED    0
-#define SERVO_PATIENT_OPEN     90   // MAX – nikdy nepřekračuj
-#define SERVO_AIR_CLOSED        0
-#define SERVO_AIR_SYRINGE      90
-#define SERVO_AIR_FILTER      180
+// === PACIENTSKÝ VENTIL – SÉMANTIKA STAVŮ (úhly urči experimentálně) ===
+// Pozor: servo 0° NENÍ bezpečná izolační poloha (viz sekce Ventily výše)
+#define PATIENT_VALVE_OPEN        XX   // V<->P spojeno (tlačení k pacientovi)
+#define PATIENT_VALVE_ISOLATE     YY   // V<->C spojeno, pacient izolován (KLIDOVÝ STAV)
+// Poloha P<->C se v kódu nesmí nikdy definovat ani použít.
+
+// === VZDUCHOVÝ VENTIL – SÉMANTIKA STAVŮ (úhly urči experimentálně) ===
+#define AIR_VALVE_SYRINGE_TO_VIAL    XX   // S<->V spojeno (tlačení vzduchu do lahvičky)
+#define AIR_VALVE_SYRINGE_TO_FILTER  YY   // S<->F spojeno (nasátí vzduchu z atmosféry)
+#define AIR_VALVE_VIAL_TO_FILTER     ZZ   // V<->F spojeno, stříkačka izolována (KLIDOVÝ STAV)
 
 // === MECHANIKA ===
 #define SCREW_PITCH_MM         8.0f   // mm na otáčku trapézové tyče
@@ -267,15 +304,17 @@ radiopharmaceutical-pump/
 #define STEPS_PER_MM  ((STEPS_PER_REV * MICROSTEP_DIV) / SCREW_PITCH_MM)
 
 // === OBJEMY (ml) ===
-#define VOL_AIR_INITIAL_ML     10.0f
-#define VOL_AIR_RESERVE_ML      3.0f
-#define VOL_AIR_ITER_ML         3.0f
+#define VOL_AIR_SYRINGE_MAX_ML  10.0f
+#define VOL_AIR_RESERVE_ML      3.0f   // trvalá rezerva ve vzduchové stříkačce
+#define VOL_AIR_ITER1_ML        5.0f   // počáteční objem nasávaný v 1. iteraci (upravitelné)
 #define VOL_SAL_TOTAL_ML       30.0f
-#define VOL_ITER_ML             3.0f
-#define VOL_P1_PUSH_10ML        7.0f
-#define VOL_P1_PUSH_20ML_1     10.0f
-#define VOL_REMAIN_CRITICAL_ML  3.0f
-#define ITER_COUNT              9
+#define VOL_SAL_ITER_ML         3.0f   // dávka fyziologického roztoku na 1 iteraci
+#define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce
+#define ITER_COUNT               9
+
+// === BEZPEČNOSTNÍ LIMITY ===
+#define MAX_PHASE1_AIR_REFILLS   5    // max. počet doplnění vzduchu ve Fázi 1
+                                       // před vyhlášením ST_ALARM_EXCESS_AIR
 
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
@@ -334,6 +373,8 @@ Před finální verzí nastav `#define DEBUG 0`.
 - [ ] Všechny `volatile` proměnné sdílené s ISR
 - [ ] Řetězcové literály přes `F()`
 - [ ] Flash < 80 %, SRAM < 70 %
-- [ ] Servo D9 nikdy > 90°
-- [ ] Pacientský ventil uzavřen při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
+- [ ] Poloha P<->C (pacient <-> zaslepená větev) se v kódu nikde nevyskytuje
+- [ ] Ihned po ST_INIT nastaveny oba ventily do izolačních poloh (ne spoléhat na 0° default)
+- [ ] Pacientský ventil v PATIENT_VALVE_ISOLATE při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
+- [ ] MAX_PHASE1_AIR_REFILLS ošetřen → ST_ALARM_EXCESS_AIR
 - [ ] Kompilace bez warningů
