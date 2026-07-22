@@ -65,6 +65,24 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 Krokové motory **nemají endstopy** – poloha se sleduje výhradně čítáním kroků od výchozího stavu.
 Výchozí stav musí být vždy fyzicky zajištěn obsluhou před stiskem START.
 
+**Penicilinka**: 10 ml i 20 ml varianta jsou fyzicky **totožná lahvička** – liší se pouze
+množstvím náplně, ne geometrií. Poloha snímací elektrody (kritická hladina) i kalibrační
+postup jsou tedy pro obě varianty identické.
+
+---
+
+## Krokové motory – drivery (DRV8825)
+
+Mikrokrokování se nastavuje **čistě hardwarově** piny MS1/MS2/MS3 (interní pull-down,
+takže musí být explicitně připojeny) – žádný MCU pin není potřeba:
+
+| MS1 | MS2 | MS3 | Rozlišení |
+|-----|-----|-----|-----------|
+| 0   | 0   | 1   | **1/16 kroku** (použito v projektu) |
+
+MS1, MS2 → GND, MS3 → logické VCC driveru (trvale zapájeno na desce).
+`MICROSTEP_DIV = 16` v `config.h` odpovídá tomuto zapojení.
+
 ---
 
 ## Stavový automat – stavy
@@ -88,15 +106,18 @@ enum State {
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes vzduchový filtr
     ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky (5 ml v 1. iteraci,
                          // dále dle naučeného objemu z předchozí iterace)
-    ST_ITER_PUSH_AIR,    // vytlačení kapaliny do pacienta až na kritickou hladinu
+    ST_ITER_PUSH_AIR,    // vytlačení kapaliny do pacienta až na kritickou hladinu;
+                         // pokud nestačí nasátý objem, opakuje se
+                         // ST_ITER_EQUALIZE → ST_ITER_FILL_AIR stejně jako ve Fázi 1
     ST_ITER_ADD_SALINE,  // přidání 3 ml fyziologického roztoku
 
     // Konec a chyby
     ST_COMPLETE,         // procedura dokončena
     ST_PAUSED,           // 1. stupeň nouzového zastavení – vše pozastaveno,
                          // obnovení tlačítkem PLAY, pokračuje automaticky
-    ST_ALARM_EXCESS_AIR, // Fáze 1: vyčerpán bezpečnostní limit počtu doplnění
-                         // vzduchu bez dosažení kritické hladiny (možná netěsnost)
+    ST_ALARM_EXCESS_AIR, // vyčerpán bezpečnostní limit počtu doplnění vzduchu
+                         // bez dosažení kritické hladiny (Fáze 1 i iterace) –
+                         // možná netěsnost
     ST_EMERGENCY_STOP,   // 2. stupeň – trvalé zastavení, nutný ruční zásah
     ST_ERROR             // obecná chyba
 };
@@ -156,9 +177,9 @@ Tři ramena: **S** (vzduchová stříkačka), **V** (lahvička/dno), **F** (vzdu
 - ✅ Při `ST_EMERGENCY_STOP`: okamžitě `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_VIAL_TO_FILTER`, zastavit oba krokové motory
 - ✅ Při `ST_PAUSED`: zastavit oba krokové motory, ventily ponechat v aktuální poloze (na rozdíl od STOP se nemusí uzavírat, protože PAUSE má pokračovat automaticky ve stejném kroku)
 - ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
-- ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
-- ✅ Ve Fázi 1 (`ST_P1_PUSH_AIR`) se počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE` → `ST_P1_FILL_AIR`) počítá; po překročení `MAX_PHASE1_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
-- ✅ Systém si po každé iteraci ukládá skutečně spotřebovaný objem vzduchu (kroky motoru) potřebný k dosažení kritické hladiny – tato hodnota určuje nasávaný objem pro **následující** iteraci (1. iterace používá pevnou počáteční hodnotu `VOL_AIR_ITER1_ML`)
+- ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` déle než `NO_FLOW_TIMEOUT_MS` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
+- ✅ Počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE`/`ST_ITER_EQUALIZE` → `ST_P1_FILL_AIR`/`ST_ITER_FILL_AIR`) se počítá **jak ve Fázi 1, tak v každé jednotlivé iteraci zvlášť**; po překročení `MAX_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
+- ✅ Systém si po každé iteraci ukládá **celkový** skutečně spotřebovaný objem vzduchu potřebný k dosažení kritické hladiny (součet počátečního nasátí i všech případných doplnění v rámci téže iterace) – tato hodnota určuje nasávaný objem pro **následující** iteraci (1. iterace používá pevnou počáteční hodnotu `VOL_AIR_ITER1_ML`)
 
 ---
 
@@ -255,6 +276,20 @@ radiopharmaceutical-pump/
 
 ---
 
+## EEPROM – co se ukládá
+
+Jediná hodnota, která musí přežít vypnutí přístroje, jsou **úhly servo ventilů**
+(`PATIENT_VALVE_OPEN`, `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_SYRINGE_TO_VIAL`,
+`AIR_VALVE_SYRINGE_TO_FILTER`, `AIR_VALVE_VIAL_TO_FILTER`) – každý kus zařízení
+má mírně jinou mechanickou nulu serva.
+
+- V `config.h` jsou definovány **výchozí hodnoty** (fallback, použité při první inicializaci)
+- Po sestavení konkrétního kusu lze úhly doladit v servisním režimu (enkodér) a uložit do EEPROM
+- Při startu se hodnoty načtou z EEPROM; pokud EEPROM neobsahuje platná data (první spuštění), použijí se výchozí hodnoty z `config.h` a rovnou se do EEPROM zapíší
+- Žádná jiná provozní data (kalibrace kapacity, naučené objemy vzduchu) se mezi jednotlivými aplikacemi neukládají – každá aplikace začíná vlastní kalibrací od nuly
+
+---
+
 ## config.h – šablona
 
 ```cpp
@@ -286,16 +321,24 @@ radiopharmaceutical-pump/
 #define PIN_SDA          A4
 #define PIN_SCL          A5
 
-// === PACIENTSKÝ VENTIL – SÉMANTIKA STAVŮ (úhly urči experimentálně) ===
+// === PACIENTSKÝ VENTIL – SÉMANTIKA STAVŮ (výchozí hodnoty, přepsatelné z EEPROM) ===
 // Pozor: servo 0° NENÍ bezpečná izolační poloha (viz sekce Ventily výše)
-#define PATIENT_VALVE_OPEN        XX   // V<->P spojeno (tlačení k pacientovi)
-#define PATIENT_VALVE_ISOLATE     YY   // V<->C spojeno, pacient izolován (KLIDOVÝ STAV)
+#define PATIENT_VALVE_OPEN_DEFAULT        XX   // V<->P spojeno (tlačení k pacientovi)
+#define PATIENT_VALVE_ISOLATE_DEFAULT     YY   // V<->C spojeno, pacient izolován (KLIDOVÝ STAV)
 // Poloha P<->C se v kódu nesmí nikdy definovat ani použít.
 
-// === VZDUCHOVÝ VENTIL – SÉMANTIKA STAVŮ (úhly urči experimentálně) ===
-#define AIR_VALVE_SYRINGE_TO_VIAL    XX   // S<->V spojeno (tlačení vzduchu do lahvičky)
-#define AIR_VALVE_SYRINGE_TO_FILTER  YY   // S<->F spojeno (nasátí vzduchu z atmosféry)
-#define AIR_VALVE_VIAL_TO_FILTER     ZZ   // V<->F spojeno, stříkačka izolována (KLIDOVÝ STAV)
+// === VZDUCHOVÝ VENTIL – SÉMANTIKA STAVŮ (výchozí hodnoty, přepsatelné z EEPROM) ===
+#define AIR_VALVE_SYRINGE_TO_VIAL_DEFAULT    XX   // S<->V spojeno (tlačení vzduchu do lahvičky)
+#define AIR_VALVE_SYRINGE_TO_FILTER_DEFAULT  YY   // S<->F spojeno (nasátí vzduchu z atmosféry)
+#define AIR_VALVE_VIAL_TO_FILTER_DEFAULT     ZZ   // V<->F spojeno, stříkačka izolována (KLIDOVÝ STAV)
+
+// === EEPROM – ADRESY (uint8_t úhel na hodnotu) ===
+#define EEPROM_ADDR_VALID_FLAG        0   // magická hodnota – rozlišuje "první spuštění"
+#define EEPROM_ADDR_PATIENT_OPEN      1
+#define EEPROM_ADDR_PATIENT_ISOLATE   2
+#define EEPROM_ADDR_AIR_SYR_TO_VIAL   3
+#define EEPROM_ADDR_AIR_SYR_TO_FILT   4
+#define EEPROM_ADDR_AIR_VIAL_TO_FILT  5
 
 // === MECHANIKA ===
 #define SCREW_PITCH_MM         8.0f   // mm na otáčku trapézové tyče
@@ -312,9 +355,21 @@ radiopharmaceutical-pump/
 #define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce
 #define ITER_COUNT               9
 
+// === ZADÁVÁNÍ PŘESNÉHO OBJEMU (enkodér, krok 0,1 ml) ===
+#define VOL_FINE_STEP_ML         0.1f
+#define VOL_FINE_MIN_10ML        8.0f
+#define VOL_FINE_MAX_10ML       12.0f
+#define VOL_FINE_MIN_20ML       18.0f
+#define VOL_FINE_MAX_20ML       22.0f
+
 // === BEZPEČNOSTNÍ LIMITY ===
-#define MAX_PHASE1_AIR_REFILLS   5    // max. počet doplnění vzduchu ve Fázi 1
-                                       // před vyhlášením ST_ALARM_EXCESS_AIR
+#define MAX_AIR_REFILLS          5    // max. počet doplnění vzduchu (Fáze 1 i každá
+                                       // iterace zvlášť) před vyhlášením ST_ALARM_EXCESS_AIR
+#define NO_FLOW_TIMEOUT_MS     3000    // bez poklesu kapacity déle než toto -> ST_PAUSED
+                                       // (orientační, doladit na reálném prototypu)
+
+// === KALIBRACE ===
+#define CALIBRATION_DURATION_MS 10000  // celková doba kalibrace kapacitního senzoru
 
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
@@ -376,5 +431,7 @@ Před finální verzí nastav `#define DEBUG 0`.
 - [ ] Poloha P<->C (pacient <-> zaslepená větev) se v kódu nikde nevyskytuje
 - [ ] Ihned po ST_INIT nastaveny oba ventily do izolačních poloh (ne spoléhat na 0° default)
 - [ ] Pacientský ventil v PATIENT_VALVE_ISOLATE při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
-- [ ] MAX_PHASE1_AIR_REFILLS ošetřen → ST_ALARM_EXCESS_AIR
+- [ ] MAX_AIR_REFILLS ošetřen ve Fázi 1 i v každé iteraci → ST_ALARM_EXCESS_AIR
+- [ ] Naučený objem vzduchu pro další iteraci = součet nasátí + všech doplnění v aktuální iteraci
+- [ ] Zadaný objem enkodérem omezen na rozsah VOL_FINE_MIN/MAX_10ML resp. _20ML
 - [ ] Kompilace bez warningů
