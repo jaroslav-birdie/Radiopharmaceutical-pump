@@ -15,7 +15,6 @@ public:
     void drawRow(uint8_t row, const char *text);
 
 private:
-    void command(uint8_t cmd);
     void setWindow(uint8_t row);
     bool present_ = false;
 };

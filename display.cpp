@@ -37,13 +37,12 @@ static const uint8_t FONT5X7[] PROGMEM = {
     0x00,0x41,0x36,0x08,0x00, 0x10,0x08,0x08,0x10,0x08
 };
 
-void PumpDisplay::command(uint8_t cmd) {
-    Wire.beginTransmission(OLED_ADDR);
-    Wire.write((uint8_t)0x00);           // řídicí bajt: příkaz
-    Wire.write(cmd);
-    Wire.endTransmission();
-}
-
+// KRITICKÉ: víceb ajtové příkazy (0x21 a 0x22 mají 2 parametry) MUSÍ jít
+// v jedné I2C transakci s jedním řídicím bajtem 0x00 na začátku. Pokud by
+// se každý bajt posílal zvlášť (vlastní START/STOP), přeruší se tím
+// vnitřní stavový automat příkazu uprostřed a řadič začne zapisovat na
+// nečekanou adresu - navenek to vypadá přesně jako "náhodný šum" na
+// displeji, protože naše čistá data pak končí na rozházených adresách.
 void PumpDisplay::begin() {
     delay(100);                          // čas na ustálení napájení/charge pumpy displeje
     Wire.beginTransmission(OLED_ADDR);
@@ -56,20 +55,23 @@ void PumpDisplay::begin() {
         0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1,
         0xDB, 0x40, 0xA4, 0xA6, 0xAF
     };
+    Wire.beginTransmission(OLED_ADDR);
+    Wire.write((uint8_t)0x00);           // řídicí bajt: příkaz (platí pro celou transakci)
     for (uint8_t i = 0; i < sizeof(INIT_SEQ); i++) {
-        command(pgm_read_byte(&INIT_SEQ[i]));
+        Wire.write(pgm_read_byte(&INIT_SEQ[i]));
     }
-    clear();
-    // Displej se maže 2x - první průchod GDDRAM může obsahovat náhodný
-    // obsah po zapnutí a ojedinělá I2C chyba by mohla smazání jedné
-    // stránky vynechat; druhý průchod je levná pojistka.
+    Wire.endTransmission();
     clear();
 }
 
-// Nastaví adresní okno na celý jeden řádek (page).
+// Nastaví adresní okno na celý jeden řádek (page) - obě dvoubajtové
+// příkazy (0x21, 0x22) v jedné transakci, viz poznámka výše.
 void PumpDisplay::setWindow(uint8_t row) {
-    command(0x21); command(0x00); command(0x7F);   // sloupce 0-127
-    command(0x22); command(row);  command(row);    // jedna stránka
+    Wire.beginTransmission(OLED_ADDR);
+    Wire.write((uint8_t)0x00);
+    Wire.write((uint8_t)0x21); Wire.write((uint8_t)0x00); Wire.write((uint8_t)0x7F);
+    Wire.write((uint8_t)0x22); Wire.write(row); Wire.write(row);
+    Wire.endTransmission();
 }
 
 void PumpDisplay::clear() {
