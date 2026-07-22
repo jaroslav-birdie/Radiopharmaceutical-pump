@@ -97,6 +97,16 @@
 #define VOL_FINE_MIN_20ML_DML  180      // 18,0 ml
 #define VOL_FINE_MAX_20ML_DML  220      // 22,0 ml
 
+// === PROVIZORNÍ TESTOVACÍ REŽIM (kapacitní senzor zatím není osazen) ===
+// 1 = kritická hladina se NEDETEKUJE senzorem, ale nahrazuje se pevně
+// daným objemem vzduchu; hlídání stagnace hladiny (flowStalled) je vypnuté.
+// Až bude FDC1004 fyzicky osazen a odzkoušen, nastav zpět na 0.
+#define TEST_MODE_NO_SENSOR       1
+#define TEST_VOL_P1_PUSH_10ML_ML  7.0f   // Fáze 1, 10 ml varianta – pevný objem
+#define TEST_VOL_P1_PUSH_20ML_ML 17.0f   // Fáze 1, 20 ml varianta – pevný objem
+#define TEST_VOL_ITER_PUSH_ML     3.0f   // každá iterace – pevný objem vzduchu k vytlačení
+#define TEST_VOL_MARGIN_ML        0.01f  // tolerance zaokrouhlení kroků
+
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)
 #define NO_FLOW_TIMEOUT_MS    3000UL    // bez poklesu hladiny déle -> ST_PAUSED (doladit!)

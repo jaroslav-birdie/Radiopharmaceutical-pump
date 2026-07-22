@@ -484,6 +484,27 @@ Před finální verzí nastav `#define DEBUG 0`.
 
 ---
 
+## Provizorní testovací režim bez kapacitního senzoru
+
+Dokud není fyzicky osazen FDC1004, `TEST_MODE_NO_SENSOR` v `config.h` (`1`)
+nahrazuje detekci kritické hladiny **pevně danými objemy vzduchu**:
+
+| Krok | Pevný objem (`config.h`) |
+|---|---|
+| Fáze 1, 10 ml varianta | `TEST_VOL_P1_PUSH_10ML_ML` = 7 ml |
+| Fáze 1, 20 ml varianta | `TEST_VOL_P1_PUSH_20ML_ML` = 17 ml (přes refill smyčku, beze změny logiky) |
+| Každá iterace | `TEST_VOL_ITER_PUSH_ML` = 3 ml (nasátí i vytlačení, bez adaptivního učení) |
+
+Zároveň se v tomto režimu vypíná hlídání stagnace hladiny (`flowStalled`),
+protože bez svislé elektrody nemá vstupní data. `MAX_AIR_REFILLS` a
+nouzové STOP/PAUSE zůstávají aktivní beze změny – týkají se jen fyzické
+bilance vzduchové stříkačky, ne senzoru.
+
+> Po osazení a odzkoušení FDC1004 nastav `TEST_MODE_NO_SENSOR` zpět na `0` –
+> vrátí se plnohodnotná detekce kritické hladiny i hlídání stagnace.
+
+---
+
 ## Časté chyby – kontrolní seznam
 
 - [ ] Žádný `delay()` v `loop()`
