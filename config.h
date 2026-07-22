@@ -19,10 +19,15 @@
 #define PIN_AIR_DIR      5
 #define PIN_SAL_STEP     6
 #define PIN_SAL_DIR      7
+#define PIN_STEPPER_EN   A3   // nENBL obou driverů spojen na 1 pin (aktivní LOW)
 
 // Úroveň DIR pinu pro směr "stlačování stříkačky" (ověřit dle skutečného zapojení)
 #define AIR_DIR_PUSH_LEVEL   HIGH
 #define SAL_DIR_PUSH_LEVEL   HIGH
+
+// nENBL DRV8825: LOW = výstupy povoleny, HIGH = výstupy odpojeny (vysoká impedance)
+#define STEPPER_ENABLED_LEVEL   LOW
+#define STEPPER_DISABLED_LEVEL  HIGH
 
 // === PINY – SERVA (Timer1 HW PWM: OC1A/OC1B – piny NELZE přesunout) ===
 #define PIN_SERVO_PATIENT  9    // OC1A

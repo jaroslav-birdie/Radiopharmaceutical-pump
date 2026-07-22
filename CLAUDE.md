@@ -42,9 +42,22 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 | A0  | Klávesnice – STOP (nouzové zastavení, 2. stupeň) |
 | A1  | Klávesnice – PAUSE / PLAY (nouzové pozastavení a obnovení, 1. stupeň) |
 | A2  | Klávesnice – 6. pin (společná/řídicí linka, upřesnit dle návrhu klávesnice) |
-| A3  | volný (rezerva) |
+| A3  | nENBL obou DRV8825 (sdíleno, aktivní LOW) |
 | A4  | I2C SDA (OLED + FDC1004) |
 | A5  | I2C SCL (OLED + FDC1004) |
+
+> **Piny jsou nyní beze zbytku obsazené** (18/18 použitelných pinů D2-D13 + A0-A5).
+> Žádná další periferie se už bez uvolnění stávajícího pinu nevejde.
+
+> **I2C sdílení**: SDA/SCL je sběrnice, ne bod-bod spojení – OLED (`0x3C`)
+> a FDC1004 (`0x50`) se připojují **paralelně na stejné A4/A5** a rozlišují se
+> adresou, ne piny. To není konflikt, je to standardní použití I2C. Ověřit jen
+> kombinovaný odpor pull-up rezistorů, pokud je má osazený každý modul zvlášť.
+
+> **nENBL DRV8825**: oba drivery sdílí jeden společný pin (nikdy není potřeba
+> povolit jen jeden motor nezávisle na druhém). Aktivní LOW = výstupy povoleny.
+> Firmware jej navíc odpojuje (HIGH) při `ST_EMERGENCY_STOP`, `ST_ALARM_EXCESS_AIR`
+> a `ST_COMPLETE` jako dodatečnou HW pojistku nezávislou na generování kroků.
 
 ---
 
@@ -339,6 +352,7 @@ má mírně jinou mechanickou nulu serva.
 #define PIN_AIR_DIR      5
 #define PIN_SAL_STEP     6
 #define PIN_SAL_DIR      7
+#define PIN_STEPPER_EN   A3   // nENBL obou DRV8825, sdíleno, aktivní LOW
 
 // === PINY – SERVA ===
 #define PIN_SERVO_PATIENT  9

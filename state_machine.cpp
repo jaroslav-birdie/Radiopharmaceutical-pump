@@ -33,6 +33,9 @@ void PumpController::begin() {
     Wire.begin();
     Wire.setClock(400000UL);
 
+    pinMode(PIN_STEPPER_EN, OUTPUT);
+    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+
     loadValveAngles();
     servoTimerInit();
     // KRITICKÉ: ventily ihned do izolačních poloh – NE servo 0 stupňů!
@@ -134,6 +137,12 @@ void PumpController::safeValves() {
     airValve_.moveTo(angles_.airVialToFilter);
 }
 
+// Doplňková HW pojistka: fyzicky odpojí výstupy obou driverů (vysoká
+// impedance), i kdyby v kroku motoru zůstala chyba v generování pulzů.
+void PumpController::disableSteppers() {
+    digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
+}
+
 bool PumpController::valvesSettled() const {
     return patientValve_.settled() && airValve_.settled();
 }
@@ -155,6 +164,7 @@ void PumpController::handleGlobalKeys() {
             airSyr_.stop();
             salSyr_.stop();
             safeValves();
+            disableSteppers();
             logEvent(LOG_EMERGENCY_STOP);
             changeState(ST_EMERGENCY_STOP);
         }
@@ -334,6 +344,7 @@ void PumpController::handlePushAir(bool phase1) {
                 refills_++;
                 if (refills_ > MAX_AIR_REFILLS) {
                     safeValves();
+                    disableSteppers();
                     logEvent(LOG_ALARM_EXCESS_AIR);
                     changeState(ST_ALARM_EXCESS_AIR);
                 } else {
@@ -432,6 +443,7 @@ void PumpController::handleAddSaline(bool phase1) {
             // reálně na ~30-32 ml, takže skutečná zásoba je vyšší než bilance.
             if (salMl_ + 0.1f < VOL_SAL_ITER_ML) {
                 safeValves();
+                disableSteppers();
                 logEvent(LOG_ERROR);
                 changeState(ST_ERROR);
                 break;
@@ -458,6 +470,8 @@ void PumpController::handleAddSaline(bool phase1) {
                 refillMode_ = false;
                 iter_++;
                 if (iter_ > ITER_COUNT) {
+                    safeValves();
+                    disableSteppers();
                     logEvent(LOG_COMPLETE);
                     changeState(ST_COMPLETE);
                 } else {
