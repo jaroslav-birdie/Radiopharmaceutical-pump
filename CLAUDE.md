@@ -268,12 +268,14 @@ radiopharmaceutical-pump/
 | Knihovna | Zdroj | Účel |
 |----------|-------|------|
 | `Wire` | Arduino standard | I2C komunikace |
-| `Servo` | Arduino standard | Ovládání servomotorů |
-| `EEPROM` | Arduino standard | Uložení kalibrace |
-| `U8g2` | Library Manager: „U8g2" | OLED displej (nepoužívá String) |
-| `FDC1004` | Library Manager: „FDC1004" | Kapacitní senzor hladiny |
+| `EEPROM` | Arduino standard | Uložení úhlů ventilů |
+| — (vlastní driver) | `servo_valve.cpp` | Serva přímo přes Timer1 HW PWM (OC1A/OC1B na D9/D10) – nulový jitter, bez knihovny Servo |
+| — (vlastní driver) | `display.cpp` | SSD1306 128×64 textově po stránkách, bez framebufferu (~0 B SRAM), font 5×7 v PROGMEM |
+| — (vlastní driver) | `capacitive.cpp` | FDC1004 přímo přes Wire (REPEAT režim 100 S/s) |
 
-> Před použitím každé knihovny ověř, že interně nepoužívá `String` ani `malloc`.
+> Externí knihovny (U8g2, FDC1004, Servo) se **nepoužívají** – nahrazeny
+> vlastními minimálními drivery bez `String`/`malloc` a bez závislostí.
+> Serva na D9/D10 jsou vázána na Timer1 – **piny nelze přesunout**.
 
 ---
 
@@ -423,6 +425,11 @@ má mírně jinou mechanickou nulu serva.
    ```
    arduino-cli compile --fqbn arduino:avr:uno .
    ```
+   Pokud arduino-cli není dostupné (offline prostředí), použij:
+   ```
+   tools/build.sh
+   ```
+   (vyžaduje balíčky `gcc-avr avr-libc arduino-core-avr`)
    Oprav **všechny** warningy i errory
 5. **Shrnutí**: Uveď využití flash a SRAM z výstupu kompilátoru
 
