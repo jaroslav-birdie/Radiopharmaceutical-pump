@@ -57,6 +57,7 @@ private:
     // --- pomocné akce ---
     void changeState(State s);
     void safeValves();                   // oba ventily do izolačních poloh
+    void enableSteppers();               // povolit oba drivery (nENBL LOW) – při START
     void disableSteppers();              // fyzicky odpojit oba drivery (nENBL HIGH)
     bool valvesSettled() const;
     void handleGlobalKeys();

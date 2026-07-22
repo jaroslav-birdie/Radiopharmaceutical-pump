@@ -33,8 +33,10 @@ void PumpController::begin() {
     Wire.begin();
     Wire.setClock(400000UL);
 
+    // Motory zůstávají DISABLED až do stisku START (viz handleSetVolume) –
+    // před tím se lahvička a stříkačky teprve osazují ručně.
     pinMode(PIN_STEPPER_EN, OUTPUT);
-    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+    digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
 
     loadValveAngles();
     servoTimerInit();
@@ -137,8 +139,15 @@ void PumpController::safeValves() {
     airValve_.moveTo(angles_.airVialToFilter);
 }
 
+// Volá se právě jednou při stisku START (viz handleSetVolume) – od tohoto
+// okamžiku musí motory držet i za PAUSE, povoleny zůstávají po celý proces.
+void PumpController::enableSteppers() {
+    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+}
+
 // Doplňková HW pojistka: fyzicky odpojí výstupy obou driverů (vysoká
 // impedance), i kdyby v kroku motoru zůstala chyba v generování pulzů.
+// Platí jen pro dokončení procesu nebo STOP/ALARM/ERROR (viz volání).
 void PumpController::disableSteppers() {
     digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
 }
@@ -290,6 +299,7 @@ void PumpController::handleSetVolume() {
         dispDirty_ = true;
     }
     if (inputPressed(KEY_START)) {
+        enableSteppers();             // od START platí ENABLED po celý proces (i PAUSE)
         logEvent(LOG_CALIBRATING);
         changeState(ST_CALIBRATING);
     }

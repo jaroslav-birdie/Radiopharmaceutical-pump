@@ -56,8 +56,16 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 
 > **nENBL DRV8825**: oba drivery sdílí jeden společný pin (nikdy není potřeba
 > povolit jen jeden motor nezávisle na druhém). Aktivní LOW = výstupy povoleny.
-> Firmware jej navíc odpojuje (HIGH) při `ST_EMERGENCY_STOP`, `ST_ALARM_EXCESS_AIR`
-> a `ST_COMPLETE` jako dodatečnou HW pojistku nezávislou na generování kroků.
+>
+> - **DISABLED**: od zapnutí (`ST_INIT`) až do stisku START (`ST_WAIT_READY`,
+>   `ST_SET_VOLUME`) – obsluha v této době ručně osazuje lahvičku a stříkačky
+> - **ENABLED**: od stisku START po celý zbytek aplikačního procesu, **včetně
+>   `ST_PAUSED`** (drží polohu pístu proti zpětnému tlaku)
+> - **DISABLED**: znovu jen při dokončení (`ST_COMPLETE`) nebo při STOP
+>   (`ST_EMERGENCY_STOP`, a rovnocenně `ST_ALARM_EXCESS_AIR` / `ST_ERROR`)
+>
+> Toto je dodatečná HW pojistka nezávislá na generování kroků – i kdyby
+> zůstala chyba v logice `StepperMotor`, disablovaný driver motor nepohne.
 
 ---
 
