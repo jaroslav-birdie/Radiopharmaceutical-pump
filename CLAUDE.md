@@ -292,7 +292,7 @@ radiopharmaceutical-pump/
 | `Wire` | Arduino standard | I2C komunikace |
 | `EEPROM` | Arduino standard | Uložení úhlů ventilů |
 | — (vlastní driver) | `servo_valve.cpp` | Serva přímo přes Timer1 HW PWM (OC1A/OC1B na D9/D10) – nulový jitter, bez knihovny Servo |
-| — (vlastní driver) | `display.cpp` | SSD1306 128×64 textově po stránkách, bez framebufferu (~0 B SRAM), font 5×7 v PROGMEM |
+| — (vlastní driver) | `display.cpp` | SH1106 128×64 textově po stránkách, bez framebufferu (~0 B SRAM), font 5×7 v PROGMEM |
 | — (vlastní driver) | `capacitive.cpp` | FDC1004 přímo přes Wire (REPEAT režim 100 S/s) |
 
 > Externí knihovny (U8g2, FDC1004, Servo) se **nepoužívají** – nahrazeny

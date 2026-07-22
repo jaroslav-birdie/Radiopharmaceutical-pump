@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include "config.h"
 
-// Vlastní minimální textový driver OLED SSD1306 128x64 (I2C).
+// Vlastní minimální textový driver OLED SH1106 128x64 (I2C).
 // Bez framebufferu – text se zapisuje přímo po stránkách (8 řádků po 8 px),
 // SRAM náklady ~0 B, font 5x7 v PROGMEM. Žádná externí knihovna.
 // Kreslení jednoho řádku trvá ~3 ms – volat JEN když stojí krokové motory!

@@ -123,8 +123,12 @@
 #define FDC1004_ADDR          0x50
 #define CAP_CRITICAL_PERCENT    15      // % pokles kapacity hladinové elektrody = kritická hladina
 
-// === OLED SSD1306 128x64 ===
+// === OLED SH1106 128x64 ===
 #define OLED_ADDR             0x3C
+#define OLED_COL_OFFSET          2   // interní RAM SH1106 je 132 px široká,
+                                     // viditelných je jen prostředních 128
+                                     // (pokud je obraz vodorovně posunutý,
+                                     // zkus 0 nebo 4)
 
 // === SÉRIOVÁ LINKA ===
 #define BAUD_RATE             9600

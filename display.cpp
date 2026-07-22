@@ -37,12 +37,13 @@ static const uint8_t FONT5X7[] PROGMEM = {
     0x00,0x41,0x36,0x08,0x00, 0x10,0x08,0x08,0x10,0x08
 };
 
-// KRITICKÉ: víceb ajtové příkazy (0x21 a 0x22 mají 2 parametry) MUSÍ jít
-// v jedné I2C transakci s jedním řídicím bajtem 0x00 na začátku. Pokud by
-// se každý bajt posílal zvlášť (vlastní START/STOP), přeruší se tím
-// vnitřní stavový automat příkazu uprostřed a řadič začne zapisovat na
-// nečekanou adresu - navenek to vypadá přesně jako "náhodný šum" na
-// displeji, protože naše čistá data pak končí na rozházených adresách.
+// Řadič je SH1106 (NE SSD1306!) - o 2 sloupce širší interní RAM (132 px),
+// viditelných je jen prostředních 128, proto OLED_COL_OFFSET. SH1106 navíc
+// vůbec NEZNÁ příkazy 0x20 (Memory Addressing Mode) ani 0x21/0x22 (Set
+// Column/Page Address range) - to jsou příkazy jen pro SSD1306. Adresování
+// je vždy jen po stránkách (0xB0-0xB7 = vyber stránku) + dvě sloupcové
+// "nibble" instrukce (0x00-0x0F dolní, 0x10-0x1F horní). Nábojová pumpa se
+// navíc povoluje příkazem 0xAD (SSD1306 má pro totéž 0x8D).
 void PumpDisplay::begin() {
     delay(100);                          // čas na ustálení napájení/charge pumpy displeje
     Wire.beginTransmission(OLED_ADDR);
@@ -51,8 +52,8 @@ void PumpDisplay::begin() {
         return;
     }
     static const uint8_t INIT_SEQ[] PROGMEM = {
-        0xAE, 0xD5, 0x80, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14,
-        0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1,
+        0xAE, 0xD5, 0x80, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0xAD, 0x8B,
+        0xA1, 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1,
         0xDB, 0x40, 0xA4, 0xA6, 0xAF
     };
     Wire.beginTransmission(OLED_ADDR);
@@ -64,13 +65,16 @@ void PumpDisplay::begin() {
     clear();
 }
 
-// Nastaví adresní okno na celý jeden řádek (page) - obě dvoubajtové
-// příkazy (0x21, 0x22) v jedné transakci, viz poznámka výše.
+// Vybere stránku (0xB0-0xB7) a nastaví počáteční sloupec přes dvě
+// jednobajtové "nibble" instrukce (SH1106 nemá rozsahový příkaz 0x21).
 void PumpDisplay::setWindow(uint8_t row) {
+    uint8_t colLow  = 0x00 | (OLED_COL_OFFSET & 0x0F);
+    uint8_t colHigh = 0x10 | (OLED_COL_OFFSET >> 4);
     Wire.beginTransmission(OLED_ADDR);
     Wire.write((uint8_t)0x00);
-    Wire.write((uint8_t)0x21); Wire.write((uint8_t)0x00); Wire.write((uint8_t)0x7F);
-    Wire.write((uint8_t)0x22); Wire.write(row); Wire.write(row);
+    Wire.write((uint8_t)(0xB0 | row));   // vyber stránku (page)
+    Wire.write(colLow);
+    Wire.write(colHigh);
     Wire.endTransmission();
 }
 
