@@ -353,8 +353,9 @@ void PumpController::handlePushAir(bool phase1) {
                 finishAirMove(true);
                 refills_++;
                 if (refills_ > MAX_AIR_REFILLS) {
+                    // Motory zůstávají ENABLED (drží polohu) - DISABLE je
+                    // vyhrazeno jen pro ST_COMPLETE a ST_EMERGENCY_STOP.
                     safeValves();
-                    disableSteppers();
                     logEvent(LOG_ALARM_EXCESS_AIR);
                     changeState(ST_ALARM_EXCESS_AIR);
                 } else {
@@ -452,8 +453,9 @@ void PumpController::handleAddSaline(bool phase1) {
             // Tolerance 0,1 ml kryje zaokrouhlení kroků; stříkačka se plní
             // reálně na ~30-32 ml, takže skutečná zásoba je vyšší než bilance.
             if (salMl_ + 0.1f < VOL_SAL_ITER_ML) {
+                // Motory zůstávají ENABLED (drží polohu) - DISABLE je
+                // vyhrazeno jen pro ST_COMPLETE a ST_EMERGENCY_STOP.
                 safeValves();
-                disableSteppers();
                 logEvent(LOG_ERROR);
                 changeState(ST_ERROR);
                 break;

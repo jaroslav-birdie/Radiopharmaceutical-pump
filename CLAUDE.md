@@ -59,10 +59,11 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 >
 > - **DISABLED**: od zapnutí (`ST_INIT`) až do stisku START (`ST_WAIT_READY`,
 >   `ST_SET_VOLUME`) – obsluha v této době ručně osazuje lahvičku a stříkačky
-> - **ENABLED**: od stisku START po celý zbytek aplikačního procesu, **včetně
->   `ST_PAUSED`** (drží polohu pístu proti zpětnému tlaku)
-> - **DISABLED**: znovu jen při dokončení (`ST_COMPLETE`) nebo při STOP
->   (`ST_EMERGENCY_STOP`, a rovnocenně `ST_ALARM_EXCESS_AIR` / `ST_ERROR`)
+> - **ENABLED**: od stisku START po celý zbytek aplikačního procesu –
+>   `ST_PAUSED` (nouzové **pozastavení**), `ST_ALARM_EXCESS_AIR` i `ST_ERROR`
+>   motory ponechávají ENABLED (drží polohu pístu proti zpětnému tlaku)
+> - **DISABLED**: pouze při dokončení (`ST_COMPLETE`) nebo při nouzovém
+>   **zastavení** (`ST_EMERGENCY_STOP`) – to jsou jediné dvě situace
 >
 > Toto je dodatečná HW pojistka nezávislá na generování kroků – i kdyby
 > zůstala chyba v logice `StepperMotor`, disablovaný driver motor nepohne.
