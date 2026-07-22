@@ -45,6 +45,7 @@ void PumpDisplay::command(uint8_t cmd) {
 }
 
 void PumpDisplay::begin() {
+    delay(100);                          // čas na ustálení napájení/charge pumpy displeje
     Wire.beginTransmission(OLED_ADDR);
     present_ = (Wire.endTransmission() == 0);
     if (!present_) {
@@ -58,6 +59,10 @@ void PumpDisplay::begin() {
     for (uint8_t i = 0; i < sizeof(INIT_SEQ); i++) {
         command(pgm_read_byte(&INIT_SEQ[i]));
     }
+    clear();
+    // Displej se maže 2x - první průchod GDDRAM může obsahovat náhodný
+    // obsah po zapnutí a ojedinělá I2C chyba by mohla smazání jedné
+    // stránky vynechat; druhý průchod je levná pojistka.
     clear();
 }
 

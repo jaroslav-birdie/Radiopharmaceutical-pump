@@ -31,7 +31,10 @@ void PumpController::begin() {
     logInit();
     logEvent(LOG_BOOT);
     Wire.begin();
-    Wire.setClock(400000UL);
+    // 100 kHz (standardní režim) - spolehlivější než 400 kHz na nepájeném
+    // propojení (drátové propojky, prototyp). Až bude I2C sběrnice
+    // pevně spojená (pájka/kvalitní konektory), lze zkusit zpět 400000UL.
+    Wire.setClock(100000UL);
 
     // Motory zůstávají DISABLED až do stisku START (viz handleSetVolume) –
     // před tím se lahvička a stříkačky teprve osazují ručně.
