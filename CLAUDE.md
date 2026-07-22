@@ -41,8 +41,8 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 | D13 | Klávesnice – START |
 | A0  | Klávesnice – STOP (nouzové zastavení, 2. stupeň) |
 | A1  | Klávesnice – PAUSE / PLAY (nouzové pozastavení a obnovení, 1. stupeň) |
-| A2  | volný |
-| A3  | volný |
+| A2  | Klávesnice – 6. pin (společná/řídicí linka, upřesnit dle návrhu klávesnice) |
+| A3  | volný (rezerva) |
 | A4  | I2C SDA (OLED + FDC1004) |
 | A5  | I2C SCL (OLED + FDC1004) |
 
@@ -257,6 +257,7 @@ radiopharmaceutical-pump/
 ├── display.h / .cpp              # OLED displej
 ├── keyboard.h / .cpp             # 5-tlačítková klávesnice (10ml, 20ml, START, PAUSE, STOP)
 ├── encoder.h / .cpp              # rotační enkodér
+├── logger.h / .cpp               # sdílené heslovité logování (Serial + OLED)
 └── CLAUDE.md                     # tento soubor
 ```
 
@@ -273,6 +274,37 @@ radiopharmaceutical-pump/
 | `FDC1004` | Library Manager: „FDC1004" | Kapacitní senzor hladiny |
 
 > Před použitím každé knihovny ověř, že interně nepoužívá `String` ani `malloc`.
+
+---
+
+## Logování – Serial + OLED současně
+
+Každá významná akce se vypisuje **heslovitě** (krátce) na obě výstupní zařízení
+najednou – sériovou linku (ladění) i OLED (obsluha). Aby se řetězcové literály
+nezdvojovaly ve flash, používá se **jedna tabulka zpráv v PROGMEM** a společná
+funkce, ne oddělené `Serial.print` / OLED volání s duplicitním textem.
+
+Příklady zpráv (heslovitě, čeština, max ~20 znaků kvůli šířce OLED řádku):
+`Pohyb ventilu 1`, `Aplikace vzduchu`, `Pohyb ventilu 2`, `Nasáti vzduchu`,
+`Aplikace H2O`, `Aplikace pacientovi`, `Kalibrace...`, `PAUSE - kontrola`, `STOP`.
+
+```cpp
+enum LogMsg : uint8_t { LOG_VALVE1_MOVE, LOG_AIR_PUSH, LOG_VALVE2_MOVE, /* ... */ };
+
+void logEvent(LogMsg msg) {
+    // interně: jeden PROGMEM řetězec na zprávu, vypsat na Serial i OLED
+}
+```
+
+OLED (128×64, U8g2 v **page buffer módu** – viz sekce SRAM) zobrazuje aktuální
+akci, případně několik posledních řádků jako jednoduchý log. Obsah konkrétních
+obrazovek dořešíme později – zatím stačí, že mechanismus logování je sdílený
+a nezávislý na tom, zda je klávesnice/enkodér fyzicky připojen.
+
+> Klávesnice a enkodér zatím nejsou fyzicky dostupné. Kód se proto píše
+> výhradně proti pinům z `config.h` (třídy `Keyboard`/`Encoder`) – po zapojení
+> reálného hardwaru se neupravuje logika, jen se ověří, že fyzické zapojení
+> odpovídá pinům v `config.h`.
 
 ---
 
@@ -310,12 +342,13 @@ má mírně jinou mechanickou nulu serva.
 #define PIN_SERVO_PATIENT  9
 #define PIN_SERVO_AIR     10
 
-// === PINY – KLÁVESNICE (5 samostatných tlačítek) ===
+// === PINY – KLÁVESNICE (5 tlačítek, 6 pinů celkem – HW zatím nedodán) ===
 #define PIN_KEY_10ML     11
 #define PIN_KEY_20ML     12
 #define PIN_KEY_START    13
 #define PIN_KEY_STOP     A0   // nouzový STOP – 2. stupeň
 #define PIN_KEY_PAUSE    A1   // PAUSE/PLAY – 1. stupeň
+#define PIN_KEY_COMMON   A2   // 6. pin dle návrhu klávesnice – upřesnit po dodání HW
 
 // === PINY – I2C (fixní pro Uno) ===
 #define PIN_SDA          A4
