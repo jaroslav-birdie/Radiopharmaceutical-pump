@@ -21,7 +21,8 @@
 #define PIN_SERVO_AIR      10   // OC1B - stejný pin jako v config.h
 
 #define SERVO_MIN_US      544   // pulz pro 0 stupňů
-#define SERVO_MAX_US     2400   // pulz pro 180 stupňů
+#define SERVO_MAX_US     2503   // pulz pro logických 180° - natažen o ~10°
+                                 // nad nominál (stejná hodnota jako v config.h)
 
 #define STEP_DEG            5   // krok otočení
 #define STEP_DELAY_MS    2000   // prodleva mezi kroky

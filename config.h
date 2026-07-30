@@ -45,7 +45,10 @@
 
 // === SERVA – PŘEVOD ÚHLU NA PULZ ===
 #define SERVO_MIN_US       544    // pulz pro 0 stupňů
-#define SERVO_MAX_US      2400    // pulz pro 180 stupňů
+#define SERVO_MAX_US      2503    // pulz pro logických 180° - natažen o ~10°
+                                   // nad nominál (MG996R obvykle snese, ověřit
+                                   // při kalibraci, že servo u dorazu nevrčí/
+                                   // netáhne nadměrný proud)
 #define SERVO_SETTLE_MS   1000    // doba přejezdu ventilu (1 s dle zadání)
 
 // === PACIENTSKÝ VENTIL – VÝCHOZÍ ÚHLY (doladit experimentálně, ukládá se do EEPROM) ===
