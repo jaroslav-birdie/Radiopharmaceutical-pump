@@ -379,9 +379,11 @@ void PumpController::handlePushAir(bool phase1) {
 #if TEST_MODE_NO_SENSOR
             // PROVIZORNÍ: bez kapacitního senzoru se kritická hladina
             // nahrazuje pevně daným cílovým objemem vzduchu (viz config.h).
-            float target = phase1 ? (is20ml_ ? TEST_VOL_P1_PUSH_20ML_ML
+            // Přirážka kryje objem, který se jen stlačí a kapalinu nevytlačí.
+            float target = (phase1 ? (is20ml_ ? TEST_VOL_P1_PUSH_20ML_ML
                                               : TEST_VOL_P1_PUSH_10ML_ML)
-                                   : TEST_VOL_ITER_PUSH_ML;
+                                   : TEST_VOL_ITER_PUSH_ML)
+                         + AIR_PUSH_COMPENSATION_ML;
             bool targetReached = (airUsedMl_ + airSyr_.movedMl())
                                   >= (target - TEST_VOL_MARGIN_ML);
 #else
@@ -490,10 +492,12 @@ void PumpController::handleFillAir(bool phase1) {
             }
             // Fáze 1 a doplňování: plná stříkačka; jinak naučený objem
 #if TEST_MODE_NO_SENSOR
-            // PROVIZORNÍ: pevný objem místo adaptivně naučeného
+            // PROVIZORNÍ: pevný objem místo adaptivně naučeného.
+            // Nasává se i kompenzace, jinak by stříkačka na zvětšené
+            // tlačení nestačila a spustila by se zbytečná refill smyčka.
             float target = (phase1 || refillMode_)
                          ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : TEST_VOL_ITER_FILL_ML;
+                         : (TEST_VOL_ITER_FILL_ML + AIR_PUSH_COMPENSATION_ML);
 #else
             float target = (phase1 || refillMode_)
                          ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)

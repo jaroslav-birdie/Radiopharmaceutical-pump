@@ -491,11 +491,27 @@ Před finální verzí nastav `#define DEBUG 0`.
 Dokud není fyzicky osazen FDC1004, `TEST_MODE_NO_SENSOR` v `config.h` (`1`)
 nahrazuje detekci kritické hladiny **pevně danými objemy vzduchu**:
 
-| Krok | Pevný objem (`config.h`) |
+| Krok | Požadovaný objem kapaliny (`config.h`) |
 |---|---|
-| Fáze 1, 10 ml varianta | `TEST_VOL_P1_PUSH_10ML_ML` = 7 ml |
-| Fáze 1, 20 ml varianta | `TEST_VOL_P1_PUSH_20ML_ML` = 17 ml (přes refill smyčku, beze změny logiky) |
-| Každá iterace | `TEST_VOL_ITER_PUSH_ML` = 3 ml (nasátí i vytlačení, bez adaptivního učení) |
+| Fáze 1, 10 ml varianta | `TEST_VOL_P1_PUSH_10ML_ML` |
+| Fáze 1, 20 ml varianta | `TEST_VOL_P1_PUSH_20ML_ML` (přes refill smyčku, beze změny logiky) |
+| Každá iterace – vytlačení | `TEST_VOL_ITER_PUSH_ML` |
+| Každá iterace – nasátí | `TEST_VOL_ITER_FILL_ML` (bez adaptivního učení) |
+
+### Kompenzace stlačení vzduchu
+
+Ke **každé** operaci se vzduchem (tlačení i nasátí) se v kódu přičítá
+`AIR_PUSH_COMPENSATION_ML`. Důvod: část vtlačeného objemu se jen schová do
+stlačení celého vzduchového sloupce (stříkačka + hadičky + headspace) a do
+poddajnosti mechaniky, takže kapalinu nevytlačí. Experimentálně zjištěno,
+že na 7 ml požadované kapaliny chybí ~2 ml vzduchu.
+
+Konstanty v tabulce výše tedy udávají **kolik kapaliny má vytéct**, ne kolik
+vzduchu se skutečně vtlačí – přirážku doplní firmware sám. Fyziologického
+roztoku se to **netýká** (je nestlačitelný a doteče vždy celý).
+
+> Prodlužování `FLUID_DRAIN_MS` se jako řešení tohoto deficitu
+> **neosvědčilo** – ani 30 s nepřidalo víc než pár kapek.
 
 Zároveň se v tomto režimu vypíná hlídání stagnace hladiny (`flowStalled`),
 protože bez svislé elektrody nemá vstupní data. `MAX_AIR_REFILLS` a

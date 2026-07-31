@@ -88,11 +88,10 @@
                                         // 2 = dvojnásobná rychlost proti FLOW_S_PER_ML
 
 // Doba, po kterou zůstane pacientský ventil OTEVŘENÝ i po dotlačení
-// vzduchu - stlačený vzduch v lahvičce dotlačí kapalinu hadičkou do
-// pacienta. Teprve pak se ventil uzavírá.
-// Doběh je exponenciální s časovou konstantou tau = R*V/P (odhadem
-// 6-10 s dle objemu vzduchové cesty a odporu jehly), proto 30 s ~ 3-5 tau.
-#define FLUID_DRAIN_MS     30000UL
+// vzduchu - kapalina dotéká hadičkou do pacienta. Teprve pak se uzavírá.
+// Prodloužení na 30 s se experimentálně NEOSVĚDČILO (přiteklo jen pár
+// kapek navíc), deficit se proto řeší přirážkou AIR_PUSH_COMPENSATION_ML.
+#define FLUID_DRAIN_MS      5000UL
 
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
@@ -120,6 +119,15 @@
 #define TEST_VOL_ITER_PUSH_ML     3.5f   // každá iterace – objem vzduchu VYTLAČENÝ do lahvičky
 #define TEST_VOL_ITER_FILL_ML     3.75f   // každá iterace – objem vzduchu NASÁTÝ zpět do stříkačky
 #define TEST_VOL_MARGIN_ML        0.01f  // tolerance zaokrouhlení kroků
+
+// Kompenzace stlačení vzduchu: část vtlačeného objemu se jen "schová" do
+// stlačení celého vzduchového sloupce (stříkačka + hadičky + headspace)
+// a poddajnosti mechaniky, takže kapalinu nevytlačí. Experimentálně
+// zjištěno: na 7 ml požadované kapaliny chybí ~2 ml.
+// Přičítá se ke KAŽDÉMU tlačení vzduchu i ke každému nasátí (aby měla
+// stříkačka dost objemu). Fyziologického roztoku se NETÝKÁ - ten je
+// nestlačitelný a doteče vždy v požadovaném množství.
+#define AIR_PUSH_COMPENSATION_ML  2.0f
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)
