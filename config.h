@@ -83,6 +83,14 @@
 
 // === RYCHLOST APLIKACE ===
 #define FLOW_S_PER_ML          5        // 1 ml za 5 sekund (obě stříkačky)
+#define AIR_FILL_SPEED_FACTOR  2        // nasávání vzduchu zpět do stříkačky je
+                                        // rychlejší (nic se netlačí do pacienta);
+                                        // 2 = dvojnásobná rychlost proti FLOW_S_PER_ML
+
+// Doba, po kterou zůstane pacientský ventil OTEVŘENÝ i po dotlačení
+// vzduchu - stlačený vzduch v lahvičce dotlačí kapalinu hadičkou do
+// pacienta. Teprve pak se ventil uzavírá.
+#define FLUID_DRAIN_MS      5000UL
 
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
@@ -107,7 +115,8 @@
 #define TEST_MODE_NO_SENSOR       1
 #define TEST_VOL_P1_PUSH_10ML_ML  7.0f   // Fáze 1, 10 ml varianta – pevný objem
 #define TEST_VOL_P1_PUSH_20ML_ML 17.0f   // Fáze 1, 20 ml varianta – pevný objem
-#define TEST_VOL_ITER_PUSH_ML     3.0f   // každá iterace – pevný objem vzduchu k vytlačení
+#define TEST_VOL_ITER_PUSH_ML     3.5f   // každá iterace – objem vzduchu VYTLAČENÝ do lahvičky
+#define TEST_VOL_ITER_FILL_ML     3.5f   // každá iterace – objem vzduchu NASÁTÝ zpět do stříkačky
 #define TEST_VOL_MARGIN_ML        0.01f  // tolerance zaokrouhlení kroků
 
 // === BEZPEČNOSTNÍ LIMITY ===

@@ -364,9 +364,10 @@ void PumpController::handlePushAir(bool phase1) {
                 finishAirMove(true);
                 refillMode_ = false;
                 logEvent(LOG_CRITICAL_LEVEL);
-                logEvent(LOG_VALVE_PATIENT_MOVE);
-                patientValve_.moveTo(angles_.patientIsolate);
-                phase_ = 4;
+                // Ventil k pacientovi zůstává OTEVŘENÝ - stlačený vzduch
+                // v lahvičce ještě dotlačuje kapalinu hadičkou (viz phase 7).
+                phaseT_ = millis();
+                phase_ = 7;
             } else if (airSyr_.idle()) { // stříkačka na rezervě – nutné doplnění
                 finishAirMove(true);
                 refills_++;
@@ -404,6 +405,16 @@ void PumpController::handlePushAir(bool phase1) {
         case 6:                          // hotovo -> fyziologický roztok
             if (airValve_.settled()) {
                 changeState(phase1 ? ST_P1_ADD_SALINE : ST_ITER_ADD_SALINE);
+            }
+            break;
+        case 7:                          // dotékání kapaliny hadičkou k pacientovi
+            // Motor už stojí, ale v lahvičce zůstal přetlak, který dál
+            // vytlačuje kapalinu. Ventil k pacientovi proto zůstává
+            // otevřený ještě FLUID_DRAIN_MS, teprve pak se uzavírá.
+            if (millis() - phaseT_ >= FLUID_DRAIN_MS) {
+                logEvent(LOG_VALVE_PATIENT_MOVE);
+                patientValve_.moveTo(angles_.patientIsolate);
+                phase_ = 4;
             }
             break;
     }
@@ -445,10 +456,10 @@ void PumpController::handleFillAir(bool phase1) {
             }
             // Fáze 1 a doplňování: plná stříkačka; jinak naučený objem
 #if TEST_MODE_NO_SENSOR
-            // PROVIZORNÍ: pevný objem 3 ml místo adaptivně naučeného
+            // PROVIZORNÍ: pevný objem místo adaptivně naučeného
             float target = (phase1 || refillMode_)
                          ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : TEST_VOL_ITER_PUSH_ML;
+                         : TEST_VOL_ITER_FILL_ML;
 #else
             float target = (phase1 || refillMode_)
                          ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
@@ -461,7 +472,8 @@ void PumpController::handleFillAir(bool phase1) {
             logEvent(LOG_AIR_FILL);
             dispDirty_ = true;
             refreshDisplay();            // překreslit, dokud motor stojí
-            airSyr_.startMove(target, false);
+            // Nasávání jde rychleji - nic se netlačí do pacienta
+            airSyr_.startMove(target, false, AIR_FILL_SPEED_FACTOR);
             phase_ = 2;
             break;
         }

@@ -13,7 +13,9 @@ public:
     void begin(uint8_t stepPin, uint8_t dirPin, float stepsPerMl,
                uint32_t stepIntervalUs, uint8_t pushLevel);
 
-    void startMove(float ml, bool push);   // spustí pohyb o daný objem
+    // Spustí pohyb o daný objem. speedFactor zrychluje pohyb dělením
+    // periody kroků (1 = normální rychlost, 2 = dvojnásobná, ...).
+    void startMove(float ml, bool push, uint8_t speedFactor = 1);
     void update();                         // volat co nejčastěji z loop()
     void pause();                          // pozastavení (zbytek pohybu zůstává)
     void resume();                         // pokračování po pause()
@@ -28,7 +30,8 @@ private:
     uint8_t  dirPin_ = 0;
     uint8_t  pushLevel_ = HIGH;
     float    stepsPerMl_ = 1.0f;
-    uint32_t intervalUs_ = 1000;
+    uint32_t intervalUs_ = 1000;         // základní perioda (normální rychlost)
+    uint32_t curIntervalUs_ = 1000;      // perioda aktuálního pohybu
     uint32_t remaining_ = 0;
     uint32_t done_ = 0;
     uint32_t lastStepUs_ = 0;

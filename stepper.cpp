@@ -6,18 +6,23 @@ void StepperMotor::begin(uint8_t stepPin, uint8_t dirPin, float stepsPerMl,
     dirPin_ = dirPin;
     stepsPerMl_ = stepsPerMl;
     intervalUs_ = stepIntervalUs;
+    curIntervalUs_ = stepIntervalUs;
     pushLevel_ = pushLevel;
     pinMode(stepPin_, OUTPUT);
     pinMode(dirPin_, OUTPUT);
     digitalWrite(stepPin_, LOW);
 }
 
-void StepperMotor::startMove(float ml, bool push) {
+void StepperMotor::startMove(float ml, bool push, uint8_t speedFactor) {
     if (ml <= 0.0f) {
         remaining_ = 0;
         done_ = 0;
         return;
     }
+    if (speedFactor < 1) {
+        speedFactor = 1;
+    }
+    curIntervalUs_ = intervalUs_ / speedFactor;
     digitalWrite(dirPin_, push ? pushLevel_ : (pushLevel_ == HIGH ? LOW : HIGH));
     remaining_ = (uint32_t)(ml * stepsPerMl_ + 0.5f);
     done_ = 0;
@@ -32,7 +37,7 @@ void StepperMotor::update() {
         return;
     }
     uint32_t now = micros();
-    if (now - lastStepUs_ < intervalUs_) {
+    if (now - lastStepUs_ < curIntervalUs_) {
         return;
     }
     lastStepUs_ = now;
