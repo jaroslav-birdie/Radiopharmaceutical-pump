@@ -520,14 +520,23 @@ nahrazuje detekci kritické hladiny **pevně danými objemy vzduchu**:
 ### Kompenzace stlačení vzduchu
 
 Ke **každé** operaci se vzduchem (tlačení i nasátí) se v kódu přičítá
-`AIR_PUSH_COMPENSATION_ML`. Důvod: část vtlačeného objemu se jen schová do
-stlačení celého vzduchového sloupce (stříkačka + hadičky + headspace) a do
-poddajnosti mechaniky, takže kapalinu nevytlačí. Experimentálně zjištěno,
-že na 7 ml požadované kapaliny chybí ~2 ml vzduchu.
+kompenzace. Důvod: část vtlačeného objemu se jen schová do stlačení
+celého vzduchového sloupce (stříkačka + hadičky + headspace) a do
+poddajnosti mechaniky, takže kapalinu nevytlačí.
 
-Konstanty v tabulce výše tedy udávají **kolik kapaliny má vytéct**, ne kolik
-vzduchu se skutečně vtlačí – přirážku doplní firmware sám. Fyziologického
-roztoku se to **netýká** (je nestlačitelný a doteče vždy celý).
+Fáze 1 a iterace mají **jiný headspace** (na začátku Fáze 1 je v lahvičce
+jen malý objem vzduchu, u iterací je to ustálených ~6 ml), takže i
+kompenzace je jiná - dvě samostatné konstanty v `config.h`:
+
+| Konstanta | Hodnota | Ověřeno |
+|---|---|---|
+| `AIR_PUSH_COMPENSATION_P1_ML` | 2,0 ml | ano – experimentálně potvrzeno na Fázi 1 |
+| `AIR_PUSH_COMPENSATION_ITER_ML` | 1,0 ml | **ne** – původní sdílená hodnota 2 ml byla v iteraci příliš velká, doladit |
+
+Konstanty v tabulce výše (`TEST_VOL_*`) tedy udávají **kolik kapaliny má
+vytéct**, ne kolik vzduchu se skutečně vtlačí – přirážku doplní firmware
+sám. Fyziologického roztoku se to **netýká** (je nestlačitelný a doteče
+vždy celý).
 
 > Prodlužování `FLUID_DRAIN_MS` se jako řešení tohoto deficitu
 > **neosvědčilo** – ani 30 s nepřidalo víc než pár kapek.

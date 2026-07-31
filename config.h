@@ -122,12 +122,12 @@
 
 // Kompenzace stlačení vzduchu: část vtlačeného objemu se jen "schová" do
 // stlačení celého vzduchového sloupce (stříkačka + hadičky + headspace)
-// a poddajnosti mechaniky, takže kapalinu nevytlačí. Experimentálně
-// zjištěno: na 7 ml požadované kapaliny chybí ~2 ml.
-// Přičítá se ke KAŽDÉMU tlačení vzduchu i ke každému nasátí (aby měla
-// stříkačka dost objemu). Fyziologického roztoku se NETÝKÁ - ten je
-// nestlačitelný a doteče vždy v požadovaném množství.
-#define AIR_PUSH_COMPENSATION_ML  2.0f
+// a poddajnosti mechaniky, takže kapalinu nevytlačí. Fyziologického
+// roztoku se NETÝKÁ - ten je nestlačitelný a doteče vždy v požadovaném
+// množství. Přirážka je jiná pro Fázi 1 (velký počáteční headspace) a
+// pro iterace (malý, ustálený objem 6 ml v lahvičce) - proto 2 konstanty.
+#define AIR_PUSH_COMPENSATION_P1_ML    2.0f   // Fáze 1 - ověřeno experimentálně
+#define AIR_PUSH_COMPENSATION_ITER_ML  1.0f   // iterace - DOLADIT (2 ml bylo příliš)
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)
