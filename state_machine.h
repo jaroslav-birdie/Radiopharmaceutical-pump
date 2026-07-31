@@ -109,6 +109,7 @@ private:
     uint8_t  iter_ = 0;                  // 0 = Fáze 1, 1-9 = iterace
     uint8_t  refills_ = 0;               // doplnění vzduchu v aktuálním kroku
     bool     refillMode_ = false;        // FILL_AIR doplňuje po vyčerpání stříkačky
+    bool     pushDone_ = false;          // po prodlevě na dotečení: true=hotovo, false=doplnit vzduch
     float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
     float    airUsedMl_ = 0.0f;          // spotřeba vzduchu v aktuální iteraci

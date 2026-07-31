@@ -366,6 +366,7 @@ void PumpController::handlePushAir(bool phase1) {
                 logEvent(LOG_CRITICAL_LEVEL);
                 // Ventil k pacientovi zůstává OTEVŘENÝ - stlačený vzduch
                 // v lahvičce ještě dotlačuje kapalinu hadičkou (viz phase 7).
+                pushDone_ = true;
                 phaseT_ = millis();
                 phase_ = 7;
             } else if (airSyr_.idle()) { // stříkačka na rezervě – nutné doplnění
@@ -378,9 +379,12 @@ void PumpController::handlePushAir(bool phase1) {
                     logEvent(LOG_ALARM_EXCESS_AIR);
                     changeState(ST_ALARM_EXCESS_AIR);
                 } else {
-                    logEvent(LOG_VALVE_PATIENT_MOVE);
-                    patientValve_.moveTo(angles_.patientIsolate);
-                    phase_ = 5;
+                    // I před dočasným uzavřením kvůli doplnění vzduchu musí
+                    // kapalina z už vytlačeného vzduchu stihnout dotéct -
+                    // stejná prodleva jako při finálním dosažení cíle.
+                    pushDone_ = false;
+                    phaseT_ = millis();
+                    phase_ = 7;
                 }
 #if !TEST_MODE_NO_SENSOR
             } else if (flowStalled()) {
@@ -410,11 +414,13 @@ void PumpController::handlePushAir(bool phase1) {
         case 7:                          // dotékání kapaliny hadičkou k pacientovi
             // Motor už stojí, ale v lahvičce zůstal přetlak, který dál
             // vytlačuje kapalinu. Ventil k pacientovi proto zůstává
-            // otevřený ještě FLUID_DRAIN_MS, teprve pak se uzavírá.
+            // otevřený ještě FLUID_DRAIN_MS, teprve pak se uzavírá - a to
+            // i před dočasným uzavřením kvůli doplnění vzduchu (pushDone_
+            // rozhoduje, jestli pak jde na dokončení, nebo na refill).
             if (millis() - phaseT_ >= FLUID_DRAIN_MS) {
                 logEvent(LOG_VALVE_PATIENT_MOVE);
                 patientValve_.moveTo(angles_.patientIsolate);
-                phase_ = 4;
+                phase_ = pushDone_ ? 4 : 5;
             }
             break;
     }
