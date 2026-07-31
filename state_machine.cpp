@@ -480,6 +480,15 @@ void PumpController::handleFillAir(bool phase1) {
         case 2:
             if (airSyr_.idle()) {
                 finishAirMove(false);
+                // Filtr klade odpor - tlak ve stříkačce/hadičce se po
+                // nasátí ještě chvíli vyrovnává, stejná prodleva jako
+                // u ST_ITER_EQUALIZE.
+                phaseT_ = millis();
+                phase_ = 3;
+            }
+            break;
+        case 3:
+            if (millis() - phaseT_ >= EQUALIZE_TIME_MS) {
                 changeState(phase1 ? ST_P1_PUSH_AIR : ST_ITER_PUSH_AIR);
             }
             break;
