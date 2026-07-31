@@ -468,13 +468,24 @@ void PumpController::handleEqualize(bool phase1) {
             break;
         case 2:
             if (millis() - phaseT_ >= EQUALIZE_TIME_MS) {
-                changeState(phase1 ? ST_P1_FILL_AIR : ST_ITER_FILL_AIR);
+                // Vzduch se v běžném průběhu nasál už souběžně s roztokem
+                // (viz handleAddSaline), takže se jde rovnou tlačit.
+                // Samostatné FILL_AIR je potřeba jen na doplňovací větvi,
+                // kdy vzduch došel uprostřed tlačení (refillMode_).
+                if (refillMode_) {
+                    changeState(phase1 ? ST_P1_FILL_AIR : ST_ITER_FILL_AIR);
+                } else {
+                    changeState(phase1 ? ST_P1_PUSH_AIR : ST_ITER_PUSH_AIR);
+                }
             }
             break;
     }
 }
 
 // Nasátí vzduchu z atmosféry do stříkačky (S<->F).
+// Běžné nasátí probíhá souběžně s roztokem v handleAddSaline; sem se
+// vstupuje výhradně z doplňovací (refill) větve, kdy vzduch došel uprostřed
+// tlačení - proto se tu vždy plní až po maximum stříkačky.
 void PumpController::handleFillAir(bool phase1) {
     switch (phase_) {
         case 0:
@@ -486,23 +497,7 @@ void PumpController::handleFillAir(bool phase1) {
             if (!airValve_.settled()) {
                 break;
             }
-            // Fáze 1 a doplňování: plná stříkačka; jinak naučený objem
-#if TEST_MODE_NO_SENSOR
-            // PROVIZORNÍ: pevný objem místo adaptivně naučeného.
-            // Nasává se i kompenzace, jinak by stříkačka na zvětšené
-            // tlačení nestačila a spustila by se zbytečná refill smyčka.
-            float target = (phase1 || refillMode_)
-                         ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : (TEST_VOL_ITER_FILL_ML + AIR_PUSH_COMPENSATION_ITER_ML);
-#else
-            float target = (phase1 || refillMode_)
-                         ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : intakeMl_;
-#endif
-            float room = VOL_AIR_SYRINGE_MAX_ML - airMl_;
-            if (target > room) {
-                target = room;
-            }
+            float target = VOL_AIR_SYRINGE_MAX_ML - airMl_;
             logEvent(LOG_AIR_FILL);
             dispDirty_ = true;
             refreshDisplay();            // překreslit, dokud motor stojí
@@ -529,7 +524,17 @@ void PumpController::handleFillAir(bool phase1) {
     }
 }
 
-// Přidání dávky fyziologického roztoku do lahvičky.
+// Přidání dávky fyziologického roztoku do lahvičky - SOUBĚŽNĚ s nasátím
+// vzduchu do vzduchové stříkačky.
+//
+// Ventil je po celou dobu v S<->F: stříkačka nasává z atmosféry přes filtr,
+// zatímco roztok teče do lahvičky. Obě větve jsou oddělené (port V je v této
+// poloze zaslepen), takže se operace navzájem neovlivňují a ušetří se čas
+// jednoho celého nasátí (~15 s na iteraci).
+//
+// Cena: lahvička je po dobu doplňování uzavřená, takže v ní přechodně
+// vznikne přetlak (odhadem ~0,6 bar u 10ml lahvičky, u větších podstatně
+// méně). Vypustí se hned v následujícím ST_ITER_EQUALIZE.
 void PumpController::handleAddSaline(bool phase1) {
 #if TEST_MODE_NO_SENSOR
     (void)phase1;                    // nepoužito – učení objemu je vypnuté
@@ -546,25 +551,55 @@ void PumpController::handleAddSaline(bool phase1) {
                 changeState(ST_ERROR);
                 break;
             }
-            logEvent(LOG_SALINE_PUSH);
-            dispDirty_ = true;
-            refreshDisplay();
-            salSyr_.startMove(VOL_SAL_ITER_ML, true);
+#if !TEST_MODE_NO_SENSOR
+            // Učení musí proběhnout UŽ TEĎ - nasátí startuje souběžně
+            // s roztokem, takže intakeMl_ už musí být aktuální. Vstupní
+            // airUsedMl_ pochází z právě dokončeného tlačení.
+            if (!phase1) {
+                float learned = airUsedMl_ + VOL_AIR_INTAKE_MARGIN_ML;
+                float maxIntake = VOL_AIR_SYRINGE_MAX_ML - VOL_AIR_RESERVE_ML;
+                if (learned < 1.0f) learned = 1.0f;
+                if (learned > maxIntake) learned = maxIntake;
+                intakeMl_ = learned;
+            }
+#endif
+            logEvent(LOG_VALVE_AIR_MOVE);
+            airValve_.moveTo(angles_.airSyrToFilter);
             phase_ = 1;
             break;
-        case 1:
-            if (salSyr_.idle()) {
-                salMl_ -= salSyr_.movedMl();
-#if !TEST_MODE_NO_SENSOR
-                if (!phase1) {
-                    // Učení: příští nasátí = skutečná spotřeba + přirážka
-                    float learned = airUsedMl_ + VOL_AIR_INTAKE_MARGIN_ML;
-                    float maxIntake = VOL_AIR_SYRINGE_MAX_ML - VOL_AIR_RESERVE_ML;
-                    if (learned < 1.0f) learned = 1.0f;
-                    if (learned > maxIntake) learned = maxIntake;
-                    intakeMl_ = learned;
-                }
+        case 1: {
+            if (!airValve_.settled()) {
+                break;
+            }
+#if TEST_MODE_NO_SENSOR
+            float fill = TEST_VOL_ITER_FILL_ML + AIR_PUSH_COMPENSATION_ITER_ML;
+#else
+            float fill = intakeMl_;
 #endif
+            float room = VOL_AIR_SYRINGE_MAX_ML - airMl_;
+            if (fill > room) {
+                fill = room;
+            }
+            logEvent(LOG_SALINE_AND_FILL);
+            dispDirty_ = true;
+            refreshDisplay();            // překreslit, dokud motory stojí
+            salSyr_.startMove(VOL_SAL_ITER_ML, true);
+            airSyr_.startMove(fill, false, AIR_FILL_SPEED_FACTOR);
+            phase_ = 2;
+            break;
+        }
+        case 2:
+            if (salSyr_.idle() && airSyr_.idle()) {
+                salMl_ -= salSyr_.movedMl();
+                finishAirMove(false);
+                // Filtr klade odpor - tlak ve stříkačce se po nasátí ještě
+                // chvíli dorovnává; ventil zatím zůstává v S<->F.
+                phaseT_ = millis();
+                phase_ = 3;
+            }
+            break;
+        case 3:
+            if (millis() - phaseT_ >= EQUALIZE_TIME_MS) {
                 airUsedMl_ = 0.0f;
                 refills_ = 0;
                 refillMode_ = false;

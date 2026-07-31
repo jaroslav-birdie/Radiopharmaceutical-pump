@@ -14,6 +14,7 @@ static const char MSG_AIR_PUSH[]      PROGMEM = "Aplikace vzduchu";
 static const char MSG_AIR_FILL[]      PROGMEM = "Nasati vzduchu";
 static const char MSG_EQUALIZE[]      PROGMEM = "Vyrovnani tlaku";
 static const char MSG_SALINE[]        PROGMEM = "Aplikace H2O";
+static const char MSG_SAL_AND_FILL[]  PROGMEM = "H2O + nasati vzd.";
 static const char MSG_ITER[]          PROGMEM = "Nova iterace";
 static const char MSG_CRITICAL[]      PROGMEM = "Kriticka hladina";
 static const char MSG_PAUSED[]        PROGMEM = "PAUSE - kontrola";
@@ -27,7 +28,7 @@ static const char MSG_ERROR[]         PROGMEM = "CHYBA SYSTEMU";
 static const char *const MSG_TABLE[LOG_MSG_COUNT] PROGMEM = {
     MSG_BOOT, MSG_VALVES_SAFE, MSG_WAIT_READY, MSG_SET_VOLUME,
     MSG_CALIBRATING, MSG_CALIB_DONE, MSG_VALVE_PAT, MSG_VALVE_AIR,
-    MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE,
+    MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE, MSG_SAL_AND_FILL,
     MSG_ITER, MSG_CRITICAL, MSG_PAUSED, MSG_RESUMED,
     MSG_NO_FLOW, MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR
 };
