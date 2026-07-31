@@ -548,6 +548,23 @@ vždy celý).
 > Prodlužování `FLUID_DRAIN_MS` se jako řešení tohoto deficitu
 > **neosvědčilo** – ani 30 s nepřidalo víc než pár kapek.
 
+### Co bylo vyzkoušeno a NEFUNGUJE
+
+**Souběh doplňování roztoku a nasávání vzduchu** (vzduchový ventil v `S↔F`
+po dobu `ST_ITER_ADD_SALINE`, oba krokové motory běží současně – ušetřilo
+by to ~15 s na iteraci). Implementováno a otestováno, **vráceno zpět**.
+
+Důvod selhání: v této poloze ventilu je port V zaslepen, takže je lahvička
+po dobu doplňování roztoku uzavřená a vzniká v ní přetlak. Zátka i vpichy
+jehel sice **těsnily bez problémů**, ale **tlak se nestihl vyrovnat
+s okolím** (odpor vzduchového filtru je příliš velký na to, aby se přetlak
+stihl vypustit během `EQUALIZE_TIME_MS`). Systém pak nedokázal doručit celý
+požadovaný objem kapaliny.
+
+> Neimplementovat znovu bez toho, aby se současně vyřešilo rychlé vyrovnání
+> tlaku lahvičky (např. výrazně delší doba vyrovnávání nebo cesta
+> s menším odporem než přes filtr).
+
 Zároveň se v tomto režimu vypíná hlídání stagnace hladiny (`flowStalled`),
 protože bez svislé elektrody nemá vstupní data. `MAX_AIR_REFILLS` a
 nouzové STOP/PAUSE zůstávají aktivní beze změny – týkají se jen fyzické
