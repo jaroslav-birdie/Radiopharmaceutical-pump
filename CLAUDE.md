@@ -124,7 +124,7 @@ enum State {
     ST_P1_FILL_AIR,      // nasátí dalšího vzduchu do stříkačky z atmosféry
     ST_P1_ADD_SALINE,    // přidání 3 ml fyziologického roztoku
 
-    // Iterativní cyklus – opakuje se 9×
+    // Iterativní cyklus – opakuje se ITER_COUNT×, plus závěrečné vytlačení
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes vzduchový filtr
     ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky (5 ml v 1. iteraci,
                          // dále dle naučeného objemu z předchozí iterace)
@@ -149,6 +149,13 @@ enum State {
 > reakci na chybějící pokles hladiny během `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`.
 > Po zmáčknutí **PLAY** se automat vrací do stavu, ze kterého byl pozastaven,
 > a pokračuje bez zásahu obsluhy.
+
+> **Závěrečné vytlačení:** po **posledním** doplnění fyziologického roztoku
+> se procedura nekončí – projde se ještě jednou `ST_ITER_EQUALIZE` →
+> `ST_ITER_FILL_AIR` → `ST_ITER_PUSH_AIR`, aby se i tento objem dostal
+> k pacientovi. Teprve pak `ST_COMPLETE`; další roztok se už nepřidává.
+> Celkem tedy proběhne `ITER_COUNT + 1` vytlačení, ale jen `ITER_COUNT`
+> doplnění roztoku v iteracích (plus jedno ve Fázi 1).
 
 ---
 

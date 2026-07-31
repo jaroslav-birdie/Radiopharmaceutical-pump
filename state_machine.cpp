@@ -423,7 +423,18 @@ void PumpController::handlePushAir(bool phase1) {
             break;
         case 6:                          // hotovo -> fyziologický roztok
             if (airValve_.settled()) {
-                changeState(phase1 ? ST_P1_ADD_SALINE : ST_ITER_ADD_SALINE);
+                if (!phase1 && iter_ > ITER_COUNT) {
+                    // Závěrečné vytlačení: po POSLEDNÍM doplnění roztoku se
+                    // ještě jednou projde EQUALIZE -> FILL_AIR -> PUSH_AIR a
+                    // tento objem se vytlačí pacientovi. Další roztok už se
+                    // nepřidává - procedura tímto končí.
+                    safeValves();
+                    disableSteppers();
+                    logEvent(LOG_COMPLETE);
+                    changeState(ST_COMPLETE);
+                } else {
+                    changeState(phase1 ? ST_P1_ADD_SALINE : ST_ITER_ADD_SALINE);
+                }
             }
             break;
         case 7:                          // dotékání kapaliny hadičkou k pacientovi
@@ -558,15 +569,13 @@ void PumpController::handleAddSaline(bool phase1) {
                 refills_ = 0;
                 refillMode_ = false;
                 iter_++;
-                if (iter_ > ITER_COUNT) {
-                    safeValves();
-                    disableSteppers();
-                    logEvent(LOG_COMPLETE);
-                    changeState(ST_COMPLETE);
-                } else {
-                    logEvent(LOG_ITER_START);
-                    changeState(ST_ITER_EQUALIZE);
-                }
+                // I po POSLEDNÍM doplnění roztoku se pokračuje na
+                // ST_ITER_EQUALIZE - i tento objem se má ještě vytlačit
+                // pacientovi. Procedura se ukončí až v handlePushAir
+                // (case 6), kde se pozná, že iter_ > ITER_COUNT, a další
+                // roztok se už nepřidává.
+                logEvent(LOG_ITER_START);
+                changeState(ST_ITER_EQUALIZE);
             }
             break;
     }
@@ -616,8 +625,11 @@ void PumpController::refreshDisplay() {
         snprintf_P(buf, sizeof(buf), PSTR("Faze 1  Vz:%u.%u ml"),
                    (uint8_t)airMl_, (uint8_t)(airMl_ * 10.0f) % 10);
     } else {
+        // Při závěrečném vytlačení je iter_ o 1 vyšší než ITER_COUNT -
+        // na displeji se ořízne, aby neukazoval např. "12/11".
+        uint8_t shown = (iter_ > ITER_COUNT) ? (uint8_t)ITER_COUNT : iter_;
         snprintf_P(buf, sizeof(buf), PSTR("Iterace: %u/%u"),
-                   iter_, (uint8_t)ITER_COUNT);
+                   shown, (uint8_t)ITER_COUNT);
     }
     disp_.drawRow(6, buf);
 }
