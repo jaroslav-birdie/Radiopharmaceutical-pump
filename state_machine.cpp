@@ -503,7 +503,7 @@ void PumpController::handleAddSaline(bool phase1) {
     switch (phase_) {
         case 0:
             // Tolerance 0,1 ml kryje zaokrouhlení kroků; stříkačka se plní
-            // reálně na ~30-32 ml, takže skutečná zásoba je vyšší než bilance.
+            // reálně o něco víc, takže skutečná zásoba je vyšší než bilance.
             if (salMl_ + 0.1f < VOL_SAL_ITER_ML) {
                 // Motory zůstávají ENABLED (drží polohu) - DISABLE je
                 // vyhrazeno jen pro ST_COMPLETE a ST_EMERGENCY_STOP.

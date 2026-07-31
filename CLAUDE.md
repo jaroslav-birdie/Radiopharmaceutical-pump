@@ -73,7 +73,7 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 ## Mechanika a objemy
 
 - **Vzduchová stříkačka**: 10 ml, krokový motor + trapézová tyč, stoupání 8 mm/ot.
-- **Fyziologická stříkačka**: 30 ml (max ~32 ml), krokový motor + trapézová tyč, stoupání 8 mm/ot., zpětná klapka
+- **Fyziologická stříkačka**: 60 ml, krokový motor + trapézová tyč, stoupání 8 mm/ot., zpětná klapka
 - **Pacientská hadička**: délka 40 cm, vnitřní průměr 1 mm (~0,31 ml objem)
 - **Penicilinka**: 10 ml nebo 20 ml varianta
 
@@ -82,7 +82,7 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 | Stříkačka | Výchozí poloha |
 |-----------|----------------|
 | Vzduchová | 10 ml (plná) |
-| Fyziologická | ~30 ml (plná, naplněna ručně před startem) |
+| Fyziologická | ~60 ml (plná, naplněna ručně před startem) |
 
 Krokové motory **nemají endstopy** – poloha se sleduje výhradně čítáním kroků od výchozího stavu.
 Výchozí stav musí být vždy fyzicky zajištěn obsluhou před stiskem START.

@@ -97,7 +97,7 @@
 #define VOL_AIR_RESERVE_ML       3.0f   // trvalá rezerva ve vzduchové stříkačce
 #define VOL_AIR_ITER1_ML         5.0f   // objem nasávaný v 1. iteraci (upravitelné)
 #define VOL_AIR_INTAKE_MARGIN_ML 0.5f   // přirážka k naučenému objemu pro další iteraci
-#define VOL_SAL_TOTAL_ML        30.0f
+#define VOL_SAL_TOTAL_ML        60.0f   // 60ml stříkačka (viz SAL_SYR_ML_PER_MM)
 #define VOL_SAL_ITER_ML          3.0f   // dávka fyziologického roztoku na 1 krok
 #define ITER_COUNT               11      // počet iterativních cyklů po Fázi 1
 
