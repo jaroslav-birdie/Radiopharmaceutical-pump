@@ -126,14 +126,12 @@ enum State {
 
     // Iterativní cyklus – opakuje se ITER_COUNT×, plus závěrečné vytlačení
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes vzduchový filtr
-    ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky – POUZE na doplňovací
-                         // (refill) větvi; běžné nasátí běží souběžně
-                         // s roztokem v ST_ITER_ADD_SALINE (viz níže)
+    ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky (5 ml v 1. iteraci,
+                         // dále dle naučeného objemu z předchozí iterace)
     ST_ITER_PUSH_AIR,    // vytlačení kapaliny do pacienta až na kritickou hladinu;
                          // pokud nestačí nasátý objem, opakuje se
                          // ST_ITER_EQUALIZE → ST_ITER_FILL_AIR stejně jako ve Fázi 1
-    ST_ITER_ADD_SALINE,  // přidání 3 ml fyziologického roztoku – SOUBĚŽNĚ
-                         // s nasátím vzduchu do stříkačky (ventil v S↔F)
+    ST_ITER_ADD_SALINE,  // přidání 3 ml fyziologického roztoku
 
     // Konec a chyby
     ST_COMPLETE,         // procedura dokončena
@@ -151,21 +149,6 @@ enum State {
 > reakci na chybějící pokles hladiny během `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`.
 > Po zmáčknutí **PLAY** se automat vrací do stavu, ze kterého byl pozastaven,
 > a pokračuje bez zásahu obsluhy.
-
-> **Souběh roztoku a nasávání vzduchu:** během `ST_P1_ADD_SALINE` /
-> `ST_ITER_ADD_SALINE` je vzduchový ventil v `AIR_VALVE_SYRINGE_TO_FILTER`
-> (S↔F) a **oba krokové motory běží současně** – roztok teče do lahvičky,
-> stříkačka zároveň nasává vzduch z atmosféry. Obě větve jsou oddělené
-> (port V je v této poloze zaslepen), takže se neovlivňují; ušetří se ~15 s
-> na iteraci. Samostatný `ST_ITER_FILL_AIR` se proto v běžném průběhu
-> **přeskakuje** – používá se jen na doplňovací (refill) větvi, kdy vzduch
-> došel uprostřed tlačení; `ST_ITER_EQUALIZE` větev rozlišuje podle
-> interního příznaku `refillMode_`.
->
-> ⚠️ Důsledek: lahvička je po dobu doplňování roztoku **uzavřená**, takže
-> v ní přechodně vzniká přetlak (odhadem ~0,6 bar u 10ml lahvičky, u větších
-> podstatně méně – headspace je větší). Vypustí se hned v následujícím
-> `ST_ITER_EQUALIZE`. Ověřit těsnost zátky a vpichů jehel při zkouškách.
 
 > **Závěrečné vytlačení:** po **posledním** doplnění fyziologického roztoku
 > se procedura nekončí – projde se ještě jednou `ST_ITER_EQUALIZE` →
