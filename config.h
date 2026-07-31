@@ -90,7 +90,9 @@
 // Doba, po kterou zůstane pacientský ventil OTEVŘENÝ i po dotlačení
 // vzduchu - stlačený vzduch v lahvičce dotlačí kapalinu hadičkou do
 // pacienta. Teprve pak se ventil uzavírá.
-#define FLUID_DRAIN_MS      5000UL
+// Doběh je exponenciální s časovou konstantou tau = R*V/P (odhadem
+// 6-10 s dle objemu vzduchové cesty a odporu jehly), proto 30 s ~ 3-5 tau.
+#define FLUID_DRAIN_MS     30000UL
 
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
@@ -126,6 +128,8 @@
 
 // === ČASOVÁNÍ PROCESU ===
 #define EQUALIZE_TIME_MS      3000UL    // doba vyrovnávání tlaku přes filtr
+#define PURGE_DWELL_MS        2000UL    // setrvání v každé poloze vzduchového ventilu
+                                        // při úvodním vyrovnání tlaku po kalibraci
 #define CALIBRATION_MS       10000UL    // celková doba kalibrace kapacitního senzoru
 #define CAP_SAMPLE_MS           50UL    // perioda čtení FDC1004
 #define DISPLAY_REFRESH_MS     500UL    // perioda překreslení OLED (jen při stojících motorech)

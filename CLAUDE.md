@@ -116,6 +116,8 @@ enum State {
     ST_WAIT_READY,       // čekání na osazení systému a stisk START
     ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička)
     ST_SET_VOLUME,       // zadávání objemu enkodérem, potvrzení stiskem
+    ST_PURGE_AIR,        // vzduchový ventil projde všemi třemi polohami (2 s
+                         // v každé) – celý systém se srovná na atmosférický tlak
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
     ST_P1_PUSH_AIR,      // tlačení vzduchu do lahvičky, dokud FDC1004 nehlásí

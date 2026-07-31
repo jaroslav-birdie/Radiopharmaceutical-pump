@@ -7,6 +7,7 @@ static const char SN_INIT[]     PROGMEM = "Inicializace";
 static const char SN_READY[]    PROGMEM = "Priprava systemu";
 static const char SN_VOLUME[]   PROGMEM = "Volba objemu";
 static const char SN_CALIB[]    PROGMEM = "Kalibrace";
+static const char SN_PURGE[]    PROGMEM = "Srovnani tlaku";
 static const char SN_P1[]       PROGMEM = "Faze 1";
 static const char SN_ITER[]     PROGMEM = "Iterace";
 static const char SN_DONE[]     PROGMEM = "Dokonceno";
@@ -16,7 +17,7 @@ static const char SN_ESTOP[]    PROGMEM = "NOUZOVY STOP";
 static const char SN_ERROR[]    PROGMEM = "CHYBA";
 
 static const char *const STATE_NAMES[ST_STATE_COUNT] PROGMEM = {
-    SN_INIT, SN_READY, SN_VOLUME, SN_CALIB,
+    SN_INIT, SN_READY, SN_VOLUME, SN_CALIB, SN_PURGE,
     SN_P1, SN_P1, SN_P1, SN_P1,
     SN_ITER, SN_ITER, SN_ITER, SN_ITER,
     SN_DONE, SN_PAUSED, SN_ALARM, SN_ESTOP, SN_ERROR
@@ -112,6 +113,7 @@ void PumpController::update() {
         case ST_WAIT_READY:      handleWaitReady();       break;
         case ST_SET_VOLUME:      handleSetVolume();       break;
         case ST_CALIBRATING:     handleCalibrating();     break;
+        case ST_PURGE_AIR:       handlePurgeAir();        break;
         case ST_P1_PUSH_AIR:     handlePushAir(true);     break;
         case ST_P1_EQUALIZE:     handleEqualize(true);    break;
         case ST_P1_FILL_AIR:     handleFillAir(true);     break;
@@ -318,7 +320,33 @@ void PumpController::handleCalibrating() {
         phase_ = 1;
     } else if (!cap_.calibrating()) {
         logEvent(LOG_CALIB_DONE);
+        changeState(ST_PURGE_AIR);
+    }
+}
+
+// Úvodní srovnání tlaku: vzduchový ventil projde všemi třemi polohami
+// a v každé setrvá PURGE_DWELL_MS. Postupně se tak propojí každá dvojice
+// ramen (S-V, S-F, V-F) a celý systém - stříkačka, hadičky i lahvička -
+// se spolehlivě ustálí na atmosférickém tlaku, než začne Fáze 1.
+// Pacientský ventil zůstává po celou dobu v PATIENT_VALVE_ISOLATE.
+// Končí se v AIR_VALVE_VIAL_TO_FILTER (bezpečný klidový stav).
+void PumpController::handlePurgeAir() {
+    const uint8_t PURGE_STEPS = 3;
+    uint8_t step = phase_ >> 1;              // 0,1,2 = pořadí polohy
+    if (step >= PURGE_STEPS) {
         changeState(ST_P1_PUSH_AIR);
+        return;
+    }
+    if ((phase_ & 1) == 0) {                 // sudá fáze: přejezd do polohy
+        uint8_t angle = (step == 0) ? angles_.airSyrToVial
+                      : (step == 1) ? angles_.airSyrToFilter
+                                    : angles_.airVialToFilter;
+        logEvent(LOG_PURGE_AIR);
+        airValve_.moveTo(angle);
+        phaseT_ = millis();
+        phase_++;
+    } else if ((millis() - phaseT_) >= (SERVO_SETTLE_MS + PURGE_DWELL_MS)) {
+        phase_++;                            // lichá fáze: setrvání v poloze
     }
 }
 
