@@ -136,8 +136,6 @@
 
 // === ČASOVÁNÍ PROCESU ===
 #define EQUALIZE_TIME_MS      3000UL    // doba vyrovnávání tlaku přes filtr
-#define PURGE_DWELL_MS        2000UL    // setrvání ve stavu S<->F při úvodním
-                                        // vyvětrání vzduchové stříkačky po kalibraci
 #define CALIBRATION_MS       10000UL    // celková doba kalibrace kapacitního senzoru
 #define CAP_SAMPLE_MS           50UL    // perioda čtení FDC1004
 #define DISPLAY_REFRESH_MS     500UL    // perioda překreslení OLED (jen při stojících motorech)

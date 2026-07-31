@@ -17,8 +17,6 @@ enum State : uint8_t {
     ST_WAIT_READY,       // čekání na osazení systému a volbu 10/20 ml
     ST_SET_VOLUME,       // jemné doladění objemu (enkodér/Serial), START spustí
     ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička, 10 s)
-    ST_PURGE_AIR,        // vzduchová stříkačka se vyvětrá do atmosféry (S<->F),
-                         // než se poprvé spojí s lahvičkou (viz handlePurgeAir)
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
     ST_P1_PUSH_AIR,      // tlačení vzduchu, dokud senzor nehlásí kritickou hladinu
@@ -81,7 +79,6 @@ private:
     void handleWaitReady();
     void handleSetVolume();
     void handleCalibrating();
-    void handlePurgeAir();
     void handlePushAir(bool phase1);
     void handleEqualize(bool phase1);
     void handleFillAir(bool phase1);

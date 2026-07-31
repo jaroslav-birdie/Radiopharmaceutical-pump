@@ -7,7 +7,6 @@ static const char SN_INIT[]     PROGMEM = "Inicializace";
 static const char SN_READY[]    PROGMEM = "Priprava systemu";
 static const char SN_VOLUME[]   PROGMEM = "Volba objemu";
 static const char SN_CALIB[]    PROGMEM = "Kalibrace";
-static const char SN_PURGE[]    PROGMEM = "Srovnani tlaku";
 static const char SN_P1[]       PROGMEM = "Faze 1";
 static const char SN_ITER[]     PROGMEM = "Iterace";
 static const char SN_DONE[]     PROGMEM = "Dokonceno";
@@ -17,7 +16,7 @@ static const char SN_ESTOP[]    PROGMEM = "NOUZOVY STOP";
 static const char SN_ERROR[]    PROGMEM = "CHYBA";
 
 static const char *const STATE_NAMES[ST_STATE_COUNT] PROGMEM = {
-    SN_INIT, SN_READY, SN_VOLUME, SN_CALIB, SN_PURGE,
+    SN_INIT, SN_READY, SN_VOLUME, SN_CALIB,
     SN_P1, SN_P1, SN_P1, SN_P1,
     SN_ITER, SN_ITER, SN_ITER, SN_ITER,
     SN_DONE, SN_PAUSED, SN_ALARM, SN_ESTOP, SN_ERROR
@@ -44,9 +43,18 @@ void PumpController::begin() {
 
     loadValveAngles();
     servoTimerInit();
-    // KRITICKÉ: ventily ihned do izolačních poloh – NE servo 0 stupňů!
+    // KRITICKÉ: ventily ihned do pracovních poloh – NE servo 0 stupňů!
+    // Instalační pořadí: obsluha nejprve osadí OBA ventily a OBĚ stříkačky,
+    // lahvička s jehlami přichází na řadu až jako úplně poslední krok. V
+    // lahvičce proto nikdy nemůže vzniknout přetlak ani podtlak - připojuje
+    // se jehlami do systému, který je už mechanicky hotový a otevřený do
+    // atmosféry. Pacientský ventil zůstává v izolační poloze (bezpečnost
+    // vůči pacientovi platí bez ohledu na pořadí instalace); vzduchový
+    // ventil může rovnou sedět v poloze, kterou stejně potřebuje jako
+    // první (S<->F, vyvětrání stříkačky) - žádný samostatný "purge" krok
+    // navíc už není potřeba.
     patientValve_.begin(PIN_SERVO_PATIENT, angles_.patientIsolate);
-    airValve_.begin(PIN_SERVO_AIR, angles_.airVialToFilter);
+    airValve_.begin(PIN_SERVO_AIR, angles_.airSyrToFilter);
     logEvent(LOG_VALVES_SAFE);
 
     float airStepsPerMl = STEPS_PER_MM / AIR_SYR_ML_PER_MM;
@@ -113,7 +121,6 @@ void PumpController::update() {
         case ST_WAIT_READY:      handleWaitReady();       break;
         case ST_SET_VOLUME:      handleSetVolume();       break;
         case ST_CALIBRATING:     handleCalibrating();     break;
-        case ST_PURGE_AIR:       handlePurgeAir();        break;
         case ST_P1_PUSH_AIR:     handlePushAir(true);     break;
         case ST_P1_EQUALIZE:     handleEqualize(true);    break;
         case ST_P1_FILL_AIR:     handleFillAir(true);     break;
@@ -314,45 +321,16 @@ void PumpController::handleSetVolume() {
     }
 }
 
+// Vzduchová stříkačka sedí v S<->F (vyvětrána do atmosféry) už od zapnutí
+// (viz begin()), takže tu není potřeba žádný samostatný krok navíc -
+// kalibrace přechází rovnou do Fáze 1.
 void PumpController::handleCalibrating() {
     if (phase_ == 0) {
         cap_.startCalibration();
         phase_ = 1;
     } else if (!cap_.calibrating()) {
         logEvent(LOG_CALIB_DONE);
-        changeState(ST_PURGE_AIR);
-    }
-}
-
-// Úvodní vyvětrání vzduchové stříkačky do atmosféry (S<->F).
-//
-// Lahvička je od ST_INIT nepřetržitě v klidovém stavu AIR_VALVE_VIAL_TO_FILTER
-// (V<->F), takže je celou dobu vydýchaná na atmosférický tlak - tu není
-// potřeba nijak zvlášť řešit. Stříkačka je ale v tomto stavu izolovaná (S
-// zaslepen), a při ručním osazení pístu obsluhou mohla získat mírný
-// podtlak/přetlak. Kdyby první spojení se stříkačkou bylo rovnou S<->V
-// (jak dělá 1. krok Fáze 1), tento tlak by se vyrovnával přes lahvičku -
-// riziko nasátí/vytlačení jejího obsahu nekontrolovaným směrem. Proto se
-// stříkačka nejdřív vyvětrá do atmosféry přes filtr (S<->F, V zaslepen) a
-// až poté Fáze 1 poprvé spojí stříkačku s lahvičkou.
-void PumpController::handlePurgeAir() {
-    switch (phase_) {
-        case 0:
-            logEvent(LOG_PURGE_AIR);
-            airValve_.moveTo(angles_.airSyrToFilter);
-            phase_ = 1;
-            break;
-        case 1:
-            if (airValve_.settled()) {
-                phaseT_ = millis();
-                phase_ = 2;
-            }
-            break;
-        case 2:
-            if (millis() - phaseT_ >= PURGE_DWELL_MS) {
-                changeState(ST_P1_PUSH_AIR);
-            }
-            break;
+        changeState(ST_P1_PUSH_AIR);
     }
 }
 

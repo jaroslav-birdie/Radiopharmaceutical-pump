@@ -111,15 +111,11 @@ MS1, MS2 → GND, MS3 → logické VCC driveru (trvale zapájeno na desce).
 
 ```cpp
 enum State {
-    ST_INIT,             // zapnutí; serva okamžitě do definovaných BEZPEČNÝCH
-                         // (izolačních) poloh – NIKOLI do syrového 0° servo-defaultu
+    ST_INIT,             // zapnutí; serva okamžitě do definovaných PRACOVNÍCH
+                         // poloh – NIKOLI do syrového 0° servo-defaultu
     ST_WAIT_READY,       // čekání na osazení systému a stisk START
-    ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička)
     ST_SET_VOLUME,       // zadávání objemu enkodérem, potvrzení stiskem
-    ST_PURGE_AIR,        // vzduchová stříkačka se vyvětrá do atmosféry (S<->F,
-                         // 2 s), než se poprvé spojí s lahvičkou (S<->V) –
-                         // lahvička je od ST_INIT trvale vydýchaná přes V<->F,
-                         // řešit je potřeba jen tlak ve stříkačce
+    ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička)
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
     ST_P1_PUSH_AIR,      // tlačení vzduchu do lahvičky, dokud FDC1004 nehlásí
@@ -179,7 +175,10 @@ Tři ramena: **V** (lahvička/dno), **P** (pacient), **C** (zaslepená slepá v�
 > pokud by procházela touto kombinací nekontrolovaně (u L-portového ventilu
 > s pouze 2 používanými polohami k tomu při přímém pohybu nedochází, ale
 > ověř to při návrhu skutečných úhlů).
-> Klidový/instalační stav systému = `PATIENT_VALVE_ISOLATE`, NIKOLI servo 0°.
+> Klidový stav systému (ihned po zapnutí i po celou dobu instalace) =
+> `PATIENT_VALVE_ISOLATE`, NIKOLI servo 0°. Bezpečnost pacienta na pořadí
+> instalace nezávisí – ventil zůstává izolovaný bez ohledu na to, co se
+> zrovna osazuje.
 
 ### Vzduchový ventil (Servo D10)
 Tři ramena: **S** (vzduchová stříkačka), **V** (lahvička/dno), **F** (vzduchový filtr/atmosféra)
@@ -188,9 +187,26 @@ Tři ramena: **S** (vzduchová stříkačka), **V** (lahvička/dno), **F** (vzdu
 |------|---------|----------------------|---------|
 | `AIR_VALVE_SYRINGE_TO_VIAL` | S ↔ V | F zaslepen | tlačení vzduchu do lahvičky |
 | `AIR_VALVE_SYRINGE_TO_FILTER` | S ↔ F | V zaslepen | nasátí vzduchu z atmosféry do stříkačky |
-| `AIR_VALVE_VIAL_TO_FILTER` | V ↔ F | S zaslepen | vyrovnání tlaku lahvičky s atmosférou; **bezpečný klidový stav** – stříkačka izolována |
+| `AIR_VALVE_VIAL_TO_FILTER` | V ↔ F | S zaslepen | vyrovnání tlaku lahvičky s atmosférou; **provozní klidový stav** během aplikace – stříkačka izolována |
 
-> Klidový/instalační stav systému = `AIR_VALVE_VIAL_TO_FILTER`, NIKOLI servo 0°.
+> **Instalační stav (ihned po zapnutí) = `AIR_VALVE_SYRINGE_TO_FILTER`, NIKOLI servo 0°.**
+> Liší se od provozního klidového stavu výše – viz „Pořadí instalace" níže,
+> proč lahvička žádnou zvláštní ochranu při instalaci nepotřebuje a ventil
+> může rovnou sedět v poloze, kterou stejně potřebuje jako první (vyvětrání
+> stříkačky). `AIR_VALVE_VIAL_TO_FILTER` zůstává v provozu nadále používaný
+> (vyrovnání tlaku po přidání fyz. roztoku, klidový stav po každém tlačení).
+
+### Pořadí instalace
+
+Obsluha nejprve osadí **oba ventily a obě stříkačky**. Lahvička s jehlami
+přichází na řadu **až jako úplně poslední krok**, po stisku START a
+kalibraci. Díky tomu v lahvičce **nikdy nemůže vzniknout přetlak ani
+podtlak** způsobený instalací – připojuje se jehlami do systému, který je
+už mechanicky hotový a otevřený do atmosféry. Proto odpadá potřeba
+chránit lahvičku volbou konkrétní polohy vzduchového ventilu během
+instalace (na rozdíl od dřívějšího návrhu) – jediné, co je potřeba ošetřit,
+je neznámý tlakový stav samotné **stříkačky** po ručním osazení pístu (viz
+`AIR_VALVE_SYRINGE_TO_FILTER` výše).
 
 ---
 
@@ -199,7 +215,8 @@ Tři ramena: **S** (vzduchová stříkačka), **V** (lahvička/dno), **F** (vzdu
 - ❌ Pacientský ventil je v `PATIENT_VALVE_OPEN` **výhradně** při aktivním stlačování vzduchové stříkačky (`ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`) – ve všech ostatních stavech musí být v `PATIENT_VALVE_ISOLATE`
 - ❌ Vzduchový ventil nikdy nesmí zůstat v `AIR_VALVE_SYRINGE_TO_VIAL` mimo aktivní tlačení – po dokončení kroku okamžitě přejít do `AIR_VALVE_VIAL_TO_FILTER`
 - ❌ Poloha spojující pacientskou jehlu se zaslepenou větví ventilu (P↔C) se v kódu **nikdy nepoužívá** – v `config.h` pro ni neexistuje konstanta
-- ❌ Ihned po `ST_INIT` (ještě před instalací lahvičky a stříkaček obsluhou) musí být oba ventily explicitně nastaveny do `PATIENT_VALVE_ISOLATE` a `AIR_VALVE_VIAL_TO_FILTER` – **spoléhat na mechanický 0° default serva je nebezpečné**, protože ten odpovídá otevřené průtokové cestě
+- ❌ Ihned po `ST_INIT` (ještě před instalací obsluhou) musí být oba ventily explicitně nastaveny do `PATIENT_VALVE_ISOLATE` a `AIR_VALVE_SYRINGE_TO_FILTER` – **spoléhat na mechanický 0° default serva je nebezpečné**, protože ten odpovídá otevřené průtokové cestě
+- ✅ Instalační pořadí je závazné: obsluha nejprve osadí oba ventily a obě stříkačky, lahvička s jehlami přichází na řadu jako poslední – viz „Pořadí instalace" výše
 - ✅ Při `ST_EMERGENCY_STOP`: okamžitě `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_VIAL_TO_FILTER`, zastavit oba krokové motory
 - ✅ Při `ST_PAUSED`: zastavit oba krokové motory, ventily ponechat v aktuální poloze (na rozdíl od STOP se nemusí uzavírat, protože PAUSE má pokračovat automaticky ve stejném kroku)
 - ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
@@ -533,7 +550,7 @@ bilance vzduchové stříkačky, ne senzoru.
 - [ ] Řetězcové literály přes `F()`
 - [ ] Flash < 80 %, SRAM < 70 %
 - [ ] Poloha P<->C (pacient <-> zaslepená větev) se v kódu nikde nevyskytuje
-- [ ] Ihned po ST_INIT nastaveny oba ventily do izolačních poloh (ne spoléhat na 0° default)
+- [ ] Ihned po ST_INIT nastaveny oba ventily do pracovních poloh (PATIENT_VALVE_ISOLATE, AIR_VALVE_SYRINGE_TO_FILTER) – ne spoléhat na 0° default
 - [ ] Pacientský ventil v PATIENT_VALVE_ISOLATE při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
 - [ ] MAX_AIR_REFILLS ošetřen ve Fázi 1 i v každé iteraci → ST_ALARM_EXCESS_AIR
 - [ ] Naučený objem vzduchu pro další iteraci = součet nasátí + všech doplnění v aktuální iteraci

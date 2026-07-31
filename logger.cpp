@@ -8,7 +8,6 @@ static const char MSG_WAIT_READY[]    PROGMEM = "Osad system, vol 1/2";
 static const char MSG_SET_VOLUME[]    PROGMEM = "Uprav objem, pak s";
 static const char MSG_CALIBRATING[]   PROGMEM = "Kalibrace senzoru";
 static const char MSG_CALIB_DONE[]    PROGMEM = "Kalibrace hotova";
-static const char MSG_PURGE_AIR[]     PROGMEM = "Srovnani tlaku sys.";
 static const char MSG_VALVE_PAT[]     PROGMEM = "Pohyb ventilu 1";
 static const char MSG_VALVE_AIR[]     PROGMEM = "Pohyb ventilu 2";
 static const char MSG_AIR_PUSH[]      PROGMEM = "Aplikace vzduchu";
@@ -27,7 +26,7 @@ static const char MSG_ERROR[]         PROGMEM = "CHYBA SYSTEMU";
 
 static const char *const MSG_TABLE[LOG_MSG_COUNT] PROGMEM = {
     MSG_BOOT, MSG_VALVES_SAFE, MSG_WAIT_READY, MSG_SET_VOLUME,
-    MSG_CALIBRATING, MSG_CALIB_DONE, MSG_PURGE_AIR, MSG_VALVE_PAT, MSG_VALVE_AIR,
+    MSG_CALIBRATING, MSG_CALIB_DONE, MSG_VALVE_PAT, MSG_VALVE_AIR,
     MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE,
     MSG_ITER, MSG_CRITICAL, MSG_PAUSED, MSG_RESUMED,
     MSG_NO_FLOW, MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR
