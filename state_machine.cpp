@@ -324,29 +324,35 @@ void PumpController::handleCalibrating() {
     }
 }
 
-// Úvodní srovnání tlaku: vzduchový ventil projde všemi třemi polohami
-// a v každé setrvá PURGE_DWELL_MS. Postupně se tak propojí každá dvojice
-// ramen (S-V, S-F, V-F) a celý systém - stříkačka, hadičky i lahvička -
-// se spolehlivě ustálí na atmosférickém tlaku, než začne Fáze 1.
-// Pacientský ventil zůstává po celou dobu v PATIENT_VALVE_ISOLATE.
-// Končí se v AIR_VALVE_VIAL_TO_FILTER (bezpečný klidový stav).
+// Úvodní vyvětrání vzduchové stříkačky do atmosféry (S<->F).
+//
+// Lahvička je od ST_INIT nepřetržitě v klidovém stavu AIR_VALVE_VIAL_TO_FILTER
+// (V<->F), takže je celou dobu vydýchaná na atmosférický tlak - tu není
+// potřeba nijak zvlášť řešit. Stříkačka je ale v tomto stavu izolovaná (S
+// zaslepen), a při ručním osazení pístu obsluhou mohla získat mírný
+// podtlak/přetlak. Kdyby první spojení se stříkačkou bylo rovnou S<->V
+// (jak dělá 1. krok Fáze 1), tento tlak by se vyrovnával přes lahvičku -
+// riziko nasátí/vytlačení jejího obsahu nekontrolovaným směrem. Proto se
+// stříkačka nejdřív vyvětrá do atmosféry přes filtr (S<->F, V zaslepen) a
+// až poté Fáze 1 poprvé spojí stříkačku s lahvičkou.
 void PumpController::handlePurgeAir() {
-    const uint8_t PURGE_STEPS = 3;
-    uint8_t step = phase_ >> 1;              // 0,1,2 = pořadí polohy
-    if (step >= PURGE_STEPS) {
-        changeState(ST_P1_PUSH_AIR);
-        return;
-    }
-    if ((phase_ & 1) == 0) {                 // sudá fáze: přejezd do polohy
-        uint8_t angle = (step == 0) ? angles_.airSyrToVial
-                      : (step == 1) ? angles_.airSyrToFilter
-                                    : angles_.airVialToFilter;
-        logEvent(LOG_PURGE_AIR);
-        airValve_.moveTo(angle);
-        phaseT_ = millis();
-        phase_++;
-    } else if ((millis() - phaseT_) >= (SERVO_SETTLE_MS + PURGE_DWELL_MS)) {
-        phase_++;                            // lichá fáze: setrvání v poloze
+    switch (phase_) {
+        case 0:
+            logEvent(LOG_PURGE_AIR);
+            airValve_.moveTo(angles_.airSyrToFilter);
+            phase_ = 1;
+            break;
+        case 1:
+            if (airValve_.settled()) {
+                phaseT_ = millis();
+                phase_ = 2;
+            }
+            break;
+        case 2:
+            if (millis() - phaseT_ >= PURGE_DWELL_MS) {
+                changeState(ST_P1_PUSH_AIR);
+            }
+            break;
     }
 }
 
