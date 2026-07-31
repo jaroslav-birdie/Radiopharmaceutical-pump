@@ -58,12 +58,12 @@
 // Poloha P<->C se v kódu nesmí nikdy definovat ani použít.
 
 // === VZDUCHOVÝ VENTIL – VÝCHOZÍ ÚHLY (doladit experimentálně, ukládá se do EEPROM) ===
-#define AIR_VALVE_SYRINGE_TO_VIAL_DEFAULT     0   // S<->V (tlačení vzduchu do lahvičky)
-#define AIR_VALVE_SYRINGE_TO_FILTER_DEFAULT  90   // S<->F (nasátí vzduchu z atmosféry)
+#define AIR_VALVE_SYRINGE_TO_VIAL_DEFAULT    90   // S<->V (tlačení vzduchu do lahvičky)
+#define AIR_VALVE_SYRINGE_TO_FILTER_DEFAULT  0   // S<->F (nasátí vzduchu z atmosféry)
 #define AIR_VALVE_VIAL_TO_FILTER_DEFAULT    180   // V<->F, stříkačka izolována (KLIDOVY STAV)
 
 // === EEPROM – ADRESY ===
-#define EEPROM_MAGIC_VALUE           0xA5
+#define EEPROM_MAGIC_VALUE           0xA6
 #define EEPROM_ADDR_VALID_FLAG        0
 #define EEPROM_ADDR_PATIENT_OPEN      1
 #define EEPROM_ADDR_PATIENT_ISOLATE   2
@@ -78,8 +78,8 @@
 #define STEPS_PER_MM  ((STEPS_PER_REV * MICROSTEP_DIV) / SCREW_PITCH_MM)   // = 400
 
 // Průřez stříkaček – ml na mm zdvihu (KALIBROVAT na konkrétních stříkačkách!)
-#define AIR_SYR_ML_PER_MM      0.199f   // 10ml stříkačka, vnitřní průměr ~15,9 mm
-#define SAL_SYR_ML_PER_MM      0.430f   // 30ml stříkačka, vnitřní průměr ~23,4 mm
+#define AIR_SYR_ML_PER_MM      0.2f   // 10ml stříkačka
+#define SAL_SYR_ML_PER_MM      0.625f   // 60ml stříkačka
 
 // === RYCHLOST APLIKACE ===
 #define FLOW_S_PER_ML          5        // 1 ml za 5 sekund (obě stříkačky)
@@ -99,7 +99,7 @@
 #define VOL_AIR_INTAKE_MARGIN_ML 0.5f   // přirážka k naučenému objemu pro další iteraci
 #define VOL_SAL_TOTAL_ML        30.0f
 #define VOL_SAL_ITER_ML          3.0f   // dávka fyziologického roztoku na 1 krok
-#define ITER_COUNT               9      // počet iterativních cyklů po Fázi 1
+#define ITER_COUNT               11      // počet iterativních cyklů po Fázi 1
 
 // === ZADÁVÁNÍ PŘESNÉHO OBJEMU (krok 0,1 ml; hodnoty v desetinách ml) ===
 #define VOL_FINE_STEP_DML        1      // 0,1 ml
@@ -116,7 +116,7 @@
 #define TEST_VOL_P1_PUSH_10ML_ML  7.0f   // Fáze 1, 10 ml varianta – pevný objem
 #define TEST_VOL_P1_PUSH_20ML_ML 17.0f   // Fáze 1, 20 ml varianta – pevný objem
 #define TEST_VOL_ITER_PUSH_ML     3.5f   // každá iterace – objem vzduchu VYTLAČENÝ do lahvičky
-#define TEST_VOL_ITER_FILL_ML     3.5f   // každá iterace – objem vzduchu NASÁTÝ zpět do stříkačky
+#define TEST_VOL_ITER_FILL_ML     3.75f   // každá iterace – objem vzduchu NASÁTÝ zpět do stříkačky
 #define TEST_VOL_MARGIN_ML        0.01f  // tolerance zaokrouhlení kroků
 
 // === BEZPEČNOSTNÍ LIMITY ===
