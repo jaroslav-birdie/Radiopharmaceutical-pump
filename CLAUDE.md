@@ -116,7 +116,19 @@ adresa `0x50`) paralelně s OLED. Tři elektrody:
 |-------|-----------|------|
 | **CIN1** | kruhová, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
 | **CIN2** | svislá | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
-| **CIN3** | plošné elektrody naproti sobě, **výš než CIN1** | **shield** (stínění) |
+| **CIN3** | plošné elektrody naproti sobě, **výš než CIN1** | **aktivní shield** (stínění) |
+
+> ⚠️ **Aktivní shield se NEBUDÍ z pinu CIN3.** FDC1004 má pro něj vyhrazené
+> výstupy **`SHLD1` / `SHLD2`**, které kopírují potenciál snímací elektrody.
+> Stínicí plochy proto musí být připojené na `SHLD1` (nebo `SHLD2`), ne na
+> `CIN3`. Registry `CONF_MEASx` žádnou „shield" volbu nemají – CHB umí jen
+> jiný CIN nebo CAPDAC.
+>
+> ⚠️ **Stínění kabelů NIKDY na zem.** Opletení koaxů od CIN1 i CIN2 patří
+> také na `SHLD1`/`SHLD2`. Uzemněné stínění se chová jako pasivní guard a
+> naváže kapacitu kabelu (~100 pF/m) přímo na vstup – to je nad rozsahem
+> CAPDAC (max 31 × 3,125 pF = 96,9 pF) a citlivost tím prakticky zmizí.
+> Na `GND` jde pouze napájecí zem modulu.
 
 > **Nápad k ověření (zatím nepotvrzeno):** CIN1 by možná mohla hlídat
 > **dvě** hladiny současně – horní (hladina dosáhne její horní hrany) a
