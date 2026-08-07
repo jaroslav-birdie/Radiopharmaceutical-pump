@@ -107,6 +107,45 @@ MS1, MS2 → GND, MS3 → logické VCC driveru (trvale zapájeno na desce).
 
 ---
 
+## Kapacitní snímání hladiny (FDC1004) – stav HW
+
+Snímací sestava je **fyzicky osazena** a připojena na I2C (A4/SDA, A5/SCL,
+adresa `0x50`) paralelně s OLED. Tři elektrody:
+
+| Kanál | Elektroda | Účel |
+|-------|-----------|------|
+| **CIN1** | kruhová, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
+| **CIN2** | svislá | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
+| **CIN3** | plošné elektrody naproti sobě, **výš než CIN1** | **shield** (stínění) |
+
+> **Nápad k ověření (zatím nepotvrzeno):** CIN1 by možná mohla hlídat
+> **dvě** hladiny současně – horní (hladina dosáhne její horní hrany) a
+> spodní (hladina klesne pod její spodní hranu). Ověřit experimentálně,
+> zda jsou oba přechody v signálu dostatečně rozlišitelné.
+
+### Rozdíl proti současnému kódu
+
+`capacitive.cpp` zatím konfiguruje jen **dva** kanály a **CIN3 vůbec
+nepoužívá**:
+
+```cpp
+writeReg(FDC_REG_CONF_MEAS1, FDC_MEAS1_CIN1);   // MEAS1 = CIN1 vs CAPDAC
+writeReg(FDC_REG_CONF_MEAS2, FDC_MEAS2_CIN2);   // MEAS2 = CIN2 vs CAPDAC
+writeReg(FDC_REG_FDC_CONF,   FDC_CONF_RUN);     // REPEAT, INIT_MEAS1+2
+```
+
+Přiřazení CIN1 = kritická hladina a CIN2 = pohyb hladiny **odpovídá**
+skutečnému zapojení. Doplnit bude potřeba:
+- konfiguraci **CIN3 jako shieldu** (FDC1004 to podporuje – `CAPDAC`/shield
+  volba v `CONF_MEASx`, nutno dohledat v datasheetu správné nastavení CHB)
+- případně **druhou prahovou úroveň na CIN1**, pokud se nápad s hlídáním
+  dvou hladin potvrdí
+
+> `TEST_MODE_NO_SENSOR` zůstává zatím `1` – přepnout na `0` až po odzkoušení
+> senzoru (viz sekce „Provizorní testovací režim" níže).
+
+---
+
 ## Stavový automat – stavy
 
 ```cpp
