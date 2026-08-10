@@ -8,21 +8,28 @@ firmwaru čerpadla. Používá se samostatný sketch `capacitive_test.ino`.
 
 ## Fáze 0 — kontrola zapojení (PŘED prvním měřením)
 
-Bez tohoto kroku nemá smysl cokoli měřit.
+Aktuální (odsouhlasené) zapojení:
 
-| Vodič | Kam patří | Pozn. |
-|---|---|---|
-| Stínění koaxu CIN1 | `SHLD1` | **ne na GND** |
-| Stínění koaxu CIN2 | `SHLD1` | **ne na GND** |
-| Stínicí plochy (dnes na CIN3) | `SHLD1` / `SHLD2` | aktivní shield |
-| GND modulu | GND Arduina | jen napájecí zem |
+| Vývod FDC1004 | Připojeno |
+|---|---|
+| `CIN1` | kruhová elektroda (kritická hladina) |
+| `CIN2` | svislá elektroda (pohyb hladiny) |
+| `SHLD1` | opletení **všech** koaxiálních kabelů |
+| `SHLD2` | plošné elektrody naproti sobě (aktivní shield) |
+| `CIN3`, `CIN4` | nepoužito |
+| `GND` | jen napájecí zem modulu |
 
-Uzemněné stínění naváže kapacitu kabelu (~100 pF/m) přímo na vstup. CAPDAC
-umí odečíst maximálně 31 × 3,125 = **96,9 pF**, takže při ~1 m koaxu se
-měření dostane mimo rozsah a citlivost prakticky zmizí.
+`SHLD1`/`SHLD2` jsou trvale buzené výstupy — nic se pro ně nekonfiguruje.
 
-**Kontrola po zapojení:** spusť sketch, příkaz `i`. Hodnoty CAPDAC by měly
-být nízké (jednotky). Pokud vyjde CAPDAC 25–31, je stínění nejspíš na zemi.
+**Kontrola:** spusť sketch, příkaz `i`. CAPDAC musí vyjít **nízký**
+(jednotky). Pokud vyjde 25–31, sketch to sám ohlásí varováním — znamená to
+navázanou parazitní kapacitu, tedy nejspíš stínění omylem na zemi.
+Uzemněné stínění naváže kapacitu kabelu (~100 pF/m) přímo na vstup a CAPDAC
+umí odečíst maximálně 31 × 3,125 = **96,9 pF**.
+
+**Test účinnosti aktivního shieldu:** spusť `s` (stream) a **hýbej kabely**
+/ dotkni se jejich vnějšku. Při funkčním stínění se hodnota téměř nezmění.
+Výrazné výkyvy znamenají, že shield nefunguje (špatný spoj na `SHLD1`).
 
 ---
 

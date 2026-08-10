@@ -4,12 +4,16 @@
 //  čerpadla. Slouží k charakterizaci elektrod PŘED tím, než se
 //  detekce hladiny zapojí do stavového automatu injektoru.
 //
-//  Elektrody (viz CLAUDE.md):
-//    CIN1 = kruhová, hlídá kritickou (minimální) hladinu
-//    CIN2 = svislá, sleduje pohyb hladiny (od horního okraje
-//           lahvičky až po spodní okraj CIN1)
-//    CIN3 = běžně aktivní shield na SHLD1/SHLD2 - zde ho lze
-//           dočasně měřit jako 3. kanál pro diagnostiku
+//  Skutečné zapojení FDC1004:
+//    CIN1  = kruhová elektroda -> kritická (minimální) hladina
+//    CIN2  = svislá elektroda  -> pohyb hladiny (od horního okraje
+//            lahvičky až po spodní okraj CIN1)
+//    SHLD1 = opletení všech koaxiálních kabelů
+//    SHLD2 = plošné elektrody naproti sobě (aktivní shield)
+//    CIN3, CIN4 = nepoužito
+//
+//  SHLD1/SHLD2 jsou trvale buzené výstupy - v registrech se nijak
+//  nekonfigurují, sketch s nimi proto nepracuje.
 //
 //  Výstup je CSV (oddělovač ';') pro přímé vložení do tabulky.
 //  Desetinný oddělovač je '.', v české lokalizaci Excelu je nutné
@@ -18,10 +22,9 @@
 //  Příkazy po sériové lince (9600 Bd, zakončit Enterem):
 //    h          nápověda
 //    s          start/stop streamování
-//    t          tare - nastaví aktuální hodnoty jako referenci (d1..d3)
-//    a          automatická volba CAPDAC pro všechny kanály
-//    c<ch> <v>  ruční CAPDAC, např. "c1 12" (ch 1-3, v 0-31)
-//    e<ch>      zapnout/vypnout kanál, např. "e3"
+//    t          tare - nastaví aktuální hodnoty jako referenci (d1, d2)
+//    a          automatická volba CAPDAC pro oba kanály
+//    c<ch> <v>  ruční CAPDAC, např. "c1 12" (ch 1-2, v 0-31)
 //    r<1|2|3>   vzorkovací frekvence 100 / 200 / 400 S/s
 //    n          test šumu (256 vzorků: min, max, p-p, směr. odchylka)
 //    p<ms>      perioda výpisu, např. "p100"
@@ -42,21 +45,21 @@
 
 #define CAPDAC_STEP_PF    3.125f
 #define CAPDAC_MAX        31
+#define CAPDAC_SUSPECT    25           // tolik a víc => nejspíš stínění na zemi
 #define RAW_PER_PF        524288.0f    // 2^19 dle datasheetu
 #define RAW_NEAR_FULL     7000000L     // ~13,4 pF - blízko limitu +-15 pF
 
-#define N_CH              3
+#define N_CH              2            // CIN1 + CIN2 (CIN3/CIN4 nezapojeny)
 #define NOISE_SAMPLES     256
 
-static uint8_t  capdac[N_CH]    = { 0, 0, 0 };
-static bool     chEnabled[N_CH] = { true, true, false };
-static float    baseline[N_CH]  = { 0.0f, 0.0f, 0.0f };
-static uint8_t  rateSel         = 1;      // 1=100, 2=200, 3=400 S/s
-static bool     streaming       = false;
-static uint16_t outPeriodMs     = 200;
-static uint32_t lastOut         = 0;
+static uint8_t  capdac[N_CH]   = { 0, 0 };
+static float    baseline[N_CH] = { 0.0f, 0.0f };
+static uint8_t  rateSel        = 1;      // 1=100, 2=200, 3=400 S/s
+static bool     streaming      = false;
+static uint16_t outPeriodMs    = 200;
+static uint32_t lastOut        = 0;
 static char     line[24];
-static uint8_t  lineLen         = 0;
+static uint8_t  lineLen        = 0;
 
 // ---------- nízká úroveň I2C ----------
 
@@ -87,9 +90,7 @@ static void applyConfig() {
     for (uint8_t i = 0; i < N_CH; i++) {
         writeReg(REG_CONF_MEAS1 + i,
                  ((uint16_t)i << 13) | (0x4 << 10) | ((uint16_t)capdac[i] << 5));
-        if (chEnabled[i]) {
-            measMask |= (uint16_t)1 << (7 - i);      // MEAS1->b7, MEAS2->b6, MEAS3->b5
-        }
+        measMask |= (uint16_t)1 << (7 - i);          // MEAS1->b7, MEAS2->b6
     }
     // FDC_CONF: RATE[11:10], REPEAT[8], INIT_MEASx[7:4]
     writeReg(REG_FDC_CONF, ((uint16_t)rateSel << 10) | (1 << 8) | measMask);
@@ -112,8 +113,7 @@ static void autoCapdac(uint8_t ch) {
     capdac[ch] = 0;
     applyConfig();
     for (uint8_t i = 0; i < CAPDAC_MAX; i++) {
-        int32_t raw = readRaw(ch);
-        if (raw < RAW_NEAR_FULL) {
+        if (readRaw(ch) < RAW_NEAR_FULL) {
             break;
         }
         capdac[ch]++;
@@ -129,16 +129,24 @@ static void printInfo() {
     Serial.print(F(" S/s, perioda="));
     Serial.print(outPeriodMs);
     Serial.println(F(" ms"));
+    bool suspect = false;
     for (uint8_t i = 0; i < N_CH; i++) {
         Serial.print(F("# CIN"));
         Serial.print(i + 1);
-        Serial.print(chEnabled[i] ? F(" ON  capdac=") : F(" off capdac="));
+        Serial.print(F(" capdac="));
         Serial.print(capdac[i]);
         Serial.print(F(" ("));
         Serial.print(capdac[i] * CAPDAC_STEP_PF, 2);
         Serial.print(F(" pF), aktualne "));
         Serial.print(readPf(i), 4);
         Serial.println(F(" pF"));
+        if (capdac[i] >= CAPDAC_SUSPECT) {
+            suspect = true;
+        }
+    }
+    if (suspect) {
+        Serial.println(F("# VAROVANI: vysoky CAPDAC - neni stineni omylem na GND?"));
+        Serial.println(F("# opleteni kabelu patri na SHLD1, stinici plochy na SHLD2"));
     }
 }
 
@@ -146,9 +154,6 @@ static void printInfo() {
 static void noiseTest() {
     Serial.println(F("# test sumu, nehybat sestavou..."));
     for (uint8_t ch = 0; ch < N_CH; ch++) {
-        if (!chEnabled[ch]) {
-            continue;
-        }
         float mn = 1e9f, mx = -1e9f, sum = 0.0f, sumSq = 0.0f;
         for (uint16_t i = 0; i < NOISE_SAMPLES; i++) {
             float v = readPf(ch);
@@ -181,12 +186,12 @@ static void noiseTest() {
 
 static void printHelp() {
     Serial.println(F("# h=napoveda s=stream t=tare a=autoCAPDAC n=sum i=info"));
-    Serial.println(F("# c<ch> <v>=capdac  e<ch>=on/off  r<1-3>=rate  p<ms>=perioda"));
+    Serial.println(F("# c<ch> <v>=capdac  r<1-3>=rate  p<ms>=perioda"));
     Serial.println(F("# #<text>=znacka do logu"));
 }
 
 static void printHeader() {
-    Serial.println(F("# t_ms;C1_pF;C2_pF;C3_pF;d1;d2;d3"));
+    Serial.println(F("# t_ms;C1_pF;C2_pF;d1;d2"));
 }
 
 // ---------- příkazy ----------
@@ -195,8 +200,7 @@ static void handleLine() {
     if (lineLen == 0) {
         return;
     }
-    char cmd = line[0];
-    switch (cmd) {
+    switch (line[0]) {
         case 'h':
             printHelp();
             break;
@@ -216,9 +220,7 @@ static void handleLine() {
             break;
         case 'a':
             for (uint8_t i = 0; i < N_CH; i++) {
-                if (chEnabled[i]) {
-                    autoCapdac(i);
-                }
+                autoCapdac(i);
             }
             printInfo();
             break;
@@ -231,15 +233,6 @@ static void handleLine() {
                 printInfo();
             } else {
                 Serial.println(F("# chybny parametr"));
-            }
-            break;
-        }
-        case 'e': {
-            uint8_t ch = line[1] - '1';
-            if (ch < N_CH) {
-                chEnabled[ch] = !chEnabled[ch];
-                applyConfig();
-                printInfo();
             }
             break;
         }
@@ -300,6 +293,7 @@ void setup() {
     delay(100);
 
     Serial.println(F("# FDC1004 - test kapacitniho snimani hladiny"));
+    Serial.println(F("# CIN1=kruhova, CIN2=svisla, SHLD1=kabely, SHLD2=plochy"));
     uint16_t manuf = readReg(REG_MANUF_ID);
     uint16_t dev = readReg(REG_DEVICE_ID);
     Serial.print(F("# MANUFACTURER_ID=0x"));
@@ -313,9 +307,7 @@ void setup() {
 
     applyConfig();
     for (uint8_t i = 0; i < N_CH; i++) {
-        if (chEnabled[i]) {
-            autoCapdac(i);
-        }
+        autoCapdac(i);
     }
     printInfo();
     printHelp();
@@ -334,7 +326,7 @@ void loop() {
 
     float v[N_CH];
     for (uint8_t i = 0; i < N_CH; i++) {
-        v[i] = chEnabled[i] ? readPf(i) : 0.0f;
+        v[i] = readPf(i);
     }
     Serial.print(now);
     for (uint8_t i = 0; i < N_CH; i++) {

@@ -110,25 +110,31 @@ MS1, MS2 → GND, MS3 → logické VCC driveru (trvale zapájeno na desce).
 ## Kapacitní snímání hladiny (FDC1004) – stav HW
 
 Snímací sestava je **fyzicky osazena** a připojena na I2C (A4/SDA, A5/SCL,
-adresa `0x50`) paralelně s OLED. Tři elektrody:
+adresa `0x50`) paralelně s OLED.
 
-| Kanál | Elektroda | Účel |
+### Skutečné zapojení vývodů FDC1004
+
+| Vývod | Připojeno | Účel |
 |-------|-----------|------|
-| **CIN1** | kruhová, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
-| **CIN2** | svislá | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
-| **CIN3** | plošné elektrody naproti sobě, **výš než CIN1** | **aktivní shield** (stínění) |
+| **CIN1** | kruhová elektroda, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
+| **CIN2** | svislá elektroda | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
+| **SHLD1** | opletení **všech** koaxiálních kabelů | aktivní stínění kabeláže |
+| **SHLD2** | plošné elektrody naproti sobě, **výš než CIN1** | **aktivní shield** snímacího prostoru |
+| CIN3, CIN4 | nepoužito | volné |
 
-> ⚠️ **Aktivní shield se NEBUDÍ z pinu CIN3.** FDC1004 má pro něj vyhrazené
-> výstupy **`SHLD1` / `SHLD2`**, které kopírují potenciál snímací elektrody.
-> Stínicí plochy proto musí být připojené na `SHLD1` (nebo `SHLD2`), ne na
-> `CIN3`. Registry `CONF_MEASx` žádnou „shield" volbu nemají – CHB umí jen
-> jiný CIN nebo CAPDAC.
+> **`SHLD1`/`SHLD2` se nekonfigurují.** Jsou to trvale buzené výstupy, které
+> kopírují potenciál snímací elektrody – v registrové mapě pro ně nic není.
+> Aktivní shield se proto **nedá** dělat přes `CIN3`: `CONF_MEASx` umí v poli
+> CHB jen jiný CIN nebo CAPDAC, žádnou „shield" volbu.
 >
-> ⚠️ **Stínění kabelů NIKDY na zem.** Opletení koaxů od CIN1 i CIN2 patří
-> také na `SHLD1`/`SHLD2`. Uzemněné stínění se chová jako pasivní guard a
-> naváže kapacitu kabelu (~100 pF/m) přímo na vstup – to je nad rozsahem
+> ⚠️ **Stínění nikdy na zem.** Uzemněné stínění se chová jako pasivní guard
+> a naváže kapacitu kabelu (~100 pF/m) přímo na vstup – to je nad rozsahem
 > CAPDAC (max 31 × 3,125 pF = 96,9 pF) a citlivost tím prakticky zmizí.
 > Na `GND` jde pouze napájecí zem modulu.
+>
+> **Rychlá kontrola správnosti zapojení:** po autokalibraci CAPDAC musí
+> vyjít **nízké** hodnoty (jednotky). CAPDAC 25–31 znamená navázanou
+> parazitní kapacitu, tedy nejspíš stínění na zemi.
 
 > **Nápad k ověření (zatím nepotvrzeno):** CIN1 by možná mohla hlídat
 > **dvě** hladiny současně – horní (hladina dosáhne její horní hrany) a
@@ -137,8 +143,7 @@ adresa `0x50`) paralelně s OLED. Tři elektrody:
 
 ### Rozdíl proti současnému kódu
 
-`capacitive.cpp` zatím konfiguruje jen **dva** kanály a **CIN3 vůbec
-nepoužívá**:
+`capacitive.cpp` konfiguruje dva kanály přesně podle skutečného zapojení:
 
 ```cpp
 writeReg(FDC_REG_CONF_MEAS1, FDC_MEAS1_CIN1);   // MEAS1 = CIN1 vs CAPDAC
@@ -146,10 +151,9 @@ writeReg(FDC_REG_CONF_MEAS2, FDC_MEAS2_CIN2);   // MEAS2 = CIN2 vs CAPDAC
 writeReg(FDC_REG_FDC_CONF,   FDC_CONF_RUN);     // REPEAT, INIT_MEAS1+2
 ```
 
-Přiřazení CIN1 = kritická hladina a CIN2 = pohyb hladiny **odpovídá**
-skutečnému zapojení. Doplnit bude potřeba:
-- konfiguraci **CIN3 jako shieldu** (FDC1004 to podporuje – `CAPDAC`/shield
-  volba v `CONF_MEASx`, nutno dohledat v datasheetu správné nastavení CHB)
+Přiřazení kanálů tedy **sedí** a shieldy nevyžadují žádnou konfiguraci.
+Zbývá doplnit:
+- **CAPDAC** pro oba kanály podle naměřené klidové kapacity (dnes 0)
 - případně **druhou prahovou úroveň na CIN1**, pokud se nápad s hlídáním
   dvou hladin potvrdí
 
