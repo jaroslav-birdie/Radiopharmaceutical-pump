@@ -8,8 +8,19 @@
 //  Na rozdíl od predchozích nástrojů (capacitive_sweep_test,
 //  capacitive_cycle_test) tohle NENÍ jen logování dat - běží tu
 //  přímo navržený detekční algoritmus (vyhlazení 25 vzorků +
-//  pokles od průběžného maxima + potvrzení přes N vzorků), a podle
+//  pokles od KLOUZAVÉHO OKNA + potvrzení přes N vzorků), a podle
 //  jeho výstupu se motor SÁM zastavuje.
+//
+//  v2: "maximum od začátku fáze" nahrazeno klouzavým oknem
+//  (referenceWindowMl, výchozí 5 ml) - v prvním testu se ukázalo,
+//  že pomalý drift (ne skutečná hrana) rozprostřený přes ~9 ml dokázal
+//  nastřádat pokles přes deltaUpper vůči maximu "od startu", protože
+//  to maximum si pamatovalo i vzorky staré přes 9 ml. Klouzavé okno
+//  si pamatuje jen posledních pár ml, takže pomalý drift se v něm
+//  nenastřádá, zatímco skutečný přechod (podle dat ~1,5-3,5 ml) se
+//  do okna pohodlně vejde. Navíc minWithdrawMl - žádná detekce dřív,
+//  než se odsaje aspoň tolik (fyzikálně nemá smysl hranu najít po
+//  1 ml, když start je 8+ ml).
 //
 //  Postup jednoho cyklu:
 //    FÁZE 1: odsává, dokud nenajde HORNÍ hranu (vrchol C1).
@@ -93,17 +104,21 @@
 // ---------- vyhlazení signálu (ověřeno na datech z capacitive_cycle_test) ----------
 #define SMOOTH_WINDOW      25    // ~5 s pri 200 ms/vzorek - overeny kompromis sum/zpozdeni
 #define SETTLE_MS          5000UL  // klidova doba pred kazdou fazi (motor stoji), po fyzickem zasahu
+#define REF_WINDOW_MAX_SAMPLES 150  // strop velikosti okna (viz refWindowSamplesFor - pri vetsim
+                                    // pozadavku se ticho oreze, proto se pri 'rw'/'p' hlasi varovani)
 
 #define MAX_CYCLES         10
 
-// ---------- parametry (nastavit pred 'g'; 'du'/'dc'/'cf'/'sm' jsou 2-znakove prikazy) ----------
-static float    deltaUpper      = 0.08f;   // pF - pokles od maxima = "prekroceni horni hrany"
+// ---------- parametry (nastavit pred 'g'; 'du'/'dc'/'cf'/'sm'/'rw'/'mw' jsou 2-znakove prikazy) ----------
+static float    deltaUpper      = 0.08f;   // pF - pokles od okenniho maxima = "prekroceni horni hrany"
 static float    deltaCritical   = 0.22f;   // pF - pokles od vrcholu = "kriticka (dolni) hladina"
 static uint8_t  confirmSamples  = 5;       // kolik po sobe jdoucich vzorku musi prah drzet
 static uint16_t samplePeriodMs  = 200;
 static float    phaseSafetyMl   = 18.0f;   // bezpecnostni strop na jednu fazi (mel by staci i pro start pri 20 ml)
 static float    maxSyringeMl    = 55.0f;   // kolik smi strikacka celkem od tare odebrat (60ml strikacka - rezerva)
 static uint8_t  cycleCountTarget = 5;
+static float    referenceWindowMl = 5.0f; // faze 1: jak daleko zpet "pamatuje" okenni maximum
+static float    minWithdrawMl   = 2.0f;   // faze 1: pojistka - zadna detekce driv nez tohle odsato
 
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
@@ -142,6 +157,45 @@ static float pushSmooth(float v) {
     smoothSum += v;
     smoothIdx = (smoothIdx + 1) % SMOOTH_WINDOW;
     return smoothSum / smoothCount;
+}
+
+// ---------- klouzave okno pro referencni maximum (faze 1) ----------
+// Na rozdil od "maxima od startu" tohle po ~referenceWindowMl ml "zapomene"
+// stare vzorky - pomaly drift nesouvisejici se skutecnou hranou se v okne
+// nenastrada, skutecny (kratky) prechod pres hranu ano.
+static float    refBuf[REF_WINDOW_MAX_SAMPLES];
+static uint16_t refIdx = 0;
+static uint16_t refCount = 0;
+
+static void resetRefWindow() {
+    refIdx = 0; refCount = 0;
+}
+
+// Kolik vzorku pokryje referenceWindowMl pri aktualnim tempu (FLOW_S_PER_ML)
+// a periode vzorkovani. Oreze na REF_WINDOW_MAX_SAMPLES a upozorni, pokud
+// se pozadovana delka okna nevejde (efektivni okno pak bude kratsi).
+static uint16_t refWindowSamplesFor() {
+    float samplesPerMl = ((float)FLOW_S_PER_ML * 1000.0f) / (float)samplePeriodMs;
+    uint16_t n = (uint16_t)(referenceWindowMl * samplesPerMl + 0.5f);
+    if (n < 1) n = 1;
+    if (n > REF_WINDOW_MAX_SAMPLES) {
+        Serial.print(F("# VAROVANI: referenceWindowMl se pri tomhle p nevejde do bufferu, efektivne jen "));
+        Serial.print((float)REF_WINDOW_MAX_SAMPLES / samplesPerMl, 2);
+        Serial.println(F(" ml"));
+        n = REF_WINDOW_MAX_SAMPLES;
+    }
+    return n;
+}
+
+static float pushRefAndGetMax(float v, uint16_t windowSamples) {
+    refBuf[refIdx] = v;
+    refIdx = (refIdx + 1) % windowSamples;
+    if (refCount < windowSamples) refCount++;
+    float mx = -1e9f;
+    for (uint16_t i = 0; i < refCount; i++) {
+        if (refBuf[i] > mx) mx = refBuf[i];
+    }
+    return mx;
 }
 
 // ---------- nízká úroveň I2C ----------
@@ -266,6 +320,8 @@ static void printInfo() {
     Serial.print(F("# phaseSafetyMl=")); Serial.print(phaseSafetyMl, 1);
     Serial.print(F(" maxSyringeMl=")); Serial.print(maxSyringeMl, 1);
     Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
+    Serial.print(F("# referenceWindowMl=")); Serial.print(referenceWindowMl, 1);
+    Serial.print(F(" minWithdrawMl=")); Serial.println(minWithdrawMl, 1);
     Serial.print(F("# cycleCountTarget=")); Serial.print(cycleCountTarget);
     Serial.print(F(" cycleIndex=")); Serial.print(cycleIndex);
     Serial.print(F(" state=")); Serial.println(stateName());
@@ -286,6 +342,7 @@ static void printHelp() {
     Serial.println(F("# r<n>=pocet cyklu  m<ml>=bezp. strop na fazi"));
     Serial.println(F("# du<pF>=delta horni hrana  dc<pF>=delta kriticka hrana"));
     Serial.println(F("# cf<n>=potvrzovacich vzorku  sm<ml>=max. odber ze strikacky"));
+    Serial.println(F("# rw<ml>=delka klouzaveho okna (faze 1)  mw<ml>=min. odber pred detekci"));
     Serial.println(F("# p<ms>=perioda vzorku   #<text>=znacka"));
 }
 
@@ -314,13 +371,14 @@ static void noiseTest() {
     }
 }
 
-static void logSample(uint8_t phase, float raw1, float sm1, float raw2) {
+static void logSample(uint8_t phase, float raw1, float sm1, float raw2, float ref) {
     Serial.print(cycleIndex);
     Serial.print(';'); Serial.print(millis() - runStartMs);
     Serial.print(';'); Serial.print(levelMl(), 2);
     Serial.print(';'); Serial.print(phase == 1 ? "p1" : "p2");
     Serial.print(';'); Serial.print(raw1, 4);
     Serial.print(';'); Serial.print(sm1, 4);
+    Serial.print(';'); Serial.print(ref, 4);
     Serial.print(';'); Serial.print(raw2, 4);
     Serial.print(';'); Serial.print(raw1 - baseline[0], 4);
     Serial.print(';'); Serial.println(raw2 - baseline[1], 4);
@@ -357,7 +415,10 @@ static void runPhase1() {
     digitalWrite(PIN_SAL_DIR, SAL_DIR_PUSH_LEVEL == HIGH ? LOW : HIGH);  // smer odsavani
     delayMicroseconds(10);
 
-    float runMax = -1e9f;
+    resetRefWindow();
+    uint16_t windowSamples = refWindowSamplesFor();
+    int32_t minWithdrawSteps = stepsFor(minWithdrawMl);
+
     uint8_t belowCount = 0;
     int32_t stepsDone = 0;
     int32_t safetyLimit = stepsFor(phaseSafetyMl);
@@ -386,22 +447,22 @@ static void runPhase1() {
             float raw1 = readPf(0);
             float raw2 = readPf(1);
             float sm = pushSmooth(raw1);
-            logSample(1, raw1, sm, raw2);
+            float windowMax = pushRefAndGetMax(sm, windowSamples);
+            logSample(1, raw1, sm, raw2, windowMax);
 
-            if (sm > runMax) {
-                runMax = sm;
-                belowCount = 0;
-            } else if (runMax - sm >= deltaUpper) {
+            bool eligible = (stepsDone >= minWithdrawSteps);
+            float drop = windowMax - sm;
+            if (eligible && drop >= deltaUpper) {
                 belowCount++;
                 if (belowCount >= confirmSamples) {
                     stopMotorDisable();
-                    peakRef = runMax;
+                    peakRef = windowMax;
                     resultUpperLevel[cycleIndex - 1] = levelMl();
-                    resultUpperVal[cycleIndex - 1] = runMax;
+                    resultUpperVal[cycleIndex - 1] = windowMax;
                     Serial.print(F("# *** HORNI HRANA DETEKOVANA *** cyklus="));
                     Serial.print(cycleIndex);
                     Serial.print(F(" level(od tare)=")); Serial.print(levelMl(), 2);
-                    Serial.print(F(" ml  C1_vrchol=")); Serial.print(runMax, 4);
+                    Serial.print(F(" ml  C1_vrchol(okno)=")); Serial.print(windowMax, 4);
                     Serial.print(F(" C1_ted=")); Serial.println(sm, 4);
                     Serial.println(F("# Vytahni lahvicku ze studny, zkontroluj stav."));
                     Serial.println(F("# Az bude lahvicka zpet ve studni, potvrd 'y' -> FAZE 2."));
@@ -462,7 +523,7 @@ static void runPhase2() {
             float raw1 = readPf(0);
             float raw2 = readPf(1);
             float sm = pushSmooth(raw1);
-            logSample(2, raw1, sm, raw2);
+            logSample(2, raw1, sm, raw2, peakRef);
 
             float drop = peakRef - sm;
             if (drop >= deltaCritical) {
@@ -545,6 +606,16 @@ static void handleLine() {
         if (v > 0.0f && v <= 60.0f) { maxSyringeMl = v; Serial.print(F("# maxSyringeMl=")); Serial.println(maxSyringeMl, 1); }
         return;
     }
+    if (lineLen >= 2 && line[0] == 'r' && line[1] == 'w') {
+        float v = atof(&line[2]);
+        if (v > 0.0f && v <= 15.0f) { referenceWindowMl = v; Serial.print(F("# referenceWindowMl=")); Serial.println(referenceWindowMl, 1); }
+        return;
+    }
+    if (lineLen >= 2 && line[0] == 'm' && line[1] == 'w') {
+        float v = atof(&line[2]);
+        if (v >= 0.0f && v <= 10.0f) { minWithdrawMl = v; Serial.print(F("# minWithdrawMl=")); Serial.println(minWithdrawMl, 1); }
+        return;
+    }
 
     switch (line[0]) {
         case 'h': printHelp(); break;
@@ -582,12 +653,22 @@ static void handleLine() {
             jogOnce(false);
             Serial.print(F("# jog -0.5ml, poloha=")); Serial.println(levelMl(), 2);
             break;
+        case 'r': {
+            int v = atoi(&line[1]);
+            if (v >= 1 && v <= MAX_CYCLES) { cycleCountTarget = (uint8_t)v; Serial.print(F("# cycleCountTarget=")); Serial.println(cycleCountTarget); }
+            break;
+        }
+        case 'm': {
+            float v = atof(&line[1]);
+            if (v > 0.0f && v <= 40.0f) { phaseSafetyMl = v; Serial.print(F("# phaseSafetyMl=")); Serial.println(phaseSafetyMl, 1); }
+            break;
+        }
         case 'g':
             if (runState != RS_IDLE) { Serial.println(F("# CHYBA: sekvence uz bezi/ceka na 'y'")); break; }
             if (!tared) { Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'")); break; }
             runStartMs = millis();
             cycleIndex = 1;
-            Serial.println(F("# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;C2_raw;d1;d2"));
+            Serial.println(F("# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;ref;C2_raw;d1;d2"));
             runPhase1();
             break;
         case 'y':
