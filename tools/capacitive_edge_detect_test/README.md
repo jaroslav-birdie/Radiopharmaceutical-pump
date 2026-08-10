@@ -1,11 +1,30 @@
-# Živá detekce hran s pauzou na vizuální kontrolu (FDC1004)
+# Živá detekce kritické (dolní) hrany s pauzou na vizuální kontrolu (FDC1004)
 
 Na rozdíl od `capacitive_sweep_test` a `capacitive_cycle_test` (které jen
 **loguji** data pro pozdější zpracování) tenhle nástroj přímo **běží
 navržený detekční algoritmus** — vyhlazení 25 vzorků + pokles od
-**klouzavého okna** C1 + potvrzení přes víc vzorků — a motor se podle jeho
-výstupu sám zastavuje. Cíl: ověřit, že algoritmus najde obě hrany kruhové
-elektrody spolehlivě, s vizuální kontrolou po každé detekci.
+**neomezeného maxima od začátku cyklu** C1 + potvrzení přes víc vzorků — a
+motor se podle jeho výstupu sám zastavuje. Cíl: ověřit, že algoritmus najde
+**dolní (kritickou) hranu** kruhové elektrody spolehlivě, s vizuální
+kontrolou po každé detekci.
+
+> **v4 — živá detekce HORNÍ hrany byla odstraněna.** Po 3 nezávislých
+> testech na reálném HW (viz `v2`/`v3` níže + detailní diskuze v
+> `CLAUDE.md`) se ukázalo, že celá dlouhá, šumová stoupající fáze C1
+> obsahuje lokální výkyvy (~0,07–0,10 pF) srovnatelně velké jako hledaný
+> signál horní hrany — a to **po celé délce** stoupání, ne jen na začátku.
+> Žádné ladění okna/prahu to spolehlivě nevyřešilo. Zkoumali jsme i
+> kombinaci s CIN2 (svislá elektroda): v místě skutečného vrcholu C1 je C2
+> hladká/monotónní bez jakékoli lokální události (ověřeno na datech z
+> `capacitive_cycle_test`) — C2 tenhle typ přechodu vůbec „nevidí", protože
+> nemá kruhovou geometrii se dvěma hranami jako CIN1. Shield elektrody
+> (SHLD1/SHLD2) nejsou přes registry FDC1004 vůbec čitelné, nemohou sloužit
+> jako další kanál. Horní hrana se tedy nedá živě spolehlivě detekovat —
+> nástroj se teď soustředí výhradně na dolní (kritickou) hranu, kde je
+> marže nad šumem podstatně větší (`deltaCritical=0,22` vs. pozorovaná
+> amplituda šumu ~0,07–0,10 pF, nikdy falešně nespustil ve 3 terénních
+> testech). Poloha vrcholu C1 se dál loguje a hlásí, ale jen **informativně**
+> — není to zastavovací/rozhodovací bod.
 
 > **Motor jen odsává, nikdy nedávkuje zpět.** Doplnění kapaliny mezi cykly
 > provádí obsluha ručně (mimo řízení systému) — to je záměr testu: ověřit,
@@ -65,17 +84,12 @@ větší (deltaCritical=0,22 vs. pozorovaná amplituda přechodu ~0,07–0,10).
 
 ## Postup jednoho cyklu
 
-1. **FÁZE 1** — motor odsává, dokud algoritmus nenajde **horní hranu**
-   (vrchol C1, podle klouzavého okna). Pak se **sám zastaví** a vypne driver.
-2. Obsluha **vytáhne lahvičku ze studny**, vizuálně zkontroluje stav.
-3. Vrátí lahvičku zpět, potvrdí `y`.
-4. **FÁZE 2** — motor odsává dál, dokud algoritmus nenajde **dolní
-   (kritickou) hranu** (pokles od hodnoty zamčené ve fázi 1). Zastaví se,
-   vypne driver.
-5. Obsluha vytáhne lahvičku, zkontroluje hladinu, **ručně doplní nějaké
+1. **ODSÁVÁNÍ** — motor odsává spojitě od `t`, dokud algoritmus nenajde
+   **dolní (kritickou) hranu** (pokles od průběžného, neomezeného maxima
+   C1 od začátku cyklu). Pak se **sám zastaví** a vypne driver.
+2. Obsluha vytáhne lahvičku, zkontroluje hladinu, **ručně doplní nějaké
    množství kapaliny** (motor nedávkuje!), vrátí lahvičku zpět.
-6. Potvrdí `y` → další cyklus (znovu FÁZE 1). Celkem `cycleCountTarget`×
-   (výchozí 5).
+3. Potvrdí `y` → další cyklus. Celkem `cycleCountTarget`× (výchozí 5).
 
 Po posledním cyklu sketch vypíše souhrnnou tabulku všech detekovaných
 hran a sekvence skončí.
@@ -88,6 +102,13 @@ ať se každý cyklus startuje kdekoliv v očekávaném rozmezí ~8–20 ml.
 `level_ml` ve výstupu je čistě orientační krokové počítadlo **od
 posledního `t`** (přes všechny cykly), NE skutečný obsah lahvičky —
 ten po ručním doplnění nikdo nezná, a ani nepotřebujeme ho znát.
+
+Průběžné maximum C1 (`peak_ref` ve výstupu) se nikdy „nezapomíná" —
+neomezené maximum od začátku cyklu je bezpečné právě proto, že po
+skutečném vrcholu C1 už jen monotónně klesá až ke kritické hraně (ověřeno
+na `capacitive_cycle_test`), takže se samo zamkne na správné hodnotě, aniž
+by potřebovalo klouzavé okno jako dřívější (zavržený) pokus o živou horní
+hranu.
 
 ## Pozor na kapacitu stříkačky
 
@@ -112,7 +133,7 @@ situace nenastane uprostřed měření.
    — doporučeno, výstup může být dlouhý).
 5. `o` — driver ON. Volitelně `j`/`k` — odvzdušnění.
 6. `t` — tare (vynuluje krokové počítadlo).
-7. `g` — **spustí celou sekvenci** (5 cyklů, FÁZE 1 začne hned).
+7. `g` — **spustí celou sekvenci** (5 cyklů, odsávání začne hned).
 8. **Řídit se pokyny na sériové lince** — sketch vždy napíše, co má
    obsluha udělat a kdy napsat `y`.
 9. `x` kdykoliv za běhu = okamžité zastavení (nouzové), vypne driver a
@@ -122,54 +143,44 @@ situace nenastane uprostřed měření.
 
 | Příkaz | Význam | Výchozí |
 |---|---|---|
-| `du<pF>` | δ_upper — pokles od okenního maxima = horní hrana | `du0.10` |
-| `dc<pF>` | δ_critical — pokles od vrcholu = dolní/kritická hrana | `dc0.22` |
+| `dc<pF>` | δ_critical — pokles od (neomezeného) maxima = dolní/kritická hrana | `dc0.22` |
 | `cf<n>` | kolik po sobě jdoucích vzorků musí práh držet (potvrzení) | `cf5` |
-| `rw<ml>` | délka klouzavého okna pro referenční maximum (fáze 1) | `rw5.0` |
-| `mw<ml>` | min. odběr před tím, než fáze 1 vůbec smí detekovat (auto >= `rw`) | `mw6.0` |
 | `p<ms>` | perioda vzorku | `p200` |
-| `m<ml>` | bezpečnostní strop na jednu fázi (kdyby se hrana nenašla) | `m18` |
+| `m<ml>` | bezpečnostní strop na CELÉ odsávání od `t` do kritické hrany | `m22` |
 | `sm<ml>` | max. kumulativní odběr ze stříkačky od `t` | `sm55` |
 | `r<n>` | počet cyklů | `r5` |
 
-Výchozí hodnoty `du`/`dc`/`p`/`rw`/`mw` vycházejí z analýzy 5 spojitých
-cyklů (`tools/capacitive_cycle_test`) a ze dvou neúspěšných pokusů s
-tímhle nástrojem — `dc=0.22` má tam naměřenou marži cca 3,5× nad
-nejhorším pozorovaným šumem při běžícím motoru, `rw=5` pokrývá s rezervou
-pozorovaný rozsah skutečného přechodu (~1,5–3,5 ml). `mw=6` (>= `rw`,
-sketch to sám vynutí) zajišťuje, že okno stihne aspoň jednou "protočit"
-dřív, než detekce vůbec smí proběhnout — bez toho se okno chová jako
-staré neomezené maximum. `du=0.10` je kompromis — pořád může být moc
-citlivé na přechodový jev hned po startu motoru (viz `v3` výše), sleduj
-to při dalším běhu.
-
-Pokud zmenšíš `p` (kratší perioda vzorku) natolik, že se `rw` nevejde do
-interního bufferu (150 vzorků), sketch při startu fáze 1 vypíše varování
-a tiše použije kratší efektivní okno — sleduj `i`/hlášky, ať o tom víš.
+Výchozí hodnoty `dc`/`p` vycházejí z analýzy 5 spojitých cyklů
+(`tools/capacitive_cycle_test`) a ze 3 terénních testů s tímhle nástrojem
+(viz historie `v2`/`v3`/`v4` výše) — `dc=0.22` má naměřenou marži cca 2–3×
+nad nejhorším pozorovaným šumem při běžícím motoru a ve všech 3 testech
+nikdy nespustil falešně. `m=22` pokrývá nejhorší očekávaný případ (start
+~20 ml plná → vrchol při odsatých ~16–17 ml → kritická o dalších ~2–3,5 ml
+níž), s rezervou i pro start blíž ke dnu (kde bude vrchol i kritická hrana
+o to dřív).
 
 `i` kdykoliv vypíše aktuální hodnoty všech parametrů a stav sekvence.
 
 ## Formát výstupu
 
 ```
-# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;ref;C2_raw;d1;d2
-# --- CYKLUS 1 / FAZE 1: hledani HORNI HRANY ---
+# cycle;t_ms;level_ml;C1_raw;C1_smooth;peak_ref;C2_raw;d1;d2
+# --- CYKLUS 1 : odsavani, hledani DOLNI (KRITICKE) HRANY ---
 # ustaleni (motor stoji, cca 5 s)...
-1;0;0.00;p1;3.7702;3.7702;3.7702;2.4124;0.0000;0.0000
-...
-# *** HORNI HRANA DETEKOVANA *** cyklus=1 level(od tare)=-12.40 ml C1_vrchol(okno)=3.9560 C1_ted=3.8760
-# Vytahni lahvicku ze studny, zkontroluj stav.
-# Az bude lahvicka zpet ve studni, potvrd 'y' -> FAZE 2.
+1;0;0.00;3.7702;3.7702;3.7702;2.4124;0.0000;0.0000
 ...
 # *** DOLNI (KRITICKA) HRANA DETEKOVANA *** cyklus=1 level(od tare)=-15.10 ml C1_ted=3.7300 pokles_od_vrcholu=0.2260
+# (info) vrchol C1 byl pri level=-12.40 ml C1=3.9560
+# Vytahni lahvicku, zkontroluj hladinu.
 # RUCNE doplň nejake mnozstvi kapaliny do lahvicky
 # (motor NEDAVKUJE - doplnujes mimo system), vrat zpet.
 # Az bude lahvicka zpet, potvrd 'y' -> dalsi cyklus.
 ...
 # === SOUHRN VSECH CYKLU ===
-# cyklus;horni_level_ml;horni_C1;dolni_level_ml;dolni_C1;pokles_pF
+# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF
 1;-12.40;3.9560;-15.10;3.7300;0.2260
 ...
+# vrchol_* je jen INFORMATIVNI (poloha maxima C1), NENI to detekovana/pouzita hrana
 # === SEKVENCE HOTOVA ===
 ```
 
@@ -178,8 +189,11 @@ a tiše použije kratší efektivní okno — sleduj `i`/hlášky, ať o tom ví
   jako v analýze `capacitive_cycle_test`), ne podle tohohle sloupce přímo.
 - `C1_smooth` je hodnota, na které je detekce postavená — pro kontrolu
   algoritmu je užitečnější než `C1_raw`.
-- `ref` je aktuální referenční hodnota (klouzavé okenní maximum ve fázi 1,
-  zamčený vrchol ve fázi 2) — sleduj, jestli `C1_smooth - ref` dává smysl.
+- `peak_ref` je průběžné (neomezené) maximum vyhlazeného C1 od začátku
+  cyklu — sleduj, jestli `C1_smooth - peak_ref` dává smysl.
+- `vrchol_level_ml`/`vrchol_C1` v souhrnu je jen informativní poloha
+  maxima C1 — NENÍ to detekovaná/rozhodovací hrana, jen se hodí pro
+  pozdější analýzu (viz `CLAUDE.md`, motivace pro dělené dávkování).
 - Po zkopírování celého výstupu pošli k analýze — hlavně mě zajímá, jestli
-  se okamžik `*** ... DETEKOVANA ***` shoduje s tím, co jsi v tu chvíli
-  viděl/a při vizuální kontrole.
+  se okamžik `*** DOLNI (KRITICKA) HRANA DETEKOVANA ***` shoduje s tím, co
+  jsi v tu chvíli viděl/a při vizuální kontrole.
