@@ -2,23 +2,34 @@
 //  Automatizovaný sweep test kapacitního senzoru FDC1004
 //  SAMOSTATNÝ diagnostický sketch – nemá nic společného s firmware
 //  čerpadla, ale ovládá stejný fyziologický krokový motor (D6/D7,
-//  DRV8825 na sdíleném nENBL A3), aby automaticky dávkoval a odsával
-//  tekutinu po přesných 0,5 ml krocích a měřil kapacitu FDC1004.
+//  DRV8825 na sdíleném nENBL A3), aby automaticky odsával/dávkoval
+//  tekutinu a měřil kapacitu FDC1004.
+//
+//  Cíl testu NENÍ přesný objem (píst je gumový a má vůli, dávkovaná
+//  hlasitost se proto přesně neshoduje s ml na displeji) - jde o
+//  SPOLEHLIVOU DETEKCI dvou hran kruhové elektrody:
+//    - spodní/kritická hladina (pod kruhovou elektrodou)
+//    - horní hladina (těsně nad kruhovou elektrodou), pokud je vůbec
+//      dost strmá na to, aby šla spolehlivě odlišit
+//  "level_ml" ve výstupu je proto jen orientační relativní poloha
+//  (odvozená od počtu kroků), ne přesná dávka.
 //
 //  Zpětná klapka na fyziologické větvi byla pro tento test odstraněna
-//  (viz CLAUDE.md, sekce Mechanika) – motor tedy může tekutinu jak
-//  dávkovat do lahvičky, tak ji odsávat zpět. Bez odstraněné klapky by
-//  odsávání nefungovalo (klapka propouští tok jen jedním směrem).
+//  (viz CLAUDE.md, sekce Mechanika) - motor tedy může tekutinu jak
+//  dávkovat do lahvičky, tak ji odsávat zpět.
 //
-//  Postup (viz README.md v tomto adresáři):
-//    1. Naplnit fyziologickou stříkačku (min. ~30 ml), lahvička prázdná
-//       a na místě.
+//  Doporučený postup (viz README.md v tomto adresáři):
+//    1. Naplnit lahvičku NA PLNO (odpovídá reálné kalibraci).
 //    2. 'o' - zapnout driver.
-//    3. Volitelně 'j'/'k' - poposunout tekutinu k odvzdušnění hadičky
-//       (pak znovu 't', aby se posun nezapočítal do 0 ml).
-//    4. 't' - tare (aktuální poloha = 0 ml, referenční kapacita).
-//    5. 'g' - spustit automatický sweep 0 -> MAX -> 0 po 0,5 ml.
-//    6. 'x' kdykoliv za běhu = okamžité zastavení (nouzové).
+//    3. 't' - tare (aktuální poloha = maxVol, tedy "plná").
+//    4. 'g' - hrubý sweep dolů (výchozí krok 0,5 ml) až po sweepEndMl,
+//       najít přibližně, kde leží hrana(y).
+//    5. Naplnit znovu na plno, 't' znovu.
+//    6. 'J'/'K' - rychlé přeskoky po 1 ml k přiblížení se k nalezené
+//       hraně. 's0.1' - jemný krok. 'z<ml>' - kde sweep skončí.
+//    7. 'g' - jemný zaostřený sweep jen kolem hrany.
+//    8. 'u' - volitelně vrátit zpět na maxVol (pro kontrolu hystereze).
+//    9. 'x' kdykoliv za běhu = okamžité zastavení (nouzové).
 //
 //  Výstup je CSV (oddělovač ';'), řádky '#' jsou komentáře/značky/
 //  souhrny za hladinu - zkopírovat celý výstup ze Serial Monitoru.
@@ -61,23 +72,25 @@
 #define FLOW_S_PER_ML      5UL
 #define SAL_STEP_INTERVAL_US  ((uint32_t)(1000000.0f * FLOW_S_PER_ML / SAL_STEPS_PER_ML))  // ~7812 us
 
-#define SWEEP_STEP_ML      0.5f
-#define SWEEP_STEP_STEPS   ((int32_t)(SWEEP_STEP_ML * SAL_STEPS_PER_ML + 0.5f))  // 320
+#define COARSE_JUMP_ML     1.0f   // J/K - rychlé hrubé přiblížení k hledané hraně
 
-// ---------- parametry sweepu (laditelné za běhu příkazy e/w/c/p/m) ----------
+// ---------- parametry sweepu (laditelné za běhu příkazy s/z/e/w/c/p/m) ----------
 static float    maxVolumeMl     = 20.0f;
-static float    settleEpsPf     = 0.01f;
-static uint16_t settleTimeoutMs = 6000;
+static float    sweepStepMl     = 0.5f;   // 's<ml>' - krok sweepu (0.1-0.2 pro zaostřený test)
+static float    sweepEndMl      = 0.0f;   // 'z<ml>' - kde sweep dolů skončí
+static float    settleEpsPf     = 0.05f;
+static uint16_t settleTimeoutMs = 15000;  // max. čekání na ustálení (píst je gumový, reakce je pomalejší)
+static uint16_t settleMinMs     = 3000;   // min. čekání, i kdyby okno vypadalo stabilně dřív
 static uint16_t samplesPerLevel = 60;
 static uint16_t fastSampleMs    = 20;
-static const uint16_t settleSampleMs = 25;
-static const uint8_t  settleWindow   = 8;
+static const uint16_t settleSampleMs = 40;
+static const uint8_t  settleWindow   = 12;
 
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
 static bool     tared          = false;
 static bool     driverEnabled  = false;
-static int32_t  posSteps       = 0;      // dávkovaný objem od tare, v krocích
+static int32_t  posSteps       = 0;      // odchylka od tare (maxVol) v krocích, záporná = odsáto
 static char     line[24];
 static uint8_t  lineLen        = 0;
 static uint32_t runStartMs     = 0;
@@ -154,6 +167,10 @@ static bool abortRequested() {
     return false;
 }
 
+static int32_t stepsFor(float ml) {
+    return (int32_t)(ml * SAL_STEPS_PER_ML + 0.5f);
+}
+
 // Vrátí false, pokud byl pohyb přerušen příkazem 'x'.
 static bool moveSteps(int32_t steps, bool push) {
     digitalWrite(PIN_SAL_DIR, push ? SAL_DIR_PUSH_LEVEL
@@ -173,8 +190,10 @@ static bool moveSteps(int32_t steps, bool push) {
     return true;
 }
 
+// level_ml je orientační - vztažený k maxVol nastavenému v době tare().
+// Přesnost neřeší vůli gumového pístu, jde jen o hrubou orientaci polohy.
 static float levelMl() {
-    return posSteps / SAL_STEPS_PER_ML;
+    return maxVolumeMl + (float)posSteps / SAL_STEPS_PER_ML;
 }
 
 // ---------- diagnostika ----------
@@ -182,25 +201,29 @@ static void printInfo() {
     Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
     Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
     Serial.print(F("# maxVol=")); Serial.print(maxVolumeMl, 1);
-    Serial.print(F(" stepMl=")); Serial.print(SWEEP_STEP_ML, 2);
+    Serial.print(F(" stepMl=")); Serial.print(sweepStepMl, 2);
+    Serial.print(F(" sweepEnd=")); Serial.print(sweepEndMl, 2);
     Serial.print(F(" settleEps=")); Serial.print(settleEpsPf, 4);
+    Serial.print(F(" settleMin=")); Serial.print(settleMinMs);
     Serial.print(F(" settleTimeout=")); Serial.print(settleTimeoutMs);
     Serial.print(F(" samples=")); Serial.print(samplesPerLevel);
     Serial.print(F(" fastPeriod=")); Serial.println(fastSampleMs);
     Serial.print(F("# driver=")); Serial.print(driverEnabled ? F("ON") : F("OFF"));
     Serial.print(F(" tared=")); Serial.print(tared ? F("ano") : F("ne"));
     Serial.print(F(" level=")); Serial.print(levelMl(), 3);
-    Serial.println(F(" ml"));
+    Serial.println(F(" ml (orientacni)"));
 }
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC n=sum"));
     Serial.println(F("# o=driver ON  x=driver OFF / STOP behem behu"));
-    Serial.println(F("# t=tare (0 ml)  j=jog +0.5ml  k=jog -0.5ml"));
-    Serial.println(F("# g=start automatickeho sweepu 0->MAX->0"));
+    Serial.println(F("# t=tare (poloha=maxVol, plna)  j/k=jog +-stepMl  J/K=jog +-1ml"));
+    Serial.println(F("# g=sweep dolu (aktualni poloha -> sweepEndMl)"));
+    Serial.println(F("# u=sweep nahoru (aktualni poloha -> maxVol, hystereze)"));
+    Serial.println(F("# s<ml>=krok sweepu  z<ml>=konec sweepu dolu"));
     Serial.println(F("# e<pF>=settle epsilon  w<ms>=settle timeout"));
     Serial.println(F("# c<n>=vzorku/uroven (min 50)  p<ms>=perioda vzorku"));
-    Serial.println(F("# m<ml>=max objem sweepu   #<text>=znacka"));
+    Serial.println(F("# m<ml>=maxVol (nastavit PRED tare)   #<text>=znacka"));
 }
 
 static void noiseTest() {
@@ -229,9 +252,9 @@ static void noiseTest() {
 }
 
 // ---------- měření jedné hladiny ----------
-// Počká na ustálení (klouzavé okno p-p pod settleEpsPf na obou kanálech),
-// pak zapíše >= samplesPerLevel vzorků + souhrnnou statistiku za hladinu.
-// Vrátí false, pokud přišel abort.
+// Počká na ustálení (klouzavé okno p-p pod settleEpsPf na obou kanálech,
+// nejdřív ale musí uplynout aspoň settleMinMs), pak zapíše >= samplesPerLevel
+// vzorků + souhrnnou statistiku za hladinu. Vrátí false, pokud přišel abort.
 static bool settleAndMeasure(const char *dirLabel) {
     float winC1[settleWindow], winC2[settleWindow];
     uint8_t winLen = 0, winIdx = 0;
@@ -251,7 +274,8 @@ static bool settleAndMeasure(const char *dirLabel) {
         winIdx = (winIdx + 1) % settleWindow;
         if (winLen < settleWindow) winLen++;
 
-        if (winLen == settleWindow) {
+        uint32_t elapsed = millis() - startMs;
+        if (winLen == settleWindow && elapsed >= settleMinMs) {
             float mn1 = 1e9f, mx1 = -1e9f, mn2 = 1e9f, mx2 = -1e9f;
             for (uint8_t i = 0; i < settleWindow; i++) {
                 if (winC1[i] < mn1) mn1 = winC1[i];
@@ -263,7 +287,7 @@ static bool settleAndMeasure(const char *dirLabel) {
                 break;
             }
         }
-        if (millis() - startMs >= settleTimeoutMs) {
+        if (elapsed >= settleTimeoutMs) {
             timedOut = true;
             break;
         }
@@ -321,8 +345,8 @@ static bool settleAndMeasure(const char *dirLabel) {
     return true;
 }
 
-// ---------- automatický sweep 0 -> MAX -> 0 ----------
-static void runSweep() {
+// ---------- sweep dolů: aktuální poloha -> sweepEndMl ----------
+static void runSweepDown() {
     if (!driverEnabled) {
         Serial.println(F("# CHYBA: driver je vypnuty, nejdriv 'o'"));
         return;
@@ -331,26 +355,61 @@ static void runSweep() {
         Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'"));
         return;
     }
-
-    uint16_t numLevels = (uint16_t)(maxVolumeMl / SWEEP_STEP_ML + 0.5f);
+    float span = levelMl() - sweepEndMl;
+    if (span <= 0.0f) {
+        Serial.println(F("# CHYBA: sweepEndMl je nad aktualni polohou"));
+        return;
+    }
+    uint16_t numLevels = (uint16_t)(span / sweepStepMl + 0.5f);
+    int32_t stepSteps = stepsFor(sweepStepMl);
     runStartMs = millis();
 
     Serial.println(F("# t_ms;level_ml;dir;C1_pF;C2_pF;d1;d2"));
-    Serial.println(F("# --- SWEEP START ---"));
-    if (!settleAndMeasure("up")) { return; }
+    Serial.println(F("# --- SWEEP DOLU START ---"));
+    if (!settleAndMeasure("down")) { return; }
 
     for (uint16_t i = 0; i < numLevels; i++) {
-        if (!moveSteps(SWEEP_STEP_STEPS, true)) { return; }
-        if (!settleAndMeasure("up")) { return; }
-    }
-
-    Serial.println(F("# --- SWEEP OBRAT (dolu) ---"));
-    for (uint16_t i = 0; i < numLevels; i++) {
-        if (!moveSteps(SWEEP_STEP_STEPS, false)) { return; }
+        if (!moveSteps(stepSteps, false)) { return; }   // odsavani
         if (!settleAndMeasure("down")) { return; }
     }
 
-    Serial.print(F("# --- SWEEP HOTOVO, trvani "));
+    Serial.print(F("# --- SWEEP DOLU HOTOVO, trvani "));
+    Serial.print((millis() - runStartMs) / 1000UL);
+    Serial.println(F(" s ---"));
+
+    digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
+    driverEnabled = false;
+    Serial.println(F("# driver vypnut"));
+}
+
+// ---------- sweep nahoru (volitelny, hystereze): aktualni poloha -> maxVolumeMl ----------
+static void runSweepUp() {
+    if (!driverEnabled) {
+        Serial.println(F("# CHYBA: driver je vypnuty, nejdriv 'o'"));
+        return;
+    }
+    if (!tared) {
+        Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'"));
+        return;
+    }
+    float span = maxVolumeMl - levelMl();
+    if (span <= 0.0f) {
+        Serial.println(F("# CHYBA: uz jsi na maxVol nebo nad nim"));
+        return;
+    }
+    uint16_t numLevels = (uint16_t)(span / sweepStepMl + 0.5f);
+    int32_t stepSteps = stepsFor(sweepStepMl);
+    runStartMs = millis();
+
+    Serial.println(F("# t_ms;level_ml;dir;C1_pF;C2_pF;d1;d2"));
+    Serial.println(F("# --- SWEEP NAHORU START (hystereze) ---"));
+
+    for (uint16_t i = 0; i < numLevels; i++) {
+        if (!moveSteps(stepSteps, true)) { return; }    // davkovani
+        if (!settleAndMeasure("up")) { return; }
+    }
+
+    Serial.print(F("# --- SWEEP NAHORU HOTOVO, trvani "));
     Serial.print((millis() - runStartMs) / 1000UL);
     Serial.println(F(" s ---"));
 
@@ -384,21 +443,48 @@ static void handleLine() {
             posSteps = 0;
             for (uint8_t i = 0; i < N_CH; i++) baseline[i] = readPf(i);
             tared = true;
-            Serial.println(F("# tare - aktualni poloha = 0 ml"));
+            Serial.print(F("# tare - aktualni poloha = maxVol ("));
+            Serial.print(maxVolumeMl, 1);
+            Serial.println(F(" ml, plna)"));
             break;
         case 'j':
             if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
-            moveSteps(SWEEP_STEP_STEPS, true);
-            Serial.print(F("# jog +0.5ml, poloha=")); Serial.println(levelMl(), 2);
+            moveSteps(stepsFor(sweepStepMl), true);
+            Serial.print(F("# jog +")); Serial.print(sweepStepMl, 2);
+            Serial.print(F("ml, poloha=")); Serial.println(levelMl(), 2);
             break;
         case 'k':
             if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
-            moveSteps(SWEEP_STEP_STEPS, false);
-            Serial.print(F("# jog -0.5ml, poloha=")); Serial.println(levelMl(), 2);
+            moveSteps(stepsFor(sweepStepMl), false);
+            Serial.print(F("# jog -")); Serial.print(sweepStepMl, 2);
+            Serial.print(F("ml, poloha=")); Serial.println(levelMl(), 2);
+            break;
+        case 'J':
+            if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
+            moveSteps(stepsFor(COARSE_JUMP_ML), true);
+            Serial.print(F("# jog +1ml, poloha=")); Serial.println(levelMl(), 2);
+            break;
+        case 'K':
+            if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
+            moveSteps(stepsFor(COARSE_JUMP_ML), false);
+            Serial.print(F("# jog -1ml, poloha=")); Serial.println(levelMl(), 2);
             break;
         case 'g':
-            runSweep();
+            runSweepDown();
             break;
+        case 'u':
+            runSweepUp();
+            break;
+        case 's': {
+            float v = atof(&line[1]);
+            if (v > 0.0f && v <= 5.0f) { sweepStepMl = v; Serial.print(F("# stepMl=")); Serial.println(sweepStepMl, 2); }
+            break;
+        }
+        case 'z': {
+            float v = atof(&line[1]);
+            if (v >= 0.0f) { sweepEndMl = v; Serial.print(F("# sweepEnd=")); Serial.println(sweepEndMl, 2); }
+            break;
+        }
         case 'e': {
             float v = atof(&line[1]);
             if (v > 0.0f) { settleEpsPf = v; Serial.print(F("# settleEps=")); Serial.println(settleEpsPf, 4); }
@@ -422,7 +508,11 @@ static void handleLine() {
         }
         case 'm': {
             float v = atof(&line[1]);
-            if (v > 0.0f && v <= 60.0f) { maxVolumeMl = v; Serial.print(F("# maxVol=")); Serial.println(maxVolumeMl, 1); }
+            if (v > 0.0f && v <= 60.0f) {
+                maxVolumeMl = v;
+                Serial.print(F("# maxVol=")); Serial.print(maxVolumeMl, 1);
+                Serial.println(F(" ml - pozor, nastav PRED 't' (tare)"));
+            }
             break;
         }
         case '#':
@@ -455,7 +545,7 @@ void setup() {
     Wire.setClock(100000UL);
     delay(100);
 
-    Serial.println(F("# FDC1004 - automaticky sweep test hladiny"));
+    Serial.println(F("# FDC1004 - automaticky sweep test hladiny (detekce hran)"));
     Serial.println(F("# pouziva fyziologicky stepper D6/D7, EN=A3"));
     uint16_t manuf = readReg(REG_MANUF_ID);
     uint16_t dev = readReg(REG_DEVICE_ID);
@@ -471,9 +561,11 @@ void setup() {
 
     printInfo();
     printHelp();
-    Serial.println(F("# POSTUP: 1) naplnit strikacku (min ~30ml), lahvicka prazdna"));
-    Serial.println(F("#         2) 'o' driver ON, volitelne 'j'/'k' odvzdusneni"));
-    Serial.println(F("#         3) 't' tare (0 ml), 'g' start sweepu"));
+    Serial.println(F("# POSTUP: 1) naplnit lahvicku NA PLNO"));
+    Serial.println(F("#         2) 'o' driver ON, 't' tare (poloha=maxVol)"));
+    Serial.println(F("#         3) 'g' hruby sweep dolu -> najit hranu"));
+    Serial.println(F("#         4) znovu naplnit, 't', priblizit se J/K,"));
+    Serial.println(F("#            's0.1' 'z<ml>', 'g' - jemny sweep kolem hrany"));
 }
 
 void loop() {
