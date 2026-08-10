@@ -127,19 +127,120 @@ adresa `0x50`) paralelně s OLED.
 > Aktivní shield se proto **nedá** dělat přes `CIN3`: `CONF_MEASx` umí v poli
 > CHB jen jiný CIN nebo CAPDAC, žádnou „shield" volbu.
 >
-> ⚠️ **Stínění nikdy na zem.** Uzemněné stínění se chová jako pasivní guard
-> a naváže kapacitu kabelu (~100 pF/m) přímo na vstup – to je nad rozsahem
-> CAPDAC (max 31 × 3,125 pF = 96,9 pF) a citlivost tím prakticky zmizí.
-> Na `GND` jde pouze napájecí zem modulu.
+> ⚠️ **Vnitřní opletení (SHLD1) nikdy na zem.** Uzemněné opletení koaxu se
+> chová jako pasivní guard a naváže kapacitu kabelu (~100 pF/m) přímo na
+> vstup – to je nad rozsahem CAPDAC (max 31 × 3,125 pF = 96,9 pF) a citlivost
+> tím prakticky zmizí. Na `GND` jde pouze napájecí zem modulu.
+>
+> ⚠️ **Toto pravidlo platí VÝHRADNĚ pro vnitřní opletení**, ne pro vnější
+> stínicí vrstvu – ta na zem naopak **patří**. Viz „Guard vs. screen" níže,
+> ať se to jednou nevyloží obráceně.
 >
 > **Rychlá kontrola správnosti zapojení:** po autokalibraci CAPDAC musí
 > vyjít **nízké** hodnoty (jednotky). CAPDAC 25–31 znamená navázanou
 > parazitní kapacitu, tedy nejspíš stínění na zemi.
 
-> **Nápad k ověření (zatím nepotvrzeno):** CIN1 by možná mohla hlídat
-> **dvě** hladiny současně – horní (hladina dosáhne její horní hrany) a
-> spodní (hladina klesne pod její spodní hranu). Ověřit experimentálně,
-> zda jsou oba přechody v signálu dostatečně rozlišitelné.
+> ❌ **Zamítnuto (ověřeno experimentálně, 3 nezávislé testy na reálném HW):**
+> myšlenka, že by CIN1 mohla hlídat **dvě** hladiny současně (horní hranu
+> prstence i spodní), se nepotvrdila. Živá detekce horní hrany falešně
+> spouštěla při každém pokusu, protože celá dlouhá stoupající fáze C1
+> obsahuje lokální výkyvy (~0,07–0,10 pF) **stejně velké jako hledaný
+> signál** horní hrany, a to po celé délce stoupání. Kombinace s CIN2
+> nepomáhá – v místě skutečného vrcholu C1 je C2 hladká a monotónní, tenhle
+> typ přechodu vůbec „nevidí". Detekuje se proto **pouze spodní (kritická)
+> hladina**, kde je marže nad šumem 5,4×. Historie ladění viz
+> `tools/capacitive_edge_detect_test/README.md` (v2–v5).
+
+### Guard vs. screen – dvě různé funkce, dvě různá zapojení
+
+Klíčové rozlišení, bez kterého se stínění zapojí špatně:
+
+| | **Aktivní guard** (`SHLD1`/`SHLD2`) | **Uzemněný screen** (vnější Cu fólie) |
+|---|---|---|
+| Potenciál | buzený, kopíruje snímací elektrodu | `GND` |
+| Účel | „vygumovat" kapacitu kabelu z měření | Faradayova klec proti vnějšímu poli |
+| Proti rušení | **nechrání** – konečná výstupní impedance, natečený proud = napěťová chyba přímo v měření | chrání |
+| Vazba na vstup | nulová (není napěťový rozdíl) | nulová, **pokud je za guardem** |
+
+Obojí je potřeba současně – je to standardní **triaxiální** uspořádání:
+`střed = signál` → `1. vrstva = SHLD1 (buzený guard)` → `2. vrstva = GND screen`.
+
+> **Vnější vrstvu tedy NIKDY nepřipojovat na `SHLD1`.** Velká plocha na
+> buzeném výstupu by (a) nestínila, (b) vyzařovala 25 kHz budicí signál do
+> okolí, (c) zatížila shield buffer.
+
+### Vnější stínění (Faradayova klec) – dvě varianty
+
+**Varianta A – fólie jen přes studnu a kabely, FDC1004 venku.** Funguje, ale:
+- fólie natěsno na plášti kabelu = ~300 pF/m na shield bufferu; když ho
+  nestíhá vybudit, guard přestane přesně kopírovat a kapacita kabelu se
+  vrátí do měření → nechat mezi opletením a fólií tloušťku dielektrika
+- fólie se nikde nesmí dotknout opletení `SHLD1` (Kapton/smršťovačka mezi
+  vrstvami; Cu fólie s vodivým lepidlem je v tomhle zrádná)
+
+**Varianta B (DOPORUČENO) – v kleci je i FDC1004, ven jde jen napájení a I2C.**
+Lepší ze tří důvodů:
+1. **Definuje zpáteční cestu.** Měříme ~3,8 pF, ale vazba přes sklo vychází
+   ~14 pF – rozdíl je sériový člen ~5 pF, z velké části **nedefinovaný
+   návrat** přes okolí (voda je plovoucí). Proto je sestava citlivá na to,
+   co je zrovna kolem. Uzemněná klec dá vodě stabilní návrat a signál se
+   stane funkcí hladiny a ničeho jiného.
+2. **Kapacita kabelu odpadá u zdroje** (vodiče ~cm místo desítek cm), místo
+   aby se kompenzovala guardem.
+3. **Stěnou procházejí jen filtrovatelné signály.** Snímací vodič filtrovat
+   nejde (každý filtr je kapacita na vstupu), napájení a I2C ano.
+
+> **Nejdůležitější je dno klece.** `SHLD2` je buzený a v horní části vodu od
+> klece odstiňuje – návrat se uzavře hlavně tam, kde žádný guard nestojí
+> v cestě, tedy **pode dnem a pod prstencem**. Dno držet blízko a pevně.
+
+Podmínky pro variantu B:
+- ✅ **Mechanická tuhost je zásadní** – klec musí být pevně svázaná se studnou.
+  Dominantní šum je multiplikativní a mechanický (viz níže), takže poddajná
+  fólie kousek od CIN1 šum **vyrábí**, ne odstraňuje.
+- ✅ **Zem v jednom bodě**, na analogovou zem FDC1004 uvnitř klece. Klec se
+  nesmí nikde jinde dotknout uzemněné části – smyčka kolem DRV8825 by byla
+  přímá cesta pro krokový šum.
+- ✅ **I2C je nová vstupní cesta rušení** – uvnitř klece vést odděleně od
+  snímacích vodičů, sériové rezistory ~100 Ω na SDA/SCL u čipu (zpomalí
+  hrany), ven kroucenou dvojlinkou dál od kabeláže motorů.
+- ⚠️ **Teplota** – kovová klec změní tepelné časové konstanty. Po instalaci
+  nechat hodinu běžet naprázdno a sledovat drift.
+
+### Charakteristika šumu (naměřeno, 5 spojitých cyklů)
+
+Důležité pro rozhodování o hardwaru – **nejsme limitovaní senzorem**:
+
+| Veličina | Hodnota |
+|---|---|
+| Rozlišení FDC1004 (datasheet) | 0,5 fF |
+| Naměřený šum na vzorek | 71 fF (**142× nad čipem**) |
+| Nejhorší propad vyhlazeného signálu (mimo hranu) | 41 fF |
+| Plný rozkmit C1 při vyprázdnění | 0,91 pF (modulační hloubka 27 %) |
+| `deltaCritical` = 0,22 pF → marže nad šumem | **5,4×** |
+
+> ❌ **Zvyšovat kapacitu nemá smysl.** Šum je **multiplikativní** (fyzikální),
+> ne aditivní (elektrický) – dokazuje to poměr šumu C1/C2 = 3,5 při poměru
+> kapacit jen 1,7, a hlavně fakt, že kanál s **nižší** kapacitou (C2) má
+> **lepší** SNR (20–26) než C1 (11–15). Větší kapacita zesílí signál i šum
+> současně. Původ šumu je u hladiny samotné (meniskus, film stékající po
+> skle, zvlnění od motoru) – kruhová elektroda sedí přesně na hladině, proto
+> je zasažená nejvíc; svislá integruje přes výšku, takže se u ní zředí.
+>
+> Co pomůže místo toho: **poddajná elektroda** (vodivý elastomer místo tuhé
+> fólie – odstraní vzduchovou mezeru i její kolísání vibracemi) a **mechanické
+> oddělení motoru od studny**. Naopak **nezvětšovat výšku prstence** – to by
+> rozmazalo hranu přes víc ml.
+
+> ⚠️ **Po každé změně stínění nebo geometrie elektrod znovu ověřit práh.**
+> `deltaCritical = 0,22 pF` je vyladěný empiricky na současné sestavě.
+> Zlepšená zpáteční cesta zvětší rozkmit signálu → stejný pokles nastane
+> dřív, tedy při **vyšší** hladině. To je bezpečný směr chyby, ale práh
+> **přestane sedět na fyzickou hladinu**, na které je ověřený. Přidaná pevná
+> paralelní kapacita naopak nevadí (detekce měří absolutní pokles od vrcholu,
+> ne poměr). Postup: pustit dávkový test `tools/capacitive_edge_detect_test`
+> (10 cyklů, potvrzení `1`/`0`) **dvakrát** – jednou před přestavbou jako
+> referenci, podruhé po ní.
 
 ### Rozdíl proti současnému kódu
 
@@ -154,8 +255,16 @@ writeReg(FDC_REG_FDC_CONF,   FDC_CONF_RUN);     // REPEAT, INIT_MEAS1+2
 Přiřazení kanálů tedy **sedí** a shieldy nevyžadují žádnou konfiguraci.
 Zbývá doplnit:
 - **CAPDAC** pro oba kanály podle naměřené klidové kapacity (dnes 0)
-- případně **druhou prahovou úroveň na CIN1**, pokud se nápad s hlídáním
-  dvou hladin potvrdí
+- **detekční algoritmus pro kritickou hladinu** podle ověřeného návrhu
+  z `tools/capacitive_edge_detect_test`: klouzavý průměr 25 vzorků
+  (~5 s při 200 ms/vzorek) + pokles o `deltaCritical` od **neomezeného
+  maxima** vyhlazeného C1 od začátku vytlačování + potvrzení přes 5 po
+  sobě jdoucích vzorků. Klouzavé okno pro referenční maximum **není
+  potřeba** – po přechodu vrcholu už C1 jen monotónně klesá, takže se
+  maximum zamkne samo
+
+> Druhá prahová úroveň na CIN1 (hlídání horní hrany) se **needoplňuje** –
+> viz zamítnutí výše.
 
 > `TEST_MODE_NO_SENSOR` zůstává zatím `1` – přepnout na `0` až po odzkoušení
 > senzoru (viz sekce „Provizorní testovací režim" níže).
