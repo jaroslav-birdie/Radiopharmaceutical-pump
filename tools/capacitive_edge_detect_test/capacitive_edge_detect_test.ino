@@ -110,7 +110,7 @@
 #define MAX_CYCLES         10
 
 // ---------- parametry (nastavit pred 'g'; 'du'/'dc'/'cf'/'sm'/'rw'/'mw' jsou 2-znakove prikazy) ----------
-static float    deltaUpper      = 0.08f;   // pF - pokles od okenniho maxima = "prekroceni horni hrany"
+static float    deltaUpper      = 0.10f;   // pF - pokles od okenniho maxima = "prekroceni horni hrany"
 static float    deltaCritical   = 0.22f;   // pF - pokles od vrcholu = "kriticka (dolni) hladina"
 static uint8_t  confirmSamples  = 5;       // kolik po sobe jdoucich vzorku musi prah drzet
 static uint16_t samplePeriodMs  = 200;
@@ -118,7 +118,10 @@ static float    phaseSafetyMl   = 18.0f;   // bezpecnostni strop na jednu fazi (
 static float    maxSyringeMl    = 55.0f;   // kolik smi strikacka celkem od tare odebrat (60ml strikacka - rezerva)
 static uint8_t  cycleCountTarget = 5;
 static float    referenceWindowMl = 5.0f; // faze 1: jak daleko zpet "pamatuje" okenni maximum
-static float    minWithdrawMl   = 2.0f;   // faze 1: pojistka - zadna detekce driv nez tohle odsato
+static float    minWithdrawMl   = 6.0f;   // faze 1: pojistka - zadna detekce driv nez tohle odsato
+                                           // DULEZITE: musi byt >= referenceWindowMl, jinak okno
+                                           // jeste "nestihlo zapomenout" pripadny prechodovy jev
+                                           // hned po rozjezdu motoru (viz enforceMinWithdrawFloor)
 
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
@@ -169,6 +172,20 @@ static uint16_t refCount = 0;
 
 static void resetRefWindow() {
     refIdx = 0; refCount = 0;
+}
+
+// KRITICKE: dokud neuplyne aspon referenceWindowMl, okno jeste neni "plne"
+// a chova se stejne jako stare neomezene maximum (nic nezapomina) - detekce
+// proto nesmi byt povolena driv, nez okno stihlo aspon jednou "protocit".
+// Bez tohohle vynuceni by mensi minWithdrawMl nez referenceWindowMl
+// znamenalo, ze prvnich pozadovanych "referenceWindowMl" ml odsavani NENI
+// vubec chranenych pred prechodovym jevem hned po rozjezdu motoru.
+static void enforceMinWithdrawFloor() {
+    if (minWithdrawMl < referenceWindowMl) {
+        minWithdrawMl = referenceWindowMl;
+        Serial.print(F("# VAROVANI: minWithdrawMl zvednuto na referenceWindowMl="));
+        Serial.println(minWithdrawMl, 1);
+    }
 }
 
 // Kolik vzorku pokryje referenceWindowMl pri aktualnim tempu (FLOW_S_PER_ML)
@@ -417,6 +434,7 @@ static void runPhase1() {
 
     resetRefWindow();
     uint16_t windowSamples = refWindowSamplesFor();
+    enforceMinWithdrawFloor();
     int32_t minWithdrawSteps = stepsFor(minWithdrawMl);
 
     uint8_t belowCount = 0;
@@ -608,12 +626,16 @@ static void handleLine() {
     }
     if (lineLen >= 2 && line[0] == 'r' && line[1] == 'w') {
         float v = atof(&line[2]);
-        if (v > 0.0f && v <= 15.0f) { referenceWindowMl = v; Serial.print(F("# referenceWindowMl=")); Serial.println(referenceWindowMl, 1); }
+        if (v > 0.0f && v <= 15.0f) {
+            referenceWindowMl = v;
+            Serial.print(F("# referenceWindowMl=")); Serial.println(referenceWindowMl, 1);
+            enforceMinWithdrawFloor();
+        }
         return;
     }
     if (lineLen >= 2 && line[0] == 'm' && line[1] == 'w') {
         float v = atof(&line[2]);
-        if (v >= 0.0f && v <= 10.0f) { minWithdrawMl = v; Serial.print(F("# minWithdrawMl=")); Serial.println(minWithdrawMl, 1); }
+        if (v >= 0.0f && v <= 15.0f) { minWithdrawMl = v; Serial.print(F("# minWithdrawMl=")); Serial.println(minWithdrawMl, 1); }
         return;
     }
 

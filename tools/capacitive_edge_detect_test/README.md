@@ -29,11 +29,37 @@ dolní hranu se pak nepodařilo najít vůbec.
 rozprostřený přes víc ml než okno se v žádném jednotlivém okně nenastřádá
 na `deltaUpper`, zatímco skutečný přechod (podle dat trvá cca 1,5–3,5 ml)
 se do 5ml okna pohodlně vejde. Navíc přidána pojistka `minWithdrawMl`
-(výchozí 2 ml) — žádná detekce dřív, než se aspoň tolik odsaje (fyzikálně
-nedává smysl najít hranu po 1 ml, když start je 8+ ml).
+(výchozí 2 ml) — žádná detekce dřív, než se aspoň tolik odsaje.
 
 Výstup teď navíc loguje sloupec `ref` (aktuální referenční hodnota) — pro
 kontrolu, jestli klouzavé okno dělá, co má.
+
+## v3 — oprava po druhém testu (minWithdrawMl musí být ≥ referenceWindowMl)
+
+Druhý test ukázal **jiný** problém: hned po rozjezdu motoru (prvních ~3 ml)
+se objevil krátký "rozkolísaný" přechod — pokles a zpětný nárůst signálu
+o ~0,07–0,10 pF, řádově stejně velký jako signál, co hledáme pro horní
+hranu. Tenhle přechod pak vytvořil falešné referenční maximum, ze kterého
+následný (taky ne úplně skutečný) pokles spustil detekci o mnoho ml dřív.
+
+Ukázalo se, že v1 oprava (klouzavé okno) v tomhle případě vůbec nezabrala:
+dokud neuplyne aspoň `referenceWindowMl` (5 ml), okno se teprve **plní** a
+chová se úplně stejně jako staré neomezené maximum — nic nezapomíná.
+`minWithdrawMl` byl nastavený na 2 ml, tedy MÉNĚ než `referenceWindowMl` —
+detekce byla povolená dřív, než okno stihlo vůbec začít "zapomínat".
+
+**Oprava:** `minWithdrawMl` teď musí být >= `referenceWindowMl` — sketch to
+sám vynutí (a upozorní), ať se to už nedá nastavit špatně. Výchozí hodnota
+zvednuta na 6 ml. `deltaUpper` zvednuto na 0,10 pF jako druhá pojistka.
+
+**Poctivě řečeno:** tenhle přechodový jev po startu motoru se objevil už
+potřetí (poprvé jako neobjasněná anomálie v `capacitive_cycle_test`, teď
+dvakrát tady) — vypadá to na skutečný, opakovatelný mechanický/elektrický
+jev, ne na náhodu. Jeho amplituda je bohužel podobná signálu pro horní
+hranu, takže si nejsem jistý, že tahle oprava stačí napoprvé. Horní hrana
+je sekundární cíl — pokud bude dál dělat problémy, dává smysl prioritizovat
+spolehlivost dolní (kritické) hrany, kde je marže nad šumem podstatně
+větší (deltaCritical=0,22 vs. pozorovaná amplituda přechodu ~0,07–0,10).
 
 ---
 
@@ -96,25 +122,26 @@ situace nenastane uprostřed měření.
 
 | Příkaz | Význam | Výchozí |
 |---|---|---|
-| `du<pF>` | δ_upper — pokles od okenního maxima = horní hrana | `du0.08` |
+| `du<pF>` | δ_upper — pokles od okenního maxima = horní hrana | `du0.10` |
 | `dc<pF>` | δ_critical — pokles od vrcholu = dolní/kritická hrana | `dc0.22` |
 | `cf<n>` | kolik po sobě jdoucích vzorků musí práh držet (potvrzení) | `cf5` |
 | `rw<ml>` | délka klouzavého okna pro referenční maximum (fáze 1) | `rw5.0` |
-| `mw<ml>` | min. odběr před tím, než fáze 1 vůbec smí detekovat | `mw2.0` |
+| `mw<ml>` | min. odběr před tím, než fáze 1 vůbec smí detekovat (auto >= `rw`) | `mw6.0` |
 | `p<ms>` | perioda vzorku | `p200` |
 | `m<ml>` | bezpečnostní strop na jednu fázi (kdyby se hrana nenašla) | `m18` |
 | `sm<ml>` | max. kumulativní odběr ze stříkačky od `t` | `sm55` |
 | `r<n>` | počet cyklů | `r5` |
 
-Výchozí hodnoty `du`/`dc`/`p`/`rw` vycházejí přímo z analýzy 5 spojitých
-cyklů (`tools/capacitive_cycle_test`) — `dc=0.22` má tam naměřenou marži
-cca 3,5× nad nejhorším pozorovaným šumem při běžícím motoru s tímhle
-vyhlazením, `rw=5` je zvolené tak, aby s rezervou pokrylo pozorovaný
-rozsah skutečného přechodu (~1,5–3,5 ml) a přitom bylo výrazně kratší než
-pomalý drift, který způsobil chybnou detekci v prvním testu (~9 ml).
-`du=0.08` je opatrnější odhad (menší marže, horní hrana je sekundární
-cíl) — pokud se při testu ukáže, že spouští moc brzy/pozdě, doladit a
-spustit znovu.
+Výchozí hodnoty `du`/`dc`/`p`/`rw`/`mw` vycházejí z analýzy 5 spojitých
+cyklů (`tools/capacitive_cycle_test`) a ze dvou neúspěšných pokusů s
+tímhle nástrojem — `dc=0.22` má tam naměřenou marži cca 3,5× nad
+nejhorším pozorovaným šumem při běžícím motoru, `rw=5` pokrývá s rezervou
+pozorovaný rozsah skutečného přechodu (~1,5–3,5 ml). `mw=6` (>= `rw`,
+sketch to sám vynutí) zajišťuje, že okno stihne aspoň jednou "protočit"
+dřív, než detekce vůbec smí proběhnout — bez toho se okno chová jako
+staré neomezené maximum. `du=0.10` je kompromis — pořád může být moc
+citlivé na přechodový jev hned po startu motoru (viz `v3` výše), sleduj
+to při dalším běhu.
 
 Pokud zmenšíš `p` (kratší perioda vzorku) natolik, že se `rw` nevejde do
 interního bufferu (150 vzorků), sketch při startu fáze 1 vypíše varování
