@@ -1,75 +1,69 @@
 // ============================================================
 //  Ziva detekce DOLNI (KRITICKE) hrany kruhove elektrody (CIN1)
-//  s pauzou na vizualni kontrolu, 5x opakovano.
+//  - automatizovana davkova serie (vychozi 10x) pro rychle nasbirani
+//  dat z vetsiho poctu opakovani.
 //  SAMOSTATNY diagnosticky sketch - nema nic spolecneho s firmware
 //  cerpadla. Ovlada fyziologicky krokovy motor (D6/D7, DRV8825 na
-//  sdilenem nENBL A3) - POUZE odsavani, nikdy nedavkuje zpet.
+//  sdilenem nENBL A3) - odsava z lahvicky I davkuje zpet, ze stejne
+//  strikacky (zpetna klapka byla pro tenhle test odstranena).
 //
-//  v4 - REDESIGN: zivá detekce HORNI hrany byla po 3 nezavislych
-//  testech na realnem HW zamitnuta a z nastroje odstranena (viz
-//  README.md, v2/v3 historie nize + CLAUDE.md diskuze). Duvod:
-//  cela dlouha, sumova stoupajici faze C1 obsahuje lokalni vykyvy
-//  (~0,07-0,10 pF) srovnatelne velike jako hledany signal horni
-//  hrany (deltaUpper), a to PO CELE DELCE stoupani, ne jen na
-//  zacatku - zadne ladeni okna/prahu to spolehlive nevyresilo.
-//  Kombinace s CIN2 (svisla elektroda) taky nepomaha - C2 je v miste
-//  skutecneho vrcholu C1 hladka/monotonni, bez jakekoliv lokalni
-//  udalosti (overeno na cistych datech z capacitive_cycle_test).
-//  Shield elektrody (SHLD1/SHLD2) nejsou pres registry FDC1004
-//  vubec citelne (viz CLAUDE.md) - nemohou slouzit jako dalsi kanal.
-//
-//  Sketch ted dela JEDNU spojitou faze: odsava od tare, prubezne
-//  sleduje BEZ OKNA (neomezene) maximum vyhlazeneho C1 - jakmile se
-//  jednou prejde skutecny vrchol, dal uz podle overeneho chovani
-//  (capacitive_cycle_test) C1 uz jen monotonne klesa az ke kriticke
-//  hrane, takze neomezene maximum od tohohle bodu zustava zamcene
-//  samo od sebe, zadne klouzave okno neni potreba (to bylo nutne jen
-//  pro ochranu MALEHO deltaUpper prahu pred pomalym driftem/wobblem -
-//  VELKY deltaCritical=0,22 pF tenhle problem nema, viz nize).
-//  Poloha vrcholu se dal loguje a hlasi jen INFORMATIVNE (pro pripadnou
-//  pozdejsi analyzu), NENI to zastavovaci/rozhodovaci bod.
-//
-//  Empiricky nalez ze 3 predchozich terennich testu: deltaCritical=0,22
-//  pF NIKDY falesne nespustil (na rozdil od deltaUpper=0,08/0,10, ktery
-//  spustil falesne pri kazdem pokusu) - marze cca 2-3x nad pozorovanym
-//  sumovym stropem (~0,07-0,10 pF). Proto jde pouzit jako jediny,
-//  spojity, prubezny prah po celou delku odsavani bez zvlastni ochrany.
+//  v5 - REDESIGN pro davkove testovani (viz CLAUDE.md/README diskuze):
+//   1) Odstranen koncept "maximalniho vytlaceneho objemu, po kterem
+//      se vyhlasi alarm ze hrana nebyla nalezena" (byval `searchSafetyMl`
+//      pouzity jako detekcni-selhani alarm). Skutecna aplikace tohle
+//      nema - objem vytlaceny vzduchem proti neznamemu odporu je
+//      NEZNAMA velicina (proto se vubec pouziva kapacitni snimani),
+//      takze zadny volumovy "failsafe" v produkci neexistuje a bench
+//      nastroj by ho nemel predstirat jako smysluplny koncept.
+//      MECH_LIMIT_ML nize je vyhradne HARDWAROVA ochrana zdvihu
+//      strikacky (aby motor nemlel proti mechanickemu dorazu pri
+//      neprerusenem davkovem behu), NE napodobenina produkcni logiky.
+//   2) Prestalo se sledovat "celkem odebrano ze strikacky od tare"
+//      (`maxSyringeMl`/`withdrawnMl()` s vyzvou k rucnimu doplneni
+//      strikacky) - odsavani i davkovani zpet uz jde ze stejne
+//      strikacky v uzavrenem cyklu (viz bod 4), takze se pozice
+//      strikacky v prumeru sama vyrovnava (odebrany objem kazdeho
+//      cyklu ~ odpovida nahodnemu doplneni z konce predchoziho cyklu).
+//   3) Rucni doplnovani lahvicky (puvodni 'y' + fyzicke doliti mimo
+//      system) nahrazeno AUTOMATICKYM davkovanim nahodneho objemu
+//      6-17 ml zpet do lahvicky tou stejnou strikackou/motorem - viz
+//      dispenseRandomRefill(). Obsluha uz nedolieva rucne.
+//   4) Vizualni kontrola po detekci kriticke hrany potvrzuje binarne:
+//      '1' = detekce vypadala spravne, '0' = detekce vypadala chybne.
+//      Sketch pak AUTOMATICKY pokracuje (doplneni + dalsi cyklus) bez
+//      dalsiho rucniho zasahu - cely davkovy beh (vychozi 10 cyklu) tak
+//      vyzaduje jen jedno stisknuti klavesy na cyklus.
 //
 //  Postup jednoho cyklu:
-//    ODSAVANI: odsava spojite od tare, dokud nenajde DOLNI (kritickou)
-//              hranu (pokles od prubezneho maxima C1).
+//    ODSAVANI: odsava spojite od aktualni pozice, dokud nenajde DOLNI
+//              (kritickou) hranu (pokles od prubezneho maxima C1 -
+//              stejny overeny algoritmus jako v4, viz README).
 //            -> zastavi motor, obsluha vytahne lahvicku, zkontroluje
-//               hladinu, RUCNE doplni nejake mnozstvi kapaliny do
-//               lahvicky (mimo rizeni systemu - motor nedavkuje!)
-//               a vrati lahvicku zpet.
-//    'y'   : potvrzeni -> dalsi cyklus, celkem `cycleCountTarget`-krat
-//            (vychozi 5).
+//               hladinu, vrati zpet do studny, potvrdi '1' (OK) nebo
+//               '0' (chyba detekce).
+//    AUTO   : sketch sam dF1004vkuje nahodny objem 6-17 ml zpet do
+//             lahvicky (ta stejna strikacka/motor, opacny smer), pak
+//             rovnou spusti dalsi cyklus odsavani. Celkem
+//             `cycleCountTarget`x (vychozi 10).
 //
-//  DULEZITE - pocatecni hladina po rucnim doplneni NENI a nemuze
-//  byt systemu znama (viz CLAUDE.md diskuze) - ocekava se jen, ze
-//  bude lezet v rozmezi ~8-20 ml. Detekcni algoritmus na presne
-//  pocatecni hladine nezavisi (funguje jen podle tvaru signalu).
-//  `level_ml` ve vystupu je cisted orientacni krokove pocitadlo od
-//  posledniho 't', NE skutecny obsah lahvicky.
-//
-//  DULEZITE - fyzicka kapacita strikacky: protoze motor mezi cykly
-//  nikdy nedavkuje zpet (doplnuje se rucne mimo system), kumulativni
-//  odber pres 5 cyklu se scita. Sketch hlida `maxSyringeMl` a pred
-//  kazdym dalsim cyklem zkontroluje, jestli zbyva dost zdvihu - pokud
-//  ne, zastavi se a vyzve k rucnimu doplneni STRIKACKY (ne lahvicky)
-//  a novemu 't'.
+//  DULEZITE - pocatecni hladina v lahvicce pro CYKLUS 1 se plni rucne
+//  (obsluha, libovolne v rozmezi ~6-17 ml, stejny rozsah jako pozdejsi
+//  automaticke doplnovani) - to jeste nejde automatizovat, protoze pred
+//  prvnim cyklem nemame zadnou znamou referenci. Od cyklu 2 uz plni
+//  system sam.
 //
 //  Zpetna klapka na fyziologicke vetvi byla pro tento test
-//  odstranena (viz CLAUDE.md) - motor tedy zvlada odsavat.
+//  odstranena (viz CLAUDE.md) - motor tedy zvlada odsavat i davkovat.
 //
 //  Postup (viz README.md v tomto adresari):
-//    1. Naplnit strikacku vydatne (>= maxSyringeMl + rezerva).
-//    2. Lahvicku naplnit na libovolnou hladinu v rozmezi ~8-20 ml,
-//       vlozit do studny.
+//    1. Naplnit strikacku na rozumnou stredni hodnotu (doporuceno
+//       ~30 ml) - viz MECH_LIMIT_ML nize, proc.
+//    2. Lahvicku naplnit na libovolnou hladinu ~6-17 ml, vlozit do studny.
 //    3. 'o' - driver ON, volitelne 'j'/'k' - odvzdusneni.
 //    4. 't' - tare (referencni bod pro krokove pocitadlo).
-//    5. 'g' - spustit celou automatickou sekvenci (5 cyklu).
-//    6. Ridit se pokyny na seriove lince ('y' pro pokracovani).
+//    5. 'g' - spustit celou automatickou sekvenci (cycleCountTarget cyklu).
+//    6. Po kazde detekci kriticke hrany: zkontrolovat, vratit lahvicku
+//       do studny, potvrdit '1' nebo '0' - sketch pokracuje sam.
 //    7. 'x' kdykoliv za behu = okamzite zastaveni (nouzove).
 // ============================================================
 #include <Arduino.h>
@@ -98,7 +92,7 @@
 #define PIN_STEPPER_EN    A3
 #define STEPPER_ENABLED_LEVEL   LOW
 #define STEPPER_DISABLED_LEVEL  HIGH
-#define SAL_DIR_PUSH_LEVEL      HIGH     // HIGH = davkovani do lahvicky (tady se nepouziva)
+#define SAL_DIR_PUSH_LEVEL      HIGH     // HIGH = davkovani do lahvicky
 
 #define SCREW_PITCH_MM     8.0f
 #define STEPS_PER_REV      200
@@ -118,31 +112,36 @@
 
 #define MAX_CYCLES         10
 
-// ---------- parametry (nastavit pred 'g'; 'dc'/'cf'/'sm' jsou 2-znakove prikazy) ----------
+// Vyhradne HARDWAROVA ochrana zdvihu strikacky (60 ml, cca 96 mm zdvihu) -
+// NENI to detekcni ani "alarm" koncept (viz v5 poznamka vyse). Symetricky
+// strop kolem pozice pri 't' - pri ocekavanem vyvazenem odber/doplneni
+// cyklu (viz bod 2 vyse) by se nikdy nemel priblizit, pokud se detekce
+// nezacne chovat vyrazne mimo ocekavani.
+#define MECH_LIMIT_ML      25.0f
+
+// ---------- parametry (nastavit pred 'g'; 'dc'/'cf' jsou 2-znakove prikazy) ----------
 static float    deltaCritical   = 0.22f;   // pF - pokles od (neomezeneho) maxima = "kriticka (dolni) hladina"
 static uint8_t  confirmSamples  = 5;       // kolik po sobe jdoucich vzorku musi prah drzet
 static uint16_t samplePeriodMs  = 200;
-static float    searchSafetyMl  = 22.0f;   // bezpecnostni strop na CELE odsavani od tare do kriticke hrany
-                                            // (pokryva nejhorsi pripad: start ~20 ml plna -> vrchol
-                                            // pri odsatych ~16-17 ml -> kriticka o dalsich ~2-3,5 ml niz)
-static float    maxSyringeMl    = 55.0f;   // kolik smi strikacka celkem od tare odebrat (60ml strikacka - rezerva)
-static uint8_t  cycleCountTarget = 5;
+static uint8_t  cycleCountTarget = 10;
 
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
 static bool     tared          = false;
 static bool     driverEnabled  = false;
-static int32_t  posSteps       = 0;      // 0 = pri tare; zaporne = odsato od tare (kumulativne pres vsechny cykly)
+static int32_t  posSteps       = 0;      // 0 = pri tare; zaporne = odsato, kladne = davkovano nad tare
 static char     line[24];
 static uint8_t  lineLen        = 0;
 static uint32_t runStartMs     = 0;
 
-enum RunState { RS_IDLE, RS_AWAIT_NEXT_CYCLE };
+enum RunState { RS_IDLE, RS_AWAIT_CONFIRM };
 static RunState runState = RS_IDLE;
 static uint8_t  cycleIndex = 0;   // 1-based
 
-static float resultPeakLevel[MAX_CYCLES], resultPeakVal[MAX_CYCLES];      // informativni, NENI stop bod
-static float resultLowerLevel[MAX_CYCLES], resultLowerVal[MAX_CYCLES];    // skutecny bezpecnostni bod
+static float   resultPeakLevel[MAX_CYCLES], resultPeakVal[MAX_CYCLES];      // informativni, NENI stop bod
+static float   resultLowerLevel[MAX_CYCLES], resultLowerVal[MAX_CYCLES];    // skutecny bezpecnostni bod
+static uint8_t resultConfirmOk[MAX_CYCLES];                                 // 1='1' (OK), 0='0' (chyba)
+static float   resultRefillMl[MAX_CYCLES];                                  // nahodny objem doplneny PO tomhle cyklu (-1 = zadny, posledni cyklus)
 
 // ---------- klouzavy prumer C1 (kruhovy buffer, O(1) update) ----------
 static float   smoothBuf[SMOOTH_WINDOW];
@@ -240,14 +239,17 @@ static int32_t stepsFor(float ml) {
     return (int32_t)(ml * SAL_STEPS_PER_ML + 0.5f);
 }
 
-// level_ml je od posledniho 'tare' - NENI to obsah lahvicky (ten po rucnim
-// doplneni neznáme), jen orientacni krokove pocitadlo pro log.
+// level_ml je od posledniho 'tare' - NENI to obsah lahvicky (ta uz po prvnim
+// cyklu neni systemu znama v absolutnich ml), jen orientacni krokove
+// pocitadlo pozice strikacky pro log a mechanickou ochranu.
 static float levelMl() {
     return (float)posSteps / SAL_STEPS_PER_ML;
 }
 
-static float withdrawnMl() {
-    return -levelMl();
+static bool withinMechLimit() {
+    float ml = levelMl();
+    if (ml < 0.0f) ml = -ml;
+    return ml <= MECH_LIMIT_ML;
 }
 
 static void stopMotorDisable() {
@@ -269,11 +271,17 @@ static void jogOnce(bool push) {
     }
 }
 
+// ---------- nahodny objem pro automaticke doplneni (6.00-17.00 ml) ----------
+static float randomRefillMl() {
+    long hundredths = random(0, 1101);   // 0..1100 -> 0.00..11.00
+    return 6.0f + (float)hundredths / 100.0f;
+}
+
 // ---------- diagnostika ----------
 static const char *stateName() {
     switch (runState) {
         case RS_IDLE: return "IDLE";
-        case RS_AWAIT_NEXT_CYCLE: return "CEKA NA 'y' (-> dalsi cyklus)";
+        case RS_AWAIT_CONFIRM: return "CEKA NA '1'/'0' (potvrzeni detekce)";
     }
     return "?";
 }
@@ -283,16 +291,15 @@ static void printInfo() {
     Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
     Serial.print(F("# deltaCritical=")); Serial.print(deltaCritical, 4);
     Serial.print(F(" confirmSamples=")); Serial.println(confirmSamples);
-    Serial.print(F("# searchSafetyMl=")); Serial.print(searchSafetyMl, 1);
-    Serial.print(F(" maxSyringeMl=")); Serial.print(maxSyringeMl, 1);
+    Serial.print(F("# MECH_LIMIT_ML=")); Serial.print(MECH_LIMIT_ML, 1);
+    Serial.print(F(" (hardwarova ochrana, ne detekcni alarm)"));
     Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
     Serial.print(F("# cycleCountTarget=")); Serial.print(cycleCountTarget);
     Serial.print(F(" cycleIndex=")); Serial.print(cycleIndex);
     Serial.print(F(" state=")); Serial.println(stateName());
     Serial.print(F("# driver=")); Serial.print(driverEnabled ? F("ON") : F("OFF"));
     Serial.print(F(" tared=")); Serial.print(tared ? F("ano") : F("ne"));
-    Serial.print(F(" level(od tare)=")); Serial.print(levelMl(), 3);
-    Serial.print(F(" ml  odebrano celkem=")); Serial.print(withdrawnMl(), 2);
+    Serial.print(F(" poloha strikacky(od tare)=")); Serial.print(levelMl(), 3);
     Serial.println(F(" ml"));
 }
 
@@ -301,11 +308,11 @@ static void printHelp() {
     Serial.println(F("# o=driver ON  x=driver OFF / STOP behem behu"));
     Serial.println(F("# t=tare (reset pocitadla, po naplneni strikacky)"));
     Serial.println(F("# j/k=jog +-0.5ml (odvzdusneni)"));
-    Serial.println(F("# g=spustit celou sekvenci (cycleCountTarget cyklu)"));
-    Serial.println(F("# y=potvrdit pokracovani (dalsi cyklus)"));
-    Serial.println(F("# r<n>=pocet cyklu  m<ml>=bezp. strop na cele odsavani"));
-    Serial.println(F("# dc<pF>=delta kriticka hrana  cf<n>=potvrzovacich vzorku"));
-    Serial.println(F("# sm<ml>=max. odber ze strikacky  p<ms>=perioda vzorku"));
+    Serial.println(F("# g=spustit celou davkovou sekvenci (cycleCountTarget cyklu)"));
+    Serial.println(F("# 1=potvrdit detekci OK   0=potvrdit chybnou detekci"));
+    Serial.println(F("#   (obojí automaticky pokracuje dalsim cyklem)"));
+    Serial.println(F("# r<n>=pocet cyklu  dc<pF>=delta kriticka hrana"));
+    Serial.println(F("# cf<n>=potvrzovacich vzorku  p<ms>=perioda vzorku"));
     Serial.println(F("# #<text>=znacka"));
 }
 
@@ -334,10 +341,11 @@ static void noiseTest() {
     }
 }
 
-static void logSample(float raw1, float sm1, float raw2, float ref) {
+static void logSample(char phase, float raw1, float sm1, float raw2, float ref) {
     Serial.print(cycleIndex);
     Serial.print(';'); Serial.print(millis() - runStartMs);
     Serial.print(';'); Serial.print(levelMl(), 2);
+    Serial.print(';'); Serial.print(phase);
     Serial.print(';'); Serial.print(raw1, 4);
     Serial.print(';'); Serial.print(sm1, 4);
     Serial.print(';'); Serial.print(ref, 4);
@@ -346,9 +354,9 @@ static void logSample(float raw1, float sm1, float raw2, float ref) {
     Serial.print(';'); Serial.println(raw2 - baseline[1], 4);
 }
 
-// Klidova doba pred kazdym cyklem (motor stoji) - po vytazeni/vraceni lahvicky
-// nebo rucnim doplneni se signal muze na chvili vychylit; radeji zacit
-// cyklus s cerstvym, plne naplnenym vyhlazovacim oknem.
+// Klidova doba pred kazdym cyklem odsavani (motor stoji) - po vytazeni/
+// vraceni lahvicky se signal muze na chvili vychylit; radeji zacit cyklus
+// s cerstvym, plne naplnenym vyhlazovacim oknem.
 static void settleBeforeCycle() {
     resetSmooth();
     Serial.println(F("# ustaleni (motor stoji, cca 5 s)..."));
@@ -365,6 +373,7 @@ static void settleBeforeCycle() {
 }
 
 static void printSummary();
+static void startCycle();
 
 // ---------- odsavani: hledani DOLNI (kriticke) hrany, vrchol jen informativne ----------
 static void runWithdrawCycle() {
@@ -385,8 +394,6 @@ static void runWithdrawCycle() {
     float peakLevelAtMax = 0.0f;
 
     uint8_t belowCount = 0;
-    int32_t stepsDone = 0;
-    int32_t safetyLimit = stepsFor(searchSafetyMl);
     uint32_t lastStepUs = micros();
     uint32_t lastSampleMs = millis();
 
@@ -398,13 +405,20 @@ static void runWithdrawCycle() {
             return;
         }
         uint32_t nowUs = micros();
-        if (stepsDone < safetyLimit && nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
+        if (nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
             lastStepUs = nowUs;
             digitalWrite(PIN_SAL_STEP, HIGH);
             delayMicroseconds(3);
             digitalWrite(PIN_SAL_STEP, LOW);
-            stepsDone++;
             posSteps--;
+            if (!withinMechLimit()) {
+                stopMotorDisable();
+                runState = RS_IDLE;
+                Serial.print(F("# *** MECHANICKY DORAZ STRIKACKY (odsavani, cyklus "));
+                Serial.print(cycleIndex);
+                Serial.println(F(") *** kriticka hrana NEBYLA nalezena, sekvence zastavena - zkontroluj hardware/senzor ***"));
+                return;
+            }
         }
         uint32_t nowMs = millis();
         if (nowMs - lastSampleMs >= samplePeriodMs) {
@@ -416,7 +430,7 @@ static void runWithdrawCycle() {
                 peakMax = sm;
                 peakLevelAtMax = levelMl();
             }
-            logSample(raw1, sm, raw2, peakMax);
+            logSample('w', raw1, sm, raw2, peakMax);
 
             float drop = peakMax - sm;
             if (drop >= deltaCritical) {
@@ -427,59 +441,110 @@ static void runWithdrawCycle() {
                     resultPeakVal[cycleIndex - 1] = peakMax;
                     resultLowerLevel[cycleIndex - 1] = levelMl();
                     resultLowerVal[cycleIndex - 1] = sm;
+                    resultConfirmOk[cycleIndex - 1] = 2;   // 2 = zatim nepotvrzeno
+                    resultRefillMl[cycleIndex - 1] = -1.0f;
                     Serial.print(F("# *** DOLNI (KRITICKA) HRANA DETEKOVANA *** cyklus="));
                     Serial.print(cycleIndex);
-                    Serial.print(F(" level(od tare)=")); Serial.print(levelMl(), 2);
+                    Serial.print(F(" poloha(od tare)=")); Serial.print(levelMl(), 2);
                     Serial.print(F(" ml  C1_ted=")); Serial.print(sm, 4);
                     Serial.print(F(" pokles_od_vrcholu=")); Serial.println(drop, 4);
-                    Serial.print(F("# (info) vrchol C1 byl pri level="));
+                    Serial.print(F("# (info) vrchol C1 byl pri poloze="));
                     Serial.print(peakLevelAtMax, 2);
                     Serial.print(F(" ml C1="));
                     Serial.println(peakMax, 4);
-                    Serial.println(F("# Vytahni lahvicku, zkontroluj hladinu."));
-
-                    if (cycleIndex >= cycleCountTarget) {
-                        printSummary();
-                        runState = RS_IDLE;
-                    } else {
-                        Serial.println(F("# RUCNE doplň nejake mnozstvi kapaliny do lahvicky"));
-                        Serial.println(F("# (motor NEDAVKUJE - doplnujes mimo system), vrat zpet."));
-                        Serial.println(F("# Az bude lahvicka zpet, potvrd 'y' -> dalsi cyklus."));
-                        runState = RS_AWAIT_NEXT_CYCLE;
-                    }
+                    Serial.println(F("# Vytahni lahvicku, zkontroluj hladinu, vrat zpet do studny."));
+                    Serial.println(F("# '1' = detekce OK   '0' = detekce chybna  (obojí -> automaticky dalsi cyklus)"));
+                    runState = RS_AWAIT_CONFIRM;
                     return;
                 }
             } else {
                 belowCount = 0;
             }
         }
-        if (stepsDone >= safetyLimit) {
+    }
+}
+
+// ---------- automaticke davkovani nahodneho objemu zpet do lahvicky ----------
+// Vraci false, pokud beh skoncil predcasne (ABORT / mechanicky doraz) -
+// volajici pak nesmi pokracovat dalsim cyklem.
+static bool dispenseRandomRefill(float ml) {
+    Serial.print(F("# --- CYKLUS ")); Serial.print(cycleIndex);
+    Serial.print(F(" : automaticke doplneni lahvicky, ")); Serial.print(ml, 2);
+    Serial.println(F(" ml ---"));
+
+    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+    driverEnabled = true;
+    digitalWrite(PIN_SAL_DIR, SAL_DIR_PUSH_LEVEL);   // smer davkovani
+    delayMicroseconds(10);
+
+    int32_t stepsToGo = stepsFor(ml);
+    int32_t stepsDone = 0;
+    uint32_t lastStepUs = micros();
+    uint32_t lastSampleMs = millis();
+
+    while (stepsDone < stepsToGo) {
+        if (abortRequested()) {
             stopMotorDisable();
             runState = RS_IDLE;
-            Serial.print(F("# *** BEZPECNOSTNI LIMIT: dolni hrana NEDETEKOVANA (cyklus "));
-            Serial.print(cycleIndex);
-            Serial.println(F(") - sekvence zastavena ***"));
-            return;
+            Serial.println(F("# ABORT - sekvence zastavena"));
+            return false;
+        }
+        uint32_t nowUs = micros();
+        if (nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
+            lastStepUs = nowUs;
+            digitalWrite(PIN_SAL_STEP, HIGH);
+            delayMicroseconds(3);
+            digitalWrite(PIN_SAL_STEP, LOW);
+            stepsDone++;
+            posSteps++;
+            if (!withinMechLimit()) {
+                stopMotorDisable();
+                runState = RS_IDLE;
+                Serial.print(F("# *** MECHANICKY DORAZ STRIKACKY (doplnovani, cyklus "));
+                Serial.print(cycleIndex);
+                Serial.println(F(") *** sekvence zastavena - zkontroluj hardware ***"));
+                return false;
+            }
+        }
+        uint32_t nowMs = millis();
+        if (nowMs - lastSampleMs >= samplePeriodMs) {
+            lastSampleMs = nowMs;
+            float raw1 = readPf(0);
+            float raw2 = readPf(1);
+            logSample('r', raw1, raw1, raw2, 0.0f);
         }
     }
+    stopMotorDisable();
+    return true;
 }
 
 static void printSummary() {
     Serial.println(F("# === SOUHRN VSECH CYKLU ==="));
-    Serial.println(F("# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF"));
+    Serial.println(F("# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF;potvrzeno;doplneno_po_cyklu_ml"));
+    uint8_t okCount = 0, badCount = 0;
     for (uint8_t i = 0; i < cycleIndex; i++) {
         Serial.print(i + 1);
         Serial.print(';'); Serial.print(resultPeakLevel[i], 2);
         Serial.print(';'); Serial.print(resultPeakVal[i], 4);
         Serial.print(';'); Serial.print(resultLowerLevel[i], 2);
         Serial.print(';'); Serial.print(resultLowerVal[i], 4);
-        Serial.print(';'); Serial.println(resultPeakVal[i] - resultLowerVal[i], 4);
+        Serial.print(';'); Serial.print(resultPeakVal[i] - resultLowerVal[i], 4);
+        Serial.print(';');
+        if (resultConfirmOk[i] == 1) { Serial.print('1'); okCount++; }
+        else if (resultConfirmOk[i] == 0) { Serial.print('0'); badCount++; }
+        else { Serial.print('?'); }
+        Serial.print(';');
+        if (resultRefillMl[i] >= 0.0f) Serial.println(resultRefillMl[i], 2);
+        else Serial.println('-');
     }
-    Serial.print(F("# celkem odebrano ze strikacky od tare: "));
-    Serial.print(withdrawnMl(), 2);
-    Serial.println(F(" ml"));
+    Serial.print(F("# potvrzeno OK=")); Serial.print(okCount);
+    Serial.print(F(" chybne=")); Serial.println(badCount);
     Serial.println(F("# vrchol_* je jen INFORMATIVNI (poloha maxima C1), NENI to detekovana/pouzita hrana"));
     Serial.println(F("# === SEKVENCE HOTOVA ==="));
+}
+
+static void startCycle() {
+    runWithdrawCycle();
 }
 
 // ---------- prikazy ----------
@@ -494,11 +559,6 @@ static void handleLine() {
     if (lineLen >= 2 && line[0] == 'c' && line[1] == 'f') {
         int v = atoi(&line[2]);
         if (v >= 1 && v <= 100) { confirmSamples = (uint8_t)v; Serial.print(F("# confirmSamples=")); Serial.println(confirmSamples); }
-        return;
-    }
-    if (lineLen >= 2 && line[0] == 's' && line[1] == 'm') {
-        float v = atof(&line[2]);
-        if (v > 0.0f && v <= 60.0f) { maxSyringeMl = v; Serial.print(F("# maxSyringeMl=")); Serial.println(maxSyringeMl, 1); }
         return;
     }
 
@@ -526,7 +586,7 @@ static void handleLine() {
             tared = true;
             runState = RS_IDLE;
             cycleIndex = 0;
-            Serial.println(F("# tare - pocitadlo odberu vynulovano"));
+            Serial.println(F("# tare - pocitadlo pozice vynulovano"));
             break;
         case 'j':
             if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
@@ -543,31 +603,31 @@ static void handleLine() {
             if (v >= 1 && v <= MAX_CYCLES) { cycleCountTarget = (uint8_t)v; Serial.print(F("# cycleCountTarget=")); Serial.println(cycleCountTarget); }
             break;
         }
-        case 'm': {
-            float v = atof(&line[1]);
-            if (v > 0.0f && v <= 40.0f) { searchSafetyMl = v; Serial.print(F("# searchSafetyMl=")); Serial.println(searchSafetyMl, 1); }
-            break;
-        }
         case 'g':
-            if (runState != RS_IDLE) { Serial.println(F("# CHYBA: sekvence uz bezi/ceka na 'y'")); break; }
+            if (runState != RS_IDLE) { Serial.println(F("# CHYBA: sekvence uz bezi/ceka na potvrzeni")); break; }
             if (!tared) { Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'")); break; }
+            randomSeed(analogRead(A0) + micros());
             runStartMs = millis();
             cycleIndex = 1;
-            Serial.println(F("# cycle;t_ms;level_ml;C1_raw;C1_smooth;peak_ref;C2_raw;d1;d2"));
-            runWithdrawCycle();
+            Serial.println(F("# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;peak_ref;C2_raw;d1;d2"));
+            startCycle();
             break;
-        case 'y':
-            if (runState == RS_AWAIT_NEXT_CYCLE) {
-                if (withdrawnMl() + searchSafetyMl > maxSyringeMl) {
-                    Serial.println(F("# CHYBA: dosla by kapacita strikacky pro dalsi cyklus."));
-                    Serial.println(F("# Rucne doplň STRIKACKU (ne lahvicku), pak znovu 't' a 'g'."));
-                    runState = RS_IDLE;
-                    break;
-                }
+        case '1':
+        case '0':
+            if (runState != RS_AWAIT_CONFIRM) { Serial.println(F("# CHYBA: neni na co navazat (viz 'i')")); break; }
+            resultConfirmOk[cycleIndex - 1] = (line[0] == '1') ? 1 : 0;
+            Serial.print(F("# potvrzeno: ")); Serial.println(line[0] == '1' ? F("OK") : F("CHYBNA DETEKCE"));
+            if (cycleIndex >= cycleCountTarget) {
+                printSummary();
+                runState = RS_IDLE;
+                break;
+            }
+            {
+                float r = randomRefillMl();
+                resultRefillMl[cycleIndex - 1] = r;
+                if (!dispenseRandomRefill(r)) break;   // ABORT / mech. doraz uz vypsal duvod
                 cycleIndex++;
-                runWithdrawCycle();
-            } else {
-                Serial.println(F("# CHYBA: neni na co navazat (viz 'i')"));
+                startCycle();
             }
             break;
         default:
@@ -597,8 +657,8 @@ void setup() {
     Wire.setClock(100000UL);
     delay(100);
 
-    Serial.println(F("# FDC1004 - ziva detekce kriticke hrany s pauzou na kontrolu (5x)"));
-    Serial.println(F("# pouziva fyziologicky stepper D6/D7, EN=A3 (jen odsavani)"));
+    Serial.println(F("# FDC1004 - davkova ziva detekce kriticke hrany (10x, auto-doplneni)"));
+    Serial.println(F("# pouziva fyziologicky stepper D6/D7, EN=A3 (odsavani i davkovani)"));
     uint16_t manuf = readReg(REG_MANUF_ID);
     uint16_t dev = readReg(REG_DEVICE_ID);
     Serial.print(F("# MANUFACTURER_ID=0x")); Serial.print(manuf, HEX);
@@ -613,10 +673,11 @@ void setup() {
 
     printInfo();
     printHelp();
-    Serial.println(F("# POSTUP: 1) strikacka vydatne naplnena (>= maxSyringeMl)"));
-    Serial.println(F("#         2) lahvicka na libovolnou hladinu ~8-20 ml, do studny"));
-    Serial.println(F("#         3) 'o' driver ON, 't' tare, 'g' start (5 cyklu)"));
-    Serial.println(F("#         4) ridit se pokyny, potvrzovat 'y'"));
+    Serial.println(F("# POSTUP: 1) strikacka na strednich ~30 ml (viz README - mech. rezerva)"));
+    Serial.println(F("#         2) lahvicka na libovolnou hladinu ~6-17 ml, do studny"));
+    Serial.println(F("#         3) 'o' driver ON, 't' tare, 'g' start (cycleCountTarget cyklu)"));
+    Serial.println(F("#         4) po kazde detekci: zkontrolovat, vratit do studny, '1'/'0'"));
+    Serial.println(F("#            - dal uz sketch pokracuje sam (doplneni + dalsi cyklus)"));
 }
 
 void loop() {
