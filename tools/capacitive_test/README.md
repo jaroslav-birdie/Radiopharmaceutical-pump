@@ -66,6 +66,12 @@ jestli hodnota neujíždí (teplota). Pokud ano, kalibrace na začátku aplikace
 
 ## Fáze C — statická charakteristika (kapacita vs. hladina)
 
+> **Automatizováno** — ruční plnění po 0,5 ml popsané níže nahrazuje
+> `tools/capacitive_sweep_test/` (fyziologický stepper dávkuje i odsává
+> tekutinu sám, čeká na ustálení a měří >= 50 vzorků na hladinu). Postup
+> níže zůstává jako záznam původního manuálního přístupu / záloha, pokud by
+> automatizovaný nástroj nebyl z nějakého důvodu k dispozici.
+
 Nejdůležitější fáze. Postup:
 
 1. `t` (tare) při prázdné lahvičce, pak `s` (stream).
