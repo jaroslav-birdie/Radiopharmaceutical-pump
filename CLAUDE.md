@@ -232,6 +232,43 @@ Důležité pro rozhodování o hardwaru – **nejsme limitovaní senzorem**:
 > oddělení motoru od studny**. Naopak **nezvětšovat výšku prstence** – to by
 > rozmazalo hranu přes víc ml.
 
+### Ochrana proti rušení přes CIN2 (ověřeno na 10 cyklech)
+
+Dávkový test 10 cyklů selhal 2×, pokaždé při doteku studny. Mechanismus je
+vždy stejný a je to **jediný způsob, jak může detekce kritické hladiny
+selhat nebezpečně**: cokoli, co dočasně **zvedne** C1, nafoukne sledované
+maximum, a následný návrat k normálu pak vypadá jako pokles hladiny →
+předčasná detekce.
+
+**Řešení: hlídat rychlost změny C2.** Svislá elektroda sice nevidí hranu
+prstence (viz zamítnutí výše), ale rušení vidí výborně — ruka je
+common-mode jev navázaný na obě elektrody, kdežto změna hladiny se na C2
+projeví jen extrémně pomalým monotónním poklesem.
+
+| Veličina (MA 5 vzorků, změna přes 3 vzorky) | Hodnota |
+|---|---|
+| nejhorší **čistý** úsek (nesmí spustit) | 20 fF |
+| nejslabší zachycený dotyk | 57 fF |
+| dotyk, který způsobil selhání | **429 fF** (13 vzorků po sobě) |
+| sundání ruky | **229 fF** (7 vzorků po sobě) |
+
+Práh **40 fF + potvrzení 2 vzorky** obě skupiny odděluje s rezervou — na
+čistých datech nepřekročil práh ani jednou.
+
+- ✅ **Při detekci rušení zastavit motory a přejít do `ST_PAUSED`** (ne
+  pokračovat s podezřelými daty). Rušení tak může detekci jen **odložit**,
+  nikdy ne způsobit předčasné vyhlášení kritické hladiny.
+- ❌ **Během rušení se nesmí aktualizovat sledovaný vrchol C1** – právě
+  jeho nafouknutí bylo příčinou obou selhání.
+- Implementováno a ověřeno v `tools/capacitive_edge_detect_test` (v6).
+
+> Finální sestava bude mít 2 mm olova + Faradayovu klec, což tenhle typ
+> rušení nejspíš eliminuje. Ochranu přesto implementovat: nestojí nic
+> (CIN2 se stejně měří kvůli detekci stagnace) a **mění tichou nesprávnou
+> odpověď na hlášenou poruchu**. Stínění chrání proti rušení, které
+> očekáváme; tahle ochrana zachytí i to, co nečekáme (uvolněná elektroda,
+> prasklý spoj, kondenzace).
+
 > ⚠️ **Po každé změně stínění nebo geometrie elektrod znovu ověřit práh.**
 > `deltaCritical = 0,22 pF` je vyladěný empiricky na současné sestavě.
 > Zlepšená zpáteční cesta zvětší rozkmit signálu → stejný pokles nastane

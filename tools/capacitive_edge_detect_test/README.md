@@ -39,6 +39,14 @@ velkém počtu cyklů (výchozí 10) bez zdlouhavého ručního zásahu mezi nim
 > kolem nuly (kolísání `C` mezi cykly). `MECH_LIMIT_ML=25` je konzervativní
 > rezerva pro případ, že by se tohle očekávání nepotvrdilo.
 
+> **v6 — ochrana proti vnějšímu rušení přes CIN2.** Dávkový test 10 cyklů
+> ukázal 2 selhání, obě se stejným mechanismem: obsluha se dotýkala studny,
+> ruka přidala ke **všem** elektrodám společnou (common-mode) kapacitu, to
+> nafouklo sledované maximum C1, a když ruka odešla, následný pokles se
+> vyhodnotil jako kritická hladina — o mnoho ml dřív. Klíč k obraně: skutečná
+> změna hladiny a vnější rušení vypadají na **CIN2 úplně jinak**. Detaily
+> a naměřené hodnoty viz „Ochrana proti rušení" níže.
+
 ---
 
 ## v2 — oprava po prvním testu (klouzavé okno místo "maxima od startu")
@@ -147,6 +155,48 @@ na `capacitive_cycle_test`), takže se samo zamkne na správné hodnotě, aniž
 by potřebovalo klouzavé okno jako dřívější (zavržený) pokus o živou horní
 hranu.
 
+## Ochrana proti rušení (CIN2) — od v6
+
+Dávkový test 10 cyklů selhal 2×, pokaždé při doteku studny. Mechanismus byl
+v obou případech stejný a je to **jediný způsob, jak může tenhle algoritmus
+selhat nebezpečně**: cokoli, co dočasně **zvedne** C1, nafoukne sledované
+maximum, a následný návrat k normálu pak vypadá jako pokles hladiny.
+
+| Cyklus | Co se stalo | Falešná detekce |
+|---|---|---|
+| 6 | ruka držena na studni celou dobu, pak sundána (C1 skočilo 5,92 → 4,91 pF v jednom vzorku) | −10,73 ml místo ~−19 |
+| 9 | náhodné doteky, poslední zvedl C1 na 4,6 pF | −15,33 ml místo ~−19 |
+
+**Řešení:** hlídat CIN2. Svislá elektroda sice **nevidí hranu prstence**
+(proto byla ve v4 zamítnuta pro detekci horní hrany), ale rušení vidí
+výborně — ruka je common-mode jev, který se naváže na obě elektrody, zatímco
+změna hladiny se na C2 projeví jen extrémně pomalým monotónním poklesem.
+
+Naměřeno na všech 10 cyklech (klouzavý průměr 5 vzorků, změna přes 3 vzorky):
+
+| | hodnota |
+|---|---|
+| nejhorší **čistý** úsek (nesmí spustit) | 20 fF |
+| nejslabší zachycený dotyk | 57 fF |
+| dotyk, který způsobil selhání (cyklus 9) | **429 fF**, 13 vzorků po sobě |
+| sundání ruky (cyklus 6) | **229 fF**, 7 vzorků po sobě |
+
+Práh `cg` = 40 fF s potvrzením `ck` = 2 vzorky tedy obě skupiny odděluje
+s rezervou — na čistých datech nepřekročil práh **ani jednou**, zatímco obě
+kritické události ho drží 7 resp. 13 vzorků.
+
+**Chování při detekci rušení:** motor se okamžitě zastaví, cyklus se označí
+jako neplatný (`R` v souhrnu) a čeká se na `y`. Rušení tak nikdy nemůže
+způsobit **předčasnou** detekci — jen ji odložit. To je bezpečný směr chyby.
+
+> **Pozn. k reálnému přístroji:** finální sestava bude mít 2 mm olova
+> (stínění radiofarmaka) plus Faradayovu klec, což tenhle typ rušení
+> nejspíš eliminuje úplně. Ochrana je i tak na místě: nestojí nic (CIN2 se
+> stejně měří), a hlavně **mění tichou nesprávnou odpověď na hlášenou
+> poruchu**. U bezpečnostně kritické funkce je to podstatný rozdíl —
+> stínění chrání proti rušení, které *očekáváme*; tahle ochrana zachytí
+> i to, které nečekáme (uvolněná elektroda, prasklý spoj, kondenzace).
+
 ## Mechanická ochrana stříkačky (ne detekční alarm)
 
 `MECH_LIMIT_ML` (pevná konstanta, 25 ml) je čistě **hardwarová** pojistka
@@ -192,6 +242,8 @@ o chybějící hraně.
 |---|---|---|
 | `dc<pF>` | δ_critical — pokles od (neomezeného) maxima = dolní/kritická hrana | `dc0.22` |
 | `cf<n>` | kolik po sobě jdoucích vzorků musí práh držet (potvrzení) | `cf5` |
+| `cg<pF>` | práh ochrany CIN2 (změna vyhlazeného C2 přes 3 vzorky); `cg0` = **vypnout** | `cg0.040` |
+| `ck<n>` | kolik po sobě jdoucích vzorků musí držet práh ochrany CIN2 | `ck2` |
 | `p<ms>` | perioda vzorku | `p200` |
 | `r<n>` | počet cyklů (max 10) | `r10` |
 
@@ -206,10 +258,10 @@ nikdy nespustil falešně.
 ## Formát výstupu
 
 ```
-# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;peak_ref;C2_raw;d1;d2
+# cycle;t_ms;level_ml;faze;C1_raw;C1_smooth;peak_ref;C2_raw;c2rate
 # --- CYKLUS 1 : odsavani, hledani DOLNI (KRITICKE) HRANY ---
 # ustaleni (motor stoji, cca 5 s)...
-1;0;0.00;w;3.7702;3.7702;3.7702;2.4124;0.0000;0.0000
+1;0;0.00;w;3.7702;3.7702;3.7702;2.4124;0.0021
 ...
 # *** DOLNI (KRITICKA) HRANA DETEKOVANA *** cyklus=1 poloha(od tare)=-9.10 ml C1_ted=3.7300 pokles_od_vrcholu=0.2260
 # (info) vrchol C1 byl pri poloze=-6.40 ml C1=3.9560
@@ -218,7 +270,7 @@ nikdy nespustil falešně.
 [obsluha stiskne '1' nebo '0']
 # potvrzeno: OK
 # --- CYKLUS 1 : automaticke doplneni lahvicky, 11.34 ml ---
-1;...;...;r;3.7305;3.7305;0.0000;2.4130;...
+1;...;...;r;3.7305;3.7305;0.0000;2.4130;0.0000
 ...
 # --- CYKLUS 2 : odsavani, hledani DOLNI (KRITICKE) HRANY ---
 ...
@@ -227,9 +279,19 @@ nikdy nespustil falešně.
 1;-6.40;3.9560;-9.10;3.7300;0.2260;1;11.34
 ...
 10;...;...;...;...;...;1;-
-# potvrzeno OK=9 chybne=1
+# potvrzeno OK=9 chybne=1 ruseni(R)=0
 # vrchol_* je jen INFORMATIVNI (poloha maxima C1), NENI to detekovana/pouzita hrana
+# R = zasahla ochrana CIN2, cyklus neplatny (detekce se nedokoncila)
 # === SEKVENCE HOTOVA ===
+```
+
+Pokud zasáhne ochrana CIN2, vypadá to takhle:
+
+```
+# *** RUSENI DETEKOVANO (CIN2) *** cyklus=6 poloha(od tare)=-10.41 ml  zmena_C2=0.2292 pF  prah=0.0400
+# Motor zastaven, cyklus je NEPLATNY (detekce se nedokoncila).
+# Nesahej na studnu ani kabelaz. Az bude klid, potvrd 'y'
+# -> doplneni lahvicky + dalsi cyklus.
 ```
 
 - `level_ml` je vždy vzhledem k poslednímu `t` — je to pozice **stříkačky**
@@ -244,6 +306,10 @@ nikdy nespustil falešně.
 - `peak_ref` je průběžné (neomezené) maximum vyhlazeného C1 od začátku
   **odsávací** fáze cyklu — sleduj, jestli `C1_smooth - peak_ref` dává
   smysl.
+- `c2rate` je |změna vyhlazeného C2 přes 3 vzorky| — vstup ochrany proti
+  rušení. Při klidu má být pod ~0,02 pF; hodnoty nad `cg` (0,04) znamenají,
+  že se sestavy někdo/něco dotýká. Ve fázi `r` (doplňování) se nevyhodnocuje
+  a loguje se jako 0.
 - `vrchol_level_ml`/`vrchol_C1` v souhrnu je jen informativní poloha
   maxima C1 — NENÍ to detekovaná/rozhodovací hrana, jen se hodí pro
   pozdější analýzu (viz `CLAUDE.md`, motivace pro dělené dávkování).
