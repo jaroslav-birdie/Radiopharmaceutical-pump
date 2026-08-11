@@ -85,6 +85,27 @@ velkém počtu cyklů (výchozí 10) bez zdlouhavého ručního zásahu mezi nim
 > bez problémů, protože zvedne všechny kalibrace stejně — žádná jednotlivá
 > nebude vůči ostatním vyčnívat.
 
+> **v9 — oprava po třetím ostrém použití (cyklus se opakovaně přerušoval
+> bez jakéhokoli doteku).** Kalibrace v7/v8 měřila klidový šum výhradně se
+> **zastaveným** motorem (během ustálení). Data ukázala, že samotný běžící
+> krokový motor (vibrace/EMI z DRV8825 při mikrokrokování) přidává na CIN2
+> další šum, který kalibrace za klidu vůbec nevidí: hned po rozjezdu motoru
+> vyskočil šum na 0,068 pF — 2,8× nad klidovou kalibrací 0,0247 pF ze
+> stejného cyklu. Kalibrovat za klidu a používat práh za chodu motoru bylo
+> tedy systematicky podhodnocené o celý tenhle příspěvek — cyklus se proto
+> po zapnutí motoru skoro vždy velmi rychle „sám" přerušil, bez ohledu na
+> to, jak vysoko už předchozí opravy práh nastavily.
+> Oprava: po ustálení (motor stojí, jako dřív) následuje ještě krátké
+> **„živé" kalibrační okno** (20 vzorků, motor už běží a odsává) — teprve
+> po něm se spočítá efektivní práh, z kombinace klidové i živé složky
+> šumu. Během tohohle krátkého okna se ochrana ještě nevyhodnocuje (nemůže
+> — ještě nezná vlastní práh), což je vědomý, malý a časově ohraničený
+> kompromis výměnou za to, že práh pak sedí na skutečné provozní podmínky,
+> ne jen na klid. Ověřeno na datech: max naměřený šum v celém prvním
+> segmentu (240 vzorků, motor běží) byl 0,0934 pF — pohodlně pod stropem
+> 0,15 pF, takže by tenhle přístup žádný z pozorovaných falešných poplachů
+> nespustil.
+
 ---
 
 ## v2 — oprava po prvním testu (klouzavé okno místo "maxima od startu")
@@ -239,6 +260,14 @@ spočítá ze základny a vypíše se varování. Legitimní rovnoměrně zvýš
 šum (např. tiskárna běžící celou dobu) tím neprojde jako podezřelý, protože
 zvedne všechny kalibrace stejně.
 
+**Od v9 kalibrace zahrnuje i krátké „živé" okno s běžícím motorem.**
+Kalibrace v7/v8 měřila jen se zastaveným motorem — ukázalo se, že samotný
+běžící krokový motor přidává na CIN2 šum, který klidová kalibrace vůbec
+nezachytí (naměřeno: 2,8× nárůst hned po rozjezdu). Po ustálení proto
+následuje ještě 20 vzorků s běžícím motorem, teprve po nich se práh
+spočítá — z kombinace klidové i živé složky šumu (`c2CalibMax` v sobě má
+obojí). Během tohohle krátkého okna se ochrana ještě nevyhodnocuje.
+
 **Chování při detekci rušení:** motor se okamžitě zastaví. Sledovaný
 vrchol C1 **zůstává zachovaný** (žádný reset) — po `y` (jednoznakově, bez
 Enteru) pokračuje **tentýž** cyklus přesně odtud, žádné doplňování ani
@@ -356,8 +385,9 @@ Pokud zasáhne ochrana CIN2 (od v7 — cyklus se nezahazuje, jen pozastaví):
 # Nesahej na studnu ani kabelaz. Az bude klid, potvrd 'y'
 # -> cyklus pokracuje presne odtud (bez doplneni, bez restartu). 'x' = ABORT.
 [obsluha pocka, potvrdi 'y' (jednoznakove, bez Enteru)]
-# ustaleni (motor stoji, cca 5 s, kalibruje se ochrana CIN2)...
-# ochrana CIN2: zmereny klidovy max=0.0340 pF -> prah=0.0850 pF
+# ustaleni (motor stoji, cca 5 s)...
+[20 vzorku s bezicim motorem, ochrana se jeste nevyhodnocuje]
+# ochrana CIN2: zmereny klidovy+zivy max=0.0340 pF -> prah=0.0850 pF
 # pokracuji v odsavani po ruseni (vrchol zachovan)
 ```
 

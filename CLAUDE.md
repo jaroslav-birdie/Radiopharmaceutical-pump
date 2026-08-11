@@ -287,6 +287,16 @@ běžící vedle aparatury) ukázalo, že běžný šum tam samotný běžně p�
   zvýšený okolní šum (jiné prostředí, jiný den) tímhle testem projde v
   pořádku, protože zvedne všechny kalibrace stejně, ne jednu jedinou.
   Ověřeno v `tools/capacitive_edge_detect_test` (v8).
+- ❌ **Kalibrace za klidu nestačí – motor sám je zdroj šumu.** Třetí terénní
+  test ukázal, že samotný běžící krokový motor (vibrace/EMI z DRV8825 při
+  mikrokrokování) přidává na CIN2 šum, který kalibrace se zastaveným
+  motorem vůbec nezachytí – naměřeno 2,8× vyšší šum hned po rozjezdu motoru
+  než klidová kalibrace ze stejného cyklu. Kalibrovat za klidu a používat
+  práh za chodu je systematicky podhodnocené, cyklus se pak sám přerušuje
+  bez jakéhokoli vnějšího doteku. Kalibrace proto musí zahrnovat i krátké
+  okno s **běžícím motorem** (odsávání), ne jen stacionární ustálení – teprve
+  po něm se práh smí vyhodnotit. Ověřeno v `tools/capacitive_edge_detect_test`
+  (v9).
 
 > Finální sestava bude mít 2 mm olova + Faradayovu klec, což tenhle typ
 > rušení nejspíš eliminuje. Ochranu přesto implementovat: nestojí nic

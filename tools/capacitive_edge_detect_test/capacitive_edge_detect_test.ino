@@ -97,6 +97,29 @@
 //   timhle projde bez problemu, protoze zvedne VSECHNY kalibrace stejne -
 //   zadny jednotlivy vzorek nebude vuci ostatnim vycnivat.
 //
+//  v9 - OPRAVA po tretim ostrem pouziti (cyklus se opakovane prerusoval
+//  BEZ jakehokoli doteku - viz zpetna vazba obsluhy):
+//   Kalibrace v7/v8 merila klidovy sum VYHRADNE se ZASTAVENYM motorem
+//   (behem ustaleni). Data ukazala, ze samotny bezici krokovy motor
+//   (vibrace/EMI z DRV8825 pri mikrokrokovani) pridava na CIN2 dalsi sum,
+//   ktery kalibrace za klidu vubec nevidi: hned po rozjezdu motoru vyskocil
+//   sum na 0,068 pF - 2,8x nad klidovou kalibraci 0,0247 pF ze stejneho
+//   cyklu. Kalibrovat za klidu a pouzivat prah za chodu motoru je tedy
+//   systematicky podhodnocene o cely tenhle prispevek - proto se cyklus
+//   po zapnuti motoru skoro vzdy velmi rychle "sam" prerusil, bez ohledu
+//   na to, jak vysoko uz predchozi opravy prah nastavily.
+//   Oprava: po ustaleni (motor stoji, jak drive) nasleduje jeste kratke
+//   "zive" kalibracni okno (C2_RUNNING_CALIB_SAMPLES vzorku, motor uz BEZI
+//   a odsava) - teprve PO nem se spocita efektivni prah (viz
+//   finalizeC2GuardThreshold), z kombinace klidove i zive slozky sumu.
+//   Behem tohohle kratkeho okna se ochrana jeste nevyhodnocuje (nemuze -
+//   jeste nezna vlastni prah), coz je vedomy, maly a casove ohraniceny
+//   kompromis vymenou za to, ze prah pak sedi na skutecne provozni
+//   podminky, ne jen na klid. Overeno na datech: max namereny sum v
+//   celem prvnim segmentu (240 vzorku, motor bezi) byl 0,0934 pF - pohodlne
+//   pod stropem 0,15 pF, takze by tenhle pristup zadny z pozorovanych
+//   falesnych poplachu nespustil.
+//
 //  Postup jednoho cyklu:
 //    ODSAVANI: odsava spojite od aktualni pozice, dokud nenajde DOLNI
 //              (kritickou) hranu (pokles od prubezneho maxima C1 -
@@ -214,6 +237,7 @@ static float    c2CalibMax      = 0.0f;    // nejhorsi zmena namerena behem posl
 // obsluha se varuje.
 static float    c2BaselineQuiet = 0.0f;    // pomalu se prizpusobujici odhad "opravdu klidneho" stropu (0 = jeste nenastaveno)
 #define C2_BASELINE_OUTLIER_MULT 4.0f       // nova kalibrace > tolikrat zakladna = podezrele, odmitnout
+#define C2_RUNNING_CALIB_SAMPLES 20          // pocet vzorku s BEZICIM motorem pred prvnim vyhodnocenim (viz v9)
 #define C2_GUARD_MAX_CEILING 0.150f         // pF - strop pro auto-kalibrovany prah (viz settleBeforeCycle);
                                              // bezpecne pod obema zdokumentovanymi udalostmi (429/229 fF)
 
@@ -522,15 +546,17 @@ static void logSample(char phase, float raw1, float sm1, float raw2, float ref, 
 
 // Klidova doba pred kazdym cyklem odsavani (motor stoji) - po vytazeni/
 // vraceni lahvicky se signal muze na chvili vychylit; radeji zacit cyklus
-// s cerstvym, plne naplnenym vyhlazovacim oknem. Zaroven se tu ZNOVU
-// KALIBRUJE prah ochrany CIN2 z prave namereneho klidoveho sumu (viz v7
-// v hlavicce) - misto pevneho cisla z jineho sezeni/prostredi.
+// s cerstvym, plne naplnenym vyhlazovacim oknem. Zaroven se tu zacina
+// akumulovat kalibrace ochrany CIN2 (klidova cast, motor stoji) - c2CalibMax
+// se ZDE JESTE NEVYHODNOCUJE do prahu, to se deje az ve
+// finalizeC2GuardThreshold() po pripojenem "zivem" kalibracnim okne s
+// bezicim motorem (viz v9 v hlavicce).
 // Vraci false, pokud byl ustaleni prerusen 'x' (ABORT) - volajici pak
 // nesmi pokracovat.
 static bool settleBeforeCycle() {
     resetSmooth();
     resetC2Guard();
-    Serial.println(F("# ustaleni (motor stoji, cca 5 s, kalibruje se ochrana CIN2)..."));
+    Serial.println(F("# ustaleni (motor stoji, cca 5 s)..."));
     uint32_t startMs = millis();
     uint32_t lastSampleMs = millis() - samplePeriodMs;
     while (millis() - startMs < SETTLE_MS || smoothCount < SMOOTH_WINDOW) {
@@ -549,7 +575,14 @@ static bool settleBeforeCycle() {
         }
     }
     c2AlarmCount = 0;   // pripadne vychylky pri vraceni lahvicky nepocitat pro samotnou detekci
+    return true;
+}
 
+// v9 - vyhodnoti nakalibrovany prah ochrany CIN2 z c2CalibMax, ktery uz v
+// sobe ma jak klidovou cast (settleBeforeCycle, motor stoji) TAK nasledujici
+// zive kalibracni okno (motor bezi, viz C2_RUNNING_CALIB_SAMPLES v
+// runWithdrawCycle) - viz v9 v hlavicce, proc je ta zesila cast nutna.
+static void finalizeC2GuardThreshold() {
     // v8 - ochrana proti znecistene kalibraci (viz poznamka u c2BaselineQuiet):
     // pokud tahle kalibrace vyskoci vysoko nad nedavnou "klidnou" zakladnu,
     // je podezrela (nejspis rusila i samo ustaleni) - NEPOUZIVAT ji primo,
@@ -584,10 +617,10 @@ static bool settleBeforeCycle() {
         Serial.println(F(" pF) - pouzita zakladna misto teto kalibrace."));
         Serial.println(F("#   Nejspis se studny neco dotykalo PRAVE BEHEM ustaleni."));
     }
-    Serial.print(F("# ochrana CIN2: zmereny klidovy max=")); Serial.print(c2CalibMax, 4);
+    Serial.print(F("# ochrana CIN2: zmereny klidovy+zivy max=")); Serial.print(c2CalibMax, 4);
     Serial.print(F(" pF -> prah=")); Serial.print(c2GuardEffective, 4);
     Serial.println(c2GuardMultiplier <= 0.0f ? F(" pF (VYPNUTA)") : F(" pF"));
-    return true;
+    c2AlarmCount = 0;   // zadne pripadne vychylky behem ziveho okna nepocitat do prvniho realneho vyhodnoceni
 }
 
 static void printSummary();
@@ -634,6 +667,10 @@ static void runWithdrawCycle() {
     uint8_t belowCount = 0;
     uint32_t lastStepUs = micros();
     uint32_t lastSampleMs = millis();
+    // v9 - prvnich C2_RUNNING_CALIB_SAMPLES vzorku po rozjezdu motoru se jen
+    // meri (dozaplnuji c2CalibMax o "zivy" sum s bezicim motorem), ochrana
+    // se z nich JESTE NEVYHODNOCUJE - teprve az bude znat i tuhle slozku sumu.
+    uint16_t liveCalibRemaining = C2_RUNNING_CALIB_SAMPLES;
 
     while (true) {
         if (abortRequested()) {
@@ -665,7 +702,13 @@ static void runWithdrawCycle() {
             float raw2 = readPf(1);
             float sm = pushSmooth(raw1);
             float c2rate = 0.0f;
-            bool interference = pushC2AndCheck(raw2, &c2rate);
+            bool interference = pushC2AndCheck(raw2, &c2rate);   // c2CalibMax se aktualizuje vzdy, i behem ziveho okna
+
+            if (liveCalibRemaining > 0) {
+                interference = false;   // jeste kalibrujeme "zivy" sum, ochranu jeste nevyhodnocovat
+                liveCalibRemaining--;
+                if (liveCalibRemaining == 0) finalizeC2GuardThreshold();
+            }
 
             // POZOR na poradi: pri ruseni se NESMI aktualizovat peakMax ani
             // vyhodnotit detekce. Prave nafouknuty peakMax byl pricinou obou
@@ -696,6 +739,7 @@ static void runWithdrawCycle() {
                 delayMicroseconds(10);
                 lastStepUs = micros();
                 lastSampleMs = millis();
+                liveCalibRemaining = C2_RUNNING_CALIB_SAMPLES;   // znovu zmerit "zivy" sum po rozjezdu
                 Serial.println(F("# pokracuji v odsavani po ruseni (vrchol zachovan)"));
                 continue;   // zpet na zacatek while(true) - peakMax/belowCount nezmeneny
             }
