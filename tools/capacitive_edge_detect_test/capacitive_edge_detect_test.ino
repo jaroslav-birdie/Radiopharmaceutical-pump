@@ -51,10 +51,32 @@
 //     dotyk co zpusobil selhani 429 fF   (13 po sobe jdoucich vzorku)
 //     sundani ruky (cyklus 6) .. 229 fF   (7 po sobe jdoucich vzorku)
 //   Prah 40 fF + potvrzeni 2 vzorky tedy oddeluje obe skupiny s
-//   rezervou, aniz by na cistych datech jednou jedinkrat spustil.
-//   Pri detekci ruseni se motor OKAMZITE zastavi a cyklus se oznaci
-//   jako neplatny - ruseni tak nikdy nemuze zpusobit PREDCASNOU
-//   detekci, jen ji odlozit. To je bezpecny smer chyby.
+//   rezervou, aniz by na cistych datech jednou jedinkrat spustil -
+//   ALE jen na sezeni, kde byl zmeren (viz v7 nize, proc to nestaci).
+//
+//  v7 - OPRAVA po prvnim ostrem pouziti v6 (2 falesne detekce, ZADNY
+//  dotyk se nekonal):
+//   1) PEVNY PRAH BYL CHYBA. Staticky test sumu na tomhle sezeni ukazal
+//      CIN2 sigma=0,0158 pF, p-p=0,0786 pF - to je 6,6x/10,9x VIC nez
+//      na sezeni, kde byl prah 40 fF zmeren (sigma 0,0024, p-p 0,0072).
+//      Elektricke prostredi neni mezi sezenimi stejne (jiny den, jine
+//      okoli, jina kabelaz) - pevna konstanta prevzata z jednoho behu
+//      je presne ta chyba, ktere jsme se snazili vyhnout u deltaCritical
+//      (viz CLAUDE.md). Oprava: prah se ted POCITA ZNOVU pred kazdym
+//      odsavanim z aktualne namereneho klidoveho sumu behem ustaleni
+//      (c2GuardMultiplier x nejhorsi pozorovana zmena behem 5s klidu,
+//      s minimalni podlahou c2GuardMinFloor). Samo-kalibrujici se prah
+//      misto cisla z jineho sezeni - stejny princip jako u trackovani
+//      vrcholu C1.
+//   2) CHOVANI PO RUSENI BYLO NEKONZISTENTNI s principem zapsanym u
+//      ST_PAUSED v CLAUDE.md (stav se pri pauze NESMI ztratit). Puvodne
+//      se cely cyklus zahodil a zacalo se znovu s nahodnym doplnenim -
+//      to je presne ten "reset pri pauze" postup, ktery jsme jinde
+//      oznacili za nebezpecny smer chyby (zpozdi detekci). Ochrana CIN2
+//      ted funguje jako SKUTECNA pauza: motor stoji, sledovany vrchol
+//      C1 (`peakMax`) zustava beze zmeny, po potvrzeni 'y' pokracuje
+//      TENTYZ cyklus odsavani presne odtud, kde skoncil - zadne
+//      doplnovani, zadny novy cyklus.
 //
 //  Postup jednoho cyklu:
 //    ODSAVANI: odsava spojite od aktualni pozice, dokud nenajde DOLNI
@@ -64,7 +86,8 @@
 //               hladinu, vrati zpet do studny, potvrdi '1' (OK) nebo
 //               '0' (chyba detekce).
 //            -> pokud misto toho zasahne ochrana CIN2: motor stop,
-//               cyklus oznacen 'R' (ruseni), obsluha potvrdi 'y'.
+//               vrchol C1 zustava zachovany, po 'y' cyklus POKRACUJE
+//               (ne restart).
 //    AUTO   : sketch sam davkuje nahodny objem 6-17 ml zpet do
 //             lahvicky (ta stejna strikacka/motor, opacny smer), pak
 //             rovnou spusti dalsi cyklus odsavani. Celkem
@@ -147,15 +170,24 @@
 #define C2_MA_WINDOW       5    // kratke vyhlazeni C2 (potlaci vzorkovy sum ~20 fF)
 #define C2_LAG             3    // pres kolik vzorku se meri zmena (0,6 s pri 200 ms)
 
-// ---------- parametry (nastavit pred 'g'; 2-znakove prikazy: dc/cf/cg/ck) ----------
+// ---------- parametry (nastavit pred 'g'; 2-znakove prikazy: dc/cf/cg/ck/cm) ----------
 static float    deltaCritical   = 0.22f;   // pF - pokles od (neomezeneho) maxima = "kriticka (dolni) hladina"
 static uint8_t  confirmSamples  = 5;       // kolik po sobe jdoucich vzorku musi prah drzet
 static uint16_t samplePeriodMs  = 200;
 static uint8_t  cycleCountTarget = 10;
-static float    c2GuardDelta    = 0.040f;  // pF - zmena vyhlazeneho C2 pres C2_LAG vzorku = RUSENI
-                                            // (0 = ochrana vypnuta). Zmereno: cisty max 20 fF,
-                                            // nejslabsi zachycene ruseni 57 fF
+
+// Prah ochrany CIN2 se POCITA ZNOVU pred kazdym odsavanim (viz v7 v hlavicce) -
+// misto pevneho cisla z jineho sezeni se pouzije nasobek prave namereneho
+// klidoveho sumu behem ustaleni. c2GuardMinFloor je bezpecnostni podlaha pro
+// pripad neobvykle ticheho sezeni (aby prah nebyl smesne citlivy na drobny sum).
+static float    c2GuardMultiplier = 2.5f;  // efektivni prah = tento nasobek x zmereny klidovy max
+                                            // (<= 0 => ochrana CIN2 vypnuta)
+static float    c2GuardMinFloor = 0.020f;  // pF - prah nikdy neklesne pod tuto hodnotu
 static uint8_t  c2GuardConfirm  = 2;       // kolik po sobe jdoucich vzorku musi prah drzet
+static float    c2GuardEffective = 0.0f;   // aktualni prah, prepocitan v settleBeforeCycle()
+static float    c2CalibMax      = 0.0f;    // nejhorsi zmena namerena behem posledniho ustaleni (info/log)
+#define C2_GUARD_MAX_CEILING 0.150f         // pF - strop pro auto-kalibrovany prah (viz settleBeforeCycle);
+                                             // bezpecne pod obema zdokumentovanymi udalostmi (429/229 fF)
 
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
@@ -166,7 +198,7 @@ static char     line[24];
 static uint8_t  lineLen        = 0;
 static uint32_t runStartMs     = 0;
 
-enum RunState { RS_IDLE, RS_AWAIT_CONFIRM, RS_AWAIT_AFTER_INTERFERENCE };
+enum RunState { RS_IDLE, RS_AWAIT_CONFIRM };
 static RunState runState = RS_IDLE;
 static uint8_t  cycleIndex = 0;   // 1-based
 
@@ -174,12 +206,12 @@ static uint8_t  cycleIndex = 0;   // 1-based
 #define RES_BAD          0   // obsluha rekla '0' - detekce byla chybna
 #define RES_OK           1   // obsluha rekla '1' - detekce byla spravna
 #define RES_PENDING      2   // ceka na potvrzeni
-#define RES_INTERFERENCE 3   // zasahla ochrana CIN2 - cyklus neplatny
 
 static float   resultPeakLevel[MAX_CYCLES], resultPeakVal[MAX_CYCLES];      // informativni, NENI stop bod
 static float   resultLowerLevel[MAX_CYCLES], resultLowerVal[MAX_CYCLES];    // skutecny bezpecnostni bod
 static uint8_t resultConfirmOk[MAX_CYCLES];                                 // viz RES_* kody
 static float   resultRefillMl[MAX_CYCLES];                                  // nahodny objem doplneny PO tomhle cyklu (-1 = zadny, posledni cyklus)
+static uint8_t resultInterferenceCount[MAX_CYCLES];                         // kolikrat behem cyklu zasahla ochrana CIN2 (jen info)
 
 // ---------- klouzavy prumer C1 (kruhovy buffer, O(1) update) ----------
 static float   smoothBuf[SMOOTH_WINDOW];
@@ -217,6 +249,7 @@ static uint8_t c2AlarmCount = 0;
 static void resetC2Guard() {
     c2Idx = 0; c2Count = 0; c2Sum = 0.0f;
     c2HistIdx = 0; c2HistCount = 0; c2AlarmCount = 0;
+    c2CalibMax = 0.0f;
 }
 
 // Prida vzorek C2, do *outRate vrati |zmenu vyhlazeneho C2 pres C2_LAG vzorku|.
@@ -246,8 +279,10 @@ static bool pushC2AndCheck(float v, float *outRate) {
     if (!full) c2HistCount++;
 
     *outRate = rate;
-    if (c2GuardDelta <= 0.0f) return false;   // ochrana vypnuta
-    if (full && rate >= c2GuardDelta) {
+    if (full && rate > c2CalibMax) c2CalibMax = rate;   // sleduj klidovy strop (pouziva se pri kalibraci)
+
+    if (c2GuardEffective <= 0.0f) return false;   // ochrana vypnuta (multiplier <= 0)
+    if (full && rate >= c2GuardEffective) {
         c2AlarmCount++;
         if (c2AlarmCount >= c2GuardConfirm) return true;
     } else {
@@ -373,7 +408,6 @@ static const char *stateName() {
     switch (runState) {
         case RS_IDLE: return "IDLE";
         case RS_AWAIT_CONFIRM: return "CEKA NA '1'/'0' (potvrzeni detekce)";
-        case RS_AWAIT_AFTER_INTERFERENCE: return "CEKA NA 'y' (po ruseni CIN2)";
     }
     return "?";
 }
@@ -383,10 +417,14 @@ static void printInfo() {
     Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
     Serial.print(F("# deltaCritical=")); Serial.print(deltaCritical, 4);
     Serial.print(F(" confirmSamples=")); Serial.println(confirmSamples);
-    Serial.print(F("# c2GuardDelta=")); Serial.print(c2GuardDelta, 4);
+    Serial.print(F("# c2GuardMultiplier=")); Serial.print(c2GuardMultiplier, 2);
+    Serial.print(F(" c2GuardMinFloor=")); Serial.print(c2GuardMinFloor, 4);
     Serial.print(F(" c2GuardConfirm=")); Serial.print(c2GuardConfirm);
-    if (c2GuardDelta <= 0.0f) Serial.print(F("  *** OCHRANA CIN2 VYPNUTA ***"));
+    if (c2GuardMultiplier <= 0.0f) Serial.print(F("  *** OCHRANA CIN2 VYPNUTA ***"));
     Serial.println();
+    Serial.print(F("# c2GuardEffective (posledni kalibrace)=")); Serial.print(c2GuardEffective, 4);
+    Serial.print(F(" pF  (zmereny klidovy max=")); Serial.print(c2CalibMax, 4);
+    Serial.println(F(" pF)"));
     Serial.print(F("# MECH_LIMIT_ML=")); Serial.print(MECH_LIMIT_ML, 1);
     Serial.print(F(" (hardwarova ochrana, ne detekcni alarm)"));
     Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
@@ -407,10 +445,12 @@ static void printHelp() {
     Serial.println(F("# g=spustit celou davkovou sekvenci (cycleCountTarget cyklu)"));
     Serial.println(F("# 1=potvrdit detekci OK   0=potvrdit chybnou detekci"));
     Serial.println(F("#   (obojí automaticky pokracuje dalsim cyklem)"));
-    Serial.println(F("# y=pokracovat po ruseni CIN2"));
+    Serial.println(F("# (ochrana CIN2 behem odsavani: motor stoji, 'y' = pokracovat"));
+    Serial.println(F("#  TENTYZ cyklus, vrchol C1 zustava zachovany)"));
     Serial.println(F("# r<n>=pocet cyklu  dc<pF>=delta kriticka hrana"));
     Serial.println(F("# cf<n>=potvrzovacich vzorku  p<ms>=perioda vzorku"));
-    Serial.println(F("# cg<pF>=prah ochrany CIN2 (0=vypnout)  ck<n>=potvrzovacich vzorku"));
+    Serial.println(F("# cm<x>=nasobitel prahu CIN2 (0=vypnout)  cg<pF>=min. podlaha prahu"));
+    Serial.println(F("# ck<n>=potvrzovacich vzorku ochrany CIN2"));
     Serial.println(F("# #<text>=znacka"));
 }
 
@@ -453,16 +493,24 @@ static void logSample(char phase, float raw1, float sm1, float raw2, float ref, 
 
 // Klidova doba pred kazdym cyklem odsavani (motor stoji) - po vytazeni/
 // vraceni lahvicky se signal muze na chvili vychylit; radeji zacit cyklus
-// s cerstvym, plne naplnenym vyhlazovacim oknem. Naplni se pritom i filtr
-// ochrany CIN2, aby byla od prvniho kroku motoru pripravena.
-static void settleBeforeCycle() {
+// s cerstvym, plne naplnenym vyhlazovacim oknem. Zaroven se tu ZNOVU
+// KALIBRUJE prah ochrany CIN2 z prave namereneho klidoveho sumu (viz v7
+// v hlavicce) - misto pevneho cisla z jineho sezeni/prostredi.
+// Vraci false, pokud byl ustaleni prerusen 'x' (ABORT) - volajici pak
+// nesmi pokracovat.
+static bool settleBeforeCycle() {
     resetSmooth();
     resetC2Guard();
-    Serial.println(F("# ustaleni (motor stoji, cca 5 s)..."));
+    Serial.println(F("# ustaleni (motor stoji, cca 5 s, kalibruje se ochrana CIN2)..."));
     uint32_t startMs = millis();
     uint32_t lastSampleMs = millis() - samplePeriodMs;
     while (millis() - startMs < SETTLE_MS || smoothCount < SMOOTH_WINDOW) {
-        if (abortRequested()) return;
+        if (abortRequested()) {
+            stopMotorDisable();
+            runState = RS_IDLE;
+            Serial.println(F("# ABORT - sekvence zastavena"));
+            return false;
+        }
         uint32_t now = millis();
         if (now - lastSampleMs >= samplePeriodMs) {
             lastSampleMs = now;
@@ -471,17 +519,64 @@ static void settleBeforeCycle() {
             pushC2AndCheck(readPf(1), &dummy);
         }
     }
-    c2AlarmCount = 0;   // pripadne vychylky pri vraceni lahvicky nepocitat
+    c2AlarmCount = 0;   // pripadne vychylky pri vraceni lahvicky nepocitat pro samotnou detekci
+
+    if (c2GuardMultiplier <= 0.0f) {
+        c2GuardEffective = 0.0f;
+    } else {
+        c2GuardEffective = c2CalibMax * c2GuardMultiplier;
+        if (c2GuardEffective < c2GuardMinFloor) c2GuardEffective = c2GuardMinFloor;
+        // Pojistka proti sebe-oslepeni: kdyby zrovna behem ustaleni nekdo
+        // sahal na studnu (nebo jina udalost zvedla sum), kalibrace by si
+        // "myslela", ze je to normalni klid, a prah by se nastavil zbytecne
+        // vysoko. Strop drzi prah bezpecne pod obema jiz zdokumentovanymi
+        // "velkymi" ruseni (429/229 fF, viz v6) i v nejhorsim pripade -
+        // i kdyby se kalibrace sama znecistila, plne polozenou ruku porad
+        // chytne. Slabsi dotyky (desitky fF) v hodne sumnem prostredi
+        // (napr. tiskarna blizko) uz spolehlive rozlisit nejde - to je
+        // fyzikalni limit, ne chyba tohohle stropu.
+        if (c2GuardEffective > C2_GUARD_MAX_CEILING) {
+            c2GuardEffective = C2_GUARD_MAX_CEILING;
+            Serial.println(F("# VAROVANI: klidovy sum behem ustaleni byl neobvykle vysoky,"));
+            Serial.println(F("#   prah CIN2 orezan na strop. Zkontroluj, ze se nikdo studny"));
+            Serial.println(F("#   nedotykal PRAVE BEHEM ustaleni, a ze zdroj ruseni (napr."));
+            Serial.println(F("#   3D tiskarna) neni prilis blizko."));
+        }
+    }
+    Serial.print(F("# ochrana CIN2: zmereny klidovy max=")); Serial.print(c2CalibMax, 4);
+    Serial.print(F(" pF -> prah=")); Serial.print(c2GuardEffective, 4);
+    Serial.println(c2GuardMultiplier <= 0.0f ? F(" pF (VYPNUTA)") : F(" pF"));
+    return true;
 }
 
 static void printSummary();
 static void startCycle();
 
+// Blokujici cekani na 'y' (pokracovat) nebo 'x' (ABORT) po detekci ruseni.
+// Jednoznakove, bez Enteru - stejny styl jako abortRequested().
+static bool waitForYOrAbort() {
+    while (true) {
+        if (Serial.available() > 0) {
+            char c = (char)Serial.read();
+            if (c == 'x') {
+                stopMotorDisable();
+                Serial.println(F("# ABORT - sekvence zastavena"));
+                return false;
+            }
+            if (c == 'y') {
+                return true;
+            }
+            // ostatni znaky (napr. odradkovani) ignorovat
+        }
+    }
+}
+
 // ---------- odsavani: hledani DOLNI (kriticke) hrany, vrchol jen informativne ----------
 static void runWithdrawCycle() {
     Serial.print(F("# --- CYKLUS ")); Serial.print(cycleIndex);
     Serial.println(F(" : odsavani, hledani DOLNI (KRITICKE) HRANY ---"));
-    settleBeforeCycle();
+    resultInterferenceCount[cycleIndex - 1] = 0;
+    if (!settleBeforeCycle()) return;
 
     digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
     driverEnabled = true;
@@ -533,26 +628,35 @@ static void runWithdrawCycle() {
 
             // POZOR na poradi: pri ruseni se NESMI aktualizovat peakMax ani
             // vyhodnotit detekce. Prave nafouknuty peakMax byl pricinou obou
-            // selhani v davkovem testu (viz v6 v hlavicce).
+            // selhani v davkovem testu (viz v6 v hlavicce). Na rozdil od v6
+            // se tu ted cyklus NEZAHAZUJE - je to skutecna pauza (stejny
+            // princip jako ST_PAUSED v produkcnim navrhu, viz CLAUDE.md):
+            // motor stoji, peakMax/peakLevelAtMax/belowCount zustavaji
+            // nezmenene, po 'y' pokracuje TENTYZ cyklus odsavani.
             if (interference) {
                 stopMotorDisable();
                 logSample('w', raw1, sm, raw2, peakMax, c2rate);
-                resultPeakLevel[cycleIndex - 1] = peakLevelAtMax;
-                resultPeakVal[cycleIndex - 1] = peakMax;
-                resultLowerLevel[cycleIndex - 1] = levelMl();
-                resultLowerVal[cycleIndex - 1] = sm;
-                resultConfirmOk[cycleIndex - 1] = RES_INTERFERENCE;
-                resultRefillMl[cycleIndex - 1] = -1.0f;
+                resultInterferenceCount[cycleIndex - 1]++;
                 Serial.print(F("# *** RUSENI DETEKOVANO (CIN2) *** cyklus="));
                 Serial.print(cycleIndex);
                 Serial.print(F(" poloha(od tare)=")); Serial.print(levelMl(), 2);
                 Serial.print(F(" ml  zmena_C2=")); Serial.print(c2rate, 4);
-                Serial.print(F(" pF  prah=")); Serial.println(c2GuardDelta, 4);
-                Serial.println(F("# Motor zastaven, cyklus je NEPLATNY (detekce se nedokoncila)."));
+                Serial.print(F(" pF  prah=")); Serial.println(c2GuardEffective, 4);
+                Serial.println(F("# Motor pozastaven, sledovany vrchol NEZTRACEN."));
                 Serial.println(F("# Nesahej na studnu ani kabelaz. Az bude klid, potvrd 'y'"));
-                Serial.println(F("# -> doplneni lahvicky + dalsi cyklus."));
-                runState = RS_AWAIT_AFTER_INTERFERENCE;
-                return;
+                Serial.println(F("# -> cyklus pokracuje presne odtud (bez doplneni, bez restartu). 'x' = ABORT."));
+
+                if (!waitForYOrAbort()) { runState = RS_IDLE; return; }
+                if (!settleBeforeCycle()) return;   // prekalibruje prah CIN2, obnovi vyhlazovaci okno
+
+                digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+                driverEnabled = true;
+                digitalWrite(PIN_SAL_DIR, SAL_DIR_PUSH_LEVEL == HIGH ? LOW : HIGH);
+                delayMicroseconds(10);
+                lastStepUs = micros();
+                lastSampleMs = millis();
+                Serial.println(F("# pokracuji v odsavani po ruseni (vrchol zachovan)"));
+                continue;   // zpet na zacatek while(true) - peakMax/belowCount nezmeneny
             }
 
             if (sm > peakMax) {
@@ -652,8 +756,8 @@ static bool dispenseRandomRefill(float ml) {
 
 static void printSummary() {
     Serial.println(F("# === SOUHRN VSECH CYKLU ==="));
-    Serial.println(F("# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF;potvrzeno;doplneno_po_cyklu_ml"));
-    uint8_t okCount = 0, badCount = 0, intCount = 0;
+    Serial.println(F("# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF;potvrzeno;ruseni_pauz;doplneno_po_cyklu_ml"));
+    uint8_t okCount = 0, badCount = 0; uint16_t intTotal = 0;
     for (uint8_t i = 0; i < cycleIndex; i++) {
         Serial.print(i + 1);
         Serial.print(';'); Serial.print(resultPeakLevel[i], 2);
@@ -663,20 +767,21 @@ static void printSummary() {
         Serial.print(';'); Serial.print(resultPeakVal[i] - resultLowerVal[i], 4);
         Serial.print(';');
         switch (resultConfirmOk[i]) {
-            case RES_OK:           Serial.print('1'); okCount++;  break;
-            case RES_BAD:          Serial.print('0'); badCount++; break;
-            case RES_INTERFERENCE: Serial.print('R'); intCount++; break;
-            default:               Serial.print('?');             break;
+            case RES_OK:  Serial.print('1'); okCount++;  break;
+            case RES_BAD: Serial.print('0'); badCount++; break;
+            default:      Serial.print('?');             break;
         }
+        Serial.print(';'); Serial.print(resultInterferenceCount[i]);
+        intTotal += resultInterferenceCount[i];
         Serial.print(';');
         if (resultRefillMl[i] >= 0.0f) Serial.println(resultRefillMl[i], 2);
         else Serial.println('-');
     }
     Serial.print(F("# potvrzeno OK=")); Serial.print(okCount);
     Serial.print(F(" chybne=")); Serial.print(badCount);
-    Serial.print(F(" ruseni(R)=")); Serial.println(intCount);
+    Serial.print(F(" celkem pauz kvuli ruseni=")); Serial.println(intTotal);
     Serial.println(F("# vrchol_* je jen INFORMATIVNI (poloha maxima C1), NENI to detekovana/pouzita hrana"));
-    Serial.println(F("# R = zasahla ochrana CIN2, cyklus neplatny (detekce se nedokoncila)"));
+    Serial.println(F("# ruseni_pauz = kolikrat behem cyklu zasahla ochrana CIN2 (vrchol C1 se pri pauze neztratil)"));
     Serial.println(F("# === SEKVENCE HOTOVA ==="));
 }
 
@@ -684,8 +789,9 @@ static void startCycle() {
     runWithdrawCycle();
 }
 
-// Spolecne pro dokonceny i ruseni prerusony cyklus: bud sekvenci ukonci,
-// nebo doplni nahodny objem a spusti dalsi cyklus.
+// Po potvrzeni '1'/'0': bud sekvenci ukonci, nebo doplni nahodny objem
+// a spusti dalsi cyklus. Ruseni (CIN2) uz sem nevede - to resi rovnou
+// runWithdrawCycle() pokracovanim ve stejnem cyklu, viz vyse.
 static void advanceToNextCycle() {
     if (cycleIndex >= cycleCountTarget) {
         printSummary();
@@ -715,16 +821,19 @@ static void handleLine() {
     }
     if (lineLen >= 2 && line[0] == 'c' && line[1] == 'g') {
         float v = atof(&line[2]);
-        if (v >= 0.0f) {
-            c2GuardDelta = v;
-            Serial.print(F("# c2GuardDelta=")); Serial.print(c2GuardDelta, 4);
-            Serial.println(c2GuardDelta > 0.0f ? F("") : F("  (OCHRANA VYPNUTA!)"));
-        }
+        if (v >= 0.0f) { c2GuardMinFloor = v; Serial.print(F("# c2GuardMinFloor=")); Serial.println(c2GuardMinFloor, 4); }
         return;
     }
     if (lineLen >= 2 && line[0] == 'c' && line[1] == 'k') {
         int v = atoi(&line[2]);
         if (v >= 1 && v <= 100) { c2GuardConfirm = (uint8_t)v; Serial.print(F("# c2GuardConfirm=")); Serial.println(c2GuardConfirm); }
+        return;
+    }
+    if (lineLen >= 2 && line[0] == 'c' && line[1] == 'm') {
+        float v = atof(&line[2]);
+        c2GuardMultiplier = v;
+        Serial.print(F("# c2GuardMultiplier=")); Serial.print(c2GuardMultiplier, 2);
+        Serial.println(c2GuardMultiplier > 0.0f ? F("") : F("  (OCHRANA VYPNUTA!)"));
         return;
     }
 
@@ -783,11 +892,6 @@ static void handleLine() {
             if (runState != RS_AWAIT_CONFIRM) { Serial.println(F("# CHYBA: neni na co navazat (viz 'i')")); break; }
             resultConfirmOk[cycleIndex - 1] = (line[0] == '1') ? RES_OK : RES_BAD;
             Serial.print(F("# potvrzeno: ")); Serial.println(line[0] == '1' ? F("OK") : F("CHYBNA DETEKCE"));
-            advanceToNextCycle();
-            break;
-        case 'y':
-            if (runState != RS_AWAIT_AFTER_INTERFERENCE) { Serial.println(F("# CHYBA: neni na co navazat (viz 'i')")); break; }
-            Serial.println(F("# pokracuji po ruseni"));
             advanceToNextCycle();
             break;
         default:

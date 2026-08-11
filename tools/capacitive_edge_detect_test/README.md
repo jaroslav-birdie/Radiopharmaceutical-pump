@@ -47,6 +47,27 @@ velkém počtu cyklů (výchozí 10) bez zdlouhavého ručního zásahu mezi nim
 > změna hladiny a vnější rušení vypadají na **CIN2 úplně jinak**. Detaily
 > a naměřené hodnoty viz „Ochrana proti rušení" níže.
 
+> **v7 — oprava po prvním ostrém použití v6.** Dva problémy, žádný dotyk
+> se přitom nekonal:
+> 1. **Pevný práh (40 fF) byla chyba.** Nové sezení mělo elektricky
+>    šumnější prostředí (v tomhle případě 3D tiskárna vedle aparatury) —
+>    statický test ukázal CIN2 σ 6,6× a p-p 10,9× vyšší než na sezení,
+>    kde byl práh měřený. Přesně ten typ chyby, kterému jsme se snažili
+>    vyhnout u `deltaCritical`: **konstanta z jiného sezení se nepřenáší**.
+>    Oprava: práh se teď **přepočítává před každým odsáváním** z právě
+>    naměřeného klidového šumu během ustálení (`c2GuardMultiplier` ×
+>    naměřený klidový strop, s podlahou `c2GuardMinFloor` a stropem
+>    `C2_GUARD_MAX_CEILING=0,15 pF` proti sebe-oslepení, kdyby zrovna
+>    během kalibrace někdo sahal na studnu).
+> 2. **Chování po rušení bylo nekonzistentní** s principem u `ST_PAUSED`
+>    v `CLAUDE.md` („stav se při pauze nesmí ztratit"). Původně se celý
+>    cyklus zahodil a začalo se znovu s náhodným doplněním — to je přesně
+>    ten „reset při pauze", který jsme jinde označili za nebezpečný směr
+>    chyby (zpozdí detekci). Ochrana CIN2 teď funguje jako **skutečná
+>    pauza**: motor stojí, sledovaný vrchol C1 zůstává beze změny, po `y`
+>    pokračuje **tentýž** cyklus přesně odtud — žádné doplňování, žádný
+>    nový cyklus.
+
 ---
 
 ## v2 — oprava po prvním testu (klouzavé okno místo "maxima od startu")
@@ -181,13 +202,22 @@ Naměřeno na všech 10 cyklech (klouzavý průměr 5 vzorků, změna přes 3 vz
 | dotyk, který způsobil selhání (cyklus 9) | **429 fF**, 13 vzorků po sobě |
 | sundání ruky (cyklus 6) | **229 fF**, 7 vzorků po sobě |
 
-Práh `cg` = 40 fF s potvrzením `ck` = 2 vzorky tedy obě skupiny odděluje
-s rezervou — na čistých datech nepřekročil práh **ani jednou**, zatímco obě
-kritické události ho drží 7 resp. 13 vzorků.
+Práh 40 fF s potvrzením 2 vzorky tehdy obě skupiny odděloval s rezervou.
+**Byl to ale pevný práh z jednoho konkrétního sezení** — první ostré
+použití (jiný den, elektricky šumnější prostředí) ukázalo, že to nestačí:
+běžný šum tam běžně přesahoval 40 fF, aniž se čehokoli někdo dotýkal.
 
-**Chování při detekci rušení:** motor se okamžitě zastaví, cyklus se označí
-jako neplatný (`R` v souhrnu) a čeká se na `y`. Rušení tak nikdy nemůže
-způsobit **předčasnou** detekci — jen ji odložit. To je bezpečný směr chyby.
+**Od v7 se práh počítá znovu před každým odsáváním** (`cm` × naměřený
+klidový strop během ustálení, podlaha `cg`, strop 0,15 pF proti
+sebe-oslepení) — stejný princip jako u trackování vrcholu C1, žádné
+kouzelné číslo přenesené z jiného sezení.
+
+**Chování při detekci rušení:** motor se okamžitě zastaví. Sledovaný
+vrchol C1 **zůstává zachovaný** (žádný reset) — po `y` (jednoznakově, bez
+Enteru) pokračuje **tentýž** cyklus přesně odtud, žádné doplňování ani
+nový cyklus. Rušení tak nikdy nemůže způsobit **předčasnou** detekci — jen
+ji odložit. To je bezpečný směr chyby, stejný princip jako `ST_PAUSED`
+v produkčním návrhu (viz `CLAUDE.md`).
 
 > **Pozn. k reálnému přístroji:** finální sestava bude mít 2 mm olova
 > (stínění radiofarmaka) plus Faradayovu klec, což tenhle typ rušení
@@ -242,10 +272,16 @@ o chybějící hraně.
 |---|---|---|
 | `dc<pF>` | δ_critical — pokles od (neomezeného) maxima = dolní/kritická hrana | `dc0.22` |
 | `cf<n>` | kolik po sobě jdoucích vzorků musí práh držet (potvrzení) | `cf5` |
-| `cg<pF>` | práh ochrany CIN2 (změna vyhlazeného C2 přes 3 vzorky); `cg0` = **vypnout** | `cg0.040` |
+| `cm<x>` | násobitel prahu ochrany CIN2 (× naměřený klidový šum); `cm0` = **vypnout** | `cm2.5` |
+| `cg<pF>` | minimální podlaha prahu ochrany CIN2 (pro neobvykle tiché sezení) | `cg0.020` |
 | `ck<n>` | kolik po sobě jdoucích vzorků musí držet práh ochrany CIN2 | `ck2` |
 | `p<ms>` | perioda vzorku | `p200` |
 | `r<n>` | počet cyklů (max 10) | `r10` |
+
+Práh ochrany CIN2 (`c2GuardEffective`) se **přepočítává při každém
+ustálení** (start cyklu i pokračování po rušení) — `i` kdykoliv vypíše
+poslední zkalibrovanou hodnotu spolu s naměřeným klidovým stropem, ať vidíš,
+jestli kalibrace dělá, co má.
 
 Výchozí hodnoty `dc`/`p` vycházejí z analýzy 5 spojitých cyklů
 (`tools/capacitive_cycle_test`) a ze 3 terénních testů s tímhle nástrojem
@@ -275,23 +311,27 @@ nikdy nespustil falešně.
 # --- CYKLUS 2 : odsavani, hledani DOLNI (KRITICKE) HRANY ---
 ...
 # === SOUHRN VSECH CYKLU ===
-# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF;potvrzeno;doplneno_po_cyklu_ml
-1;-6.40;3.9560;-9.10;3.7300;0.2260;1;11.34
+# cyklus;vrchol_level_ml;vrchol_C1;dolni_level_ml;dolni_C1;pokles_pF;potvrzeno;ruseni_pauz;doplneno_po_cyklu_ml
+1;-6.40;3.9560;-9.10;3.7300;0.2260;1;0;11.34
 ...
-10;...;...;...;...;...;1;-
-# potvrzeno OK=9 chybne=1 ruseni(R)=0
+10;...;...;...;...;...;1;0;-
+# potvrzeno OK=9 chybne=1 celkem pauz kvuli ruseni=2
 # vrchol_* je jen INFORMATIVNI (poloha maxima C1), NENI to detekovana/pouzita hrana
-# R = zasahla ochrana CIN2, cyklus neplatny (detekce se nedokoncila)
+# ruseni_pauz = kolikrat behem cyklu zasahla ochrana CIN2 (vrchol C1 se pri pauze neztratil)
 # === SEKVENCE HOTOVA ===
 ```
 
-Pokud zasáhne ochrana CIN2, vypadá to takhle:
+Pokud zasáhne ochrana CIN2 (od v7 — cyklus se nezahazuje, jen pozastaví):
 
 ```
-# *** RUSENI DETEKOVANO (CIN2) *** cyklus=6 poloha(od tare)=-10.41 ml  zmena_C2=0.2292 pF  prah=0.0400
-# Motor zastaven, cyklus je NEPLATNY (detekce se nedokoncila).
+# *** RUSENI DETEKOVANO (CIN2) *** cyklus=6 poloha(od tare)=-10.41 ml  zmena_C2=0.2292 pF  prah=0.0850
+# Motor pozastaven, sledovany vrchol NEZTRACEN.
 # Nesahej na studnu ani kabelaz. Az bude klid, potvrd 'y'
-# -> doplneni lahvicky + dalsi cyklus.
+# -> cyklus pokracuje presne odtud (bez doplneni, bez restartu). 'x' = ABORT.
+[obsluha pocka, potvrdi 'y' (jednoznakove, bez Enteru)]
+# ustaleni (motor stoji, cca 5 s, kalibruje se ochrana CIN2)...
+# ochrana CIN2: zmereny klidovy max=0.0340 pF -> prah=0.0850 pF
+# pokracuji v odsavani po ruseni (vrchol zachovan)
 ```
 
 - `level_ml` je vždy vzhledem k poslednímu `t` — je to pozice **stříkačky**
@@ -307,9 +347,10 @@ Pokud zasáhne ochrana CIN2, vypadá to takhle:
   **odsávací** fáze cyklu — sleduj, jestli `C1_smooth - peak_ref` dává
   smysl.
 - `c2rate` je |změna vyhlazeného C2 přes 3 vzorky| — vstup ochrany proti
-  rušení. Při klidu má být pod ~0,02 pF; hodnoty nad `cg` (0,04) znamenají,
-  že se sestavy někdo/něco dotýká. Ve fázi `r` (doplňování) se nevyhodnocuje
-  a loguje se jako 0.
+  rušení. Práh, proti kterému se porovnává, **není fixní** — přepočítává se
+  při každém ustálení z aktuálního klidového šumu (viz `i` pro poslední
+  zkalibrovanou hodnotu). Ve fázi `r` (doplňování) se nevyhodnocuje a loguje
+  se jako 0.
 - `vrchol_level_ml`/`vrchol_C1` v souhrnu je jen informativní poloha
   maxima C1 — NENÍ to detekovaná/rozhodovací hrana, jen se hodí pro
   pozdější analýzu (viz `CLAUDE.md`, motivace pro dělené dávkování).

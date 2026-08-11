@@ -252,15 +252,30 @@ projeví jen extrémně pomalým monotónním poklesem.
 | dotyk, který způsobil selhání | **429 fF** (13 vzorků po sobě) |
 | sundání ruky | **229 fF** (7 vzorků po sobě) |
 
-Práh **40 fF + potvrzení 2 vzorky** obě skupiny odděluje s rezervou — na
-čistých datech nepřekročil práh ani jednou.
+Práh 40 fF + potvrzení 2 vzorky obě skupiny na tomhle měření oddělil
+s rezervou — **ale je to konstanta z jednoho konkrétního sezení.** První
+ostré použití (jiné elektrické prostředí – v tomto případě 3D tiskárna
+běžící vedle aparatury) ukázalo, že běžný šum tam samotný běžně přesahoval
+40 fF, bez jakéhokoli dotyku. Statický test šumu potvrdil CIN2 σ 6,6× a
+špička-špička 10,9× vyšší než na sezení, kde byl práh měřený.
 
-- ✅ **Při detekci rušení zastavit motory a přejít do `ST_PAUSED`** (ne
-  pokračovat s podezřelými daty). Rušení tak může detekci jen **odložit**,
-  nikdy ne způsobit předčasné vyhlášení kritické hladiny.
+- ❌ **Pevný práh nepřežije změnu prostředí.** Přesně ten typ chyby, které
+  se snažíme vyhnout u `deltaCritical` (ten je proto relativní k vlastnímu
+  sledovanému vrcholu, ne k absolutnímu číslu). Práh ochrany CIN2 musí být
+  **samo-kalibrující se** – přepočítaný z aktuálně naměřeného klidového
+  šumu (např. při ustálení před každým odsáváním: násobek naměřeného
+  klidového stropu, s rozumnou podlahou i stropem proti sebe-oslepení,
+  kdyby se kalibrace sama trefila do momentu s rušením). Ověřeno
+  v `tools/capacitive_edge_detect_test` (v7).
+- ✅ **Při detekci rušení zastavit motory** (ne pokračovat s podezřelými
+  daty).
 - ❌ **Během rušení se nesmí aktualizovat sledovaný vrchol C1** – právě
-  jeho nafouknutí bylo příčinou obou selhání.
-- Implementováno a ověřeno v `tools/capacitive_edge_detect_test` (v6).
+  jeho nafouknutí bylo příčinou obou prvních selhání.
+- ✅ **Po odeznění rušení pokračovat v TÉMŽ měření se zachovaným stavem**,
+  ne cyklus zahodit a začít znovu od nuly. To je stejný princip jako
+  u `ST_PAUSED` výše (viz bezpečnostní pravidla) – reset při pauze zpožďuje
+  detekci kritické hladiny, což je nebezpečný směr chyby. V bench nástroji
+  i v produkci má rušení fungovat jako pozastavení, ne jako zrušení.
 
 > Finální sestava bude mít 2 mm olova + Faradayovu klec, což tenhle typ
 > rušení nejspíš eliminuje. Ochranu přesto implementovat: nestojí nic
