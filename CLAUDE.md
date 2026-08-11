@@ -276,6 +276,17 @@ běžící vedle aparatury) ukázalo, že běžný šum tam samotný běžně p�
   u `ST_PAUSED` výše (viz bezpečnostní pravidla) – reset při pauze zpožďuje
   detekci kritické hladiny, což je nebezpečný směr chyby. V bench nástroji
   i v produkci má rušení fungovat jako pozastavení, ne jako zrušení.
+- ❌ **I samo-kalibrující se řešení má díru: kalibrace může být znečištěná.**
+  Druhý terénní test (10 cyklů, 1 selhání) ukázal, že pokud je rušení
+  přítomné už **během ustálení/kalibrace** (ne až během měření), algoritmus
+  ho vyhodnotí jako „nový normální klid" a nastaví si podle něj vlastní
+  práh – naučí se tak ignorovat přesně to rušení, které měl zachytit.
+  Kalibrace proto musí být validovaná proti vlastní nedávné historii (např.
+  pomalu se přizpůsobující zdravá základna) – pokud nová kalibrace vyskočí
+  o řád nad ni, je podezřelá a nesmí se použít přímo. Legitimní rovnoměrně
+  zvýšený okolní šum (jiné prostředí, jiný den) tímhle testem projde v
+  pořádku, protože zvedne všechny kalibrace stejně, ne jednu jedinou.
+  Ověřeno v `tools/capacitive_edge_detect_test` (v8).
 
 > Finální sestava bude mít 2 mm olova + Faradayovu klec, což tenhle typ
 > rušení nejspíš eliminuje. Ochranu přesto implementovat: nestojí nic

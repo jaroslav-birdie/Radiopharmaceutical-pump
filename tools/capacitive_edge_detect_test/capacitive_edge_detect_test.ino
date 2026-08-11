@@ -78,6 +78,25 @@
 //      TENTYZ cyklus odsavani presne odtud, kde skoncil - zadne
 //      doplnovani, zadny novy cyklus.
 //
+//  v8 - OPRAVA po druhem ostrem pouziti (10 cyklu, 1 selhani - cyklus 6):
+//   Tentokrat byl dotek studny PRITOMNY UZ BEHEM USTALENI (ne az behem
+//   odsavani). Kalibrace v7 to nerozliší od legitimniho zvyseneho okolniho
+//   sumu - zmerila klidovy strop 0,0424 pF (19x nad typickou hodnotou
+//   ~0,0023 pF z ostatnich 12 kalibraci tehohle behu) a spocitala z toho
+//   prah 0,106 pF. Kdyz pak behem odsavani ruka odesla, skutecne hodnoty
+//   (0,031-0,047 pF) uz na tenhle nafouknuty prah nestacily - kriticka
+//   hrana se vyhlasila predcasne (-11,63 ml misto ocekavanych ~-17 ml).
+//   Kalibrace tedy sama sebe "oslepila": naucila se ignorovat presne to
+//   ruseni, ktere mela zachytit.
+//   Oprava: nova kalibrace se porovnava s pomalu se prizpusobujici
+//   "zdravou zakladnou" (`c2BaselineQuiet`, EMA z predchozich kalibraci
+//   tehohle behu). Pokud novy vysledek vyskoci >4x nad zakladnu, je
+//   podezrely - NEPOUZIJE se primo (zakladna se ani neaktualizuje), misto
+//   nej se prah spocita z posledni zdrave zakladny a obsluha se varuje.
+//   Legitimni rovnomerne zvyseny okolni sum (napr. tiskarna beh cely cas)
+//   timhle projde bez problemu, protoze zvedne VSECHNY kalibrace stejne -
+//   zadny jednotlivy vzorek nebude vuci ostatnim vycnivat.
+//
 //  Postup jednoho cyklu:
 //    ODSAVANI: odsava spojite od aktualni pozice, dokud nenajde DOLNI
 //              (kritickou) hranu (pokles od prubezneho maxima C1 -
@@ -186,6 +205,15 @@ static float    c2GuardMinFloor = 0.020f;  // pF - prah nikdy neklesne pod tuto 
 static uint8_t  c2GuardConfirm  = 2;       // kolik po sobe jdoucich vzorku musi prah drzet
 static float    c2GuardEffective = 0.0f;   // aktualni prah, prepocitan v settleBeforeCycle()
 static float    c2CalibMax      = 0.0f;    // nejhorsi zmena namerena behem posledniho ustaleni (info/log)
+
+// v8 - kalibrace sama o sobe muze byt znecistena, pokud je behem USTALENI
+// pritomne ruseni (napr. ruka na studni po celou dobu) - viz hlavicka. Prumer
+// klidovych kalibraci se drzi jako pomalu se prizpusobujici zakladna; kdyz
+// nova kalibrace vyskoci vysoko nad tuhle zakladnu, NEPOUZIJE se primo
+// (znecistila by prah), misto ni se pouzije posledni zdrava zakladna a
+// obsluha se varuje.
+static float    c2BaselineQuiet = 0.0f;    // pomalu se prizpusobujici odhad "opravdu klidneho" stropu (0 = jeste nenastaveno)
+#define C2_BASELINE_OUTLIER_MULT 4.0f       // nova kalibrace > tolikrat zakladna = podezrele, odmitnout
 #define C2_GUARD_MAX_CEILING 0.150f         // pF - strop pro auto-kalibrovany prah (viz settleBeforeCycle);
                                              // bezpecne pod obema zdokumentovanymi udalostmi (429/229 fF)
 
@@ -425,6 +453,7 @@ static void printInfo() {
     Serial.print(F("# c2GuardEffective (posledni kalibrace)=")); Serial.print(c2GuardEffective, 4);
     Serial.print(F(" pF  (zmereny klidovy max=")); Serial.print(c2CalibMax, 4);
     Serial.println(F(" pF)"));
+    Serial.print(F("# c2BaselineQuiet (zdrava zakladna, EMA)=")); Serial.println(c2BaselineQuiet, 4);
     Serial.print(F("# MECH_LIMIT_ML=")); Serial.print(MECH_LIMIT_ML, 1);
     Serial.print(F(" (hardwarova ochrana, ne detekcni alarm)"));
     Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
@@ -521,27 +550,39 @@ static bool settleBeforeCycle() {
     }
     c2AlarmCount = 0;   // pripadne vychylky pri vraceni lahvicky nepocitat pro samotnou detekci
 
+    // v8 - ochrana proti znecistene kalibraci (viz poznamka u c2BaselineQuiet):
+    // pokud tahle kalibrace vyskoci vysoko nad nedavnou "klidnou" zakladnu,
+    // je podezrela (nejspis rusila i samo ustaleni) - NEPOUZIVAT ji primo,
+    // pouzit misto ni posledni zdravou zakladnu. Prvni kalibrace v behu
+    // zakladnu jen nastavi (neni s cim porovnat).
+    float calibSource = c2CalibMax;
+    bool calibOutlier = false;
+    if (c2BaselineQuiet > 0.0f && c2CalibMax > c2BaselineQuiet * C2_BASELINE_OUTLIER_MULT) {
+        calibOutlier = true;
+        calibSource = c2BaselineQuiet;
+    } else {
+        c2BaselineQuiet = (c2BaselineQuiet <= 0.0f) ? c2CalibMax
+                                                     : (0.7f * c2BaselineQuiet + 0.3f * c2CalibMax);
+    }
+
     if (c2GuardMultiplier <= 0.0f) {
         c2GuardEffective = 0.0f;
     } else {
-        c2GuardEffective = c2CalibMax * c2GuardMultiplier;
+        c2GuardEffective = calibSource * c2GuardMultiplier;
         if (c2GuardEffective < c2GuardMinFloor) c2GuardEffective = c2GuardMinFloor;
-        // Pojistka proti sebe-oslepeni: kdyby zrovna behem ustaleni nekdo
-        // sahal na studnu (nebo jina udalost zvedla sum), kalibrace by si
-        // "myslela", ze je to normalni klid, a prah by se nastavil zbytecne
-        // vysoko. Strop drzi prah bezpecne pod obema jiz zdokumentovanymi
-        // "velkymi" ruseni (429/229 fF, viz v6) i v nejhorsim pripade -
-        // i kdyby se kalibrace sama znecistila, plne polozenou ruku porad
-        // chytne. Slabsi dotyky (desitky fF) v hodne sumnem prostredi
-        // (napr. tiskarna blizko) uz spolehlive rozlisit nejde - to je
-        // fyzikalni limit, ne chyba tohohle stropu.
-        if (c2GuardEffective > C2_GUARD_MAX_CEILING) {
-            c2GuardEffective = C2_GUARD_MAX_CEILING;
-            Serial.println(F("# VAROVANI: klidovy sum behem ustaleni byl neobvykle vysoky,"));
-            Serial.println(F("#   prah CIN2 orezan na strop. Zkontroluj, ze se nikdo studny"));
-            Serial.println(F("#   nedotykal PRAVE BEHEM ustaleni, a ze zdroj ruseni (napr."));
-            Serial.println(F("#   3D tiskarna) neni prilis blizko."));
-        }
+        // Druha pojistka (nezavisla na te vyse): i kdyby zakladna sama byla
+        // nejak vysoko, prah nikdy nesmi prekrocit tenhle strop - bezpecne
+        // pod obema jiz zdokumentovanymi "velkymi" rusenimi (429/229 fF).
+        if (c2GuardEffective > C2_GUARD_MAX_CEILING) c2GuardEffective = C2_GUARD_MAX_CEILING;
+    }
+
+    if (calibOutlier) {
+        Serial.print(F("# VAROVANI: kalibrace CIN2 vypada znecistena (zmereno "));
+        Serial.print(c2CalibMax, 4);
+        Serial.print(F(" pF, zdrava zakladna "));
+        Serial.print(c2BaselineQuiet, 4);
+        Serial.println(F(" pF) - pouzita zakladna misto teto kalibrace."));
+        Serial.println(F("#   Nejspis se studny neco dotykalo PRAVE BEHEM ustaleni."));
     }
     Serial.print(F("# ochrana CIN2: zmereny klidovy max=")); Serial.print(c2CalibMax, 4);
     Serial.print(F(" pF -> prah=")); Serial.print(c2GuardEffective, 4);

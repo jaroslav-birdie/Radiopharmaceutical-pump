@@ -68,6 +68,23 @@ velkém počtu cyklů (výchozí 10) bez zdlouhavého ručního zásahu mezi nim
 >    pokračuje **tentýž** cyklus přesně odtud — žádné doplňování, žádný
 >    nový cyklus.
 
+> **v8 — oprava po druhém ostrém použití (10 cyklů, 1 selhání).** Tentokrát
+> byl dotek studny přítomný **už během ustálení**, ne až během odsávání.
+> Kalibrace v7 to nerozliší od legitimního zvýšeného okolního šumu —
+> naměřila klidový strop 0,0424 pF (19× nad typickou hodnotou ~0,0023 pF
+> z ostatních 12 kalibrací téhož běhu) a spočítala z toho práh 0,106 pF.
+> Když pak ruka během odsávání odešla, skutečné hodnoty (0,031–0,047 pF)
+> už na tenhle nafouknutý práh nestačily — kritická hrana se vyhlásila
+> předčasně (−11,63 ml místo očekávaných ~−17 ml). **Kalibrace sama sebe
+> oslepila** — naučila se ignorovat přesně to rušení, které měla zachytit.
+> Oprava: nová kalibrace se porovnává s pomalu se přizpůsobující „zdravou
+> základnou" (EMA z předchozích kalibrací téhož běhu). Pokud nový výsledek
+> vyskočí >4× nad základnu, je podezřelý — nepoužije se přímo, práh se
+> spočítá z poslední zdravé základny a obsluha se varuje. Legitimní
+> rovnoměrně zvýšený šum (např. tiskárna běžící celou dobu) tímhle projde
+> bez problémů, protože zvedne všechny kalibrace stejně — žádná jednotlivá
+> nebude vůči ostatním vyčnívat.
+
 ---
 
 ## v2 — oprava po prvním testu (klouzavé okno místo "maxima od startu")
@@ -211,6 +228,16 @@ běžný šum tam běžně přesahoval 40 fF, aniž se čehokoli někdo dotýkal
 klidový strop během ustálení, podlaha `cg`, strop 0,15 pF proti
 sebe-oslepení) — stejný princip jako u trackování vrcholu C1, žádné
 kouzelné číslo přenesené z jiného sezení.
+
+**Od v8 se navíc každá nová kalibrace ověřuje proti nedávné historii.**
+Pokud byl dotek přítomný už během samotného ustálení (ne až během
+odsávání), naměřený „klidový" šum by kalibraci sám znečistil a nafoukl by
+práh natolik, že by pak stejné rušení při odsávání neprošlo — kalibrace by
+se tak sama oslepila. Nová kalibrace, která vyskočí >4× nad pomalu se
+přizpůsobující zdravou základnu, se proto nepoužije přímo — práh se
+spočítá ze základny a vypíše se varování. Legitimní rovnoměrně zvýšený
+šum (např. tiskárna běžící celou dobu) tím neprojde jako podezřelý, protože
+zvedne všechny kalibrace stejně.
 
 **Chování při detekci rušení:** motor se okamžitě zastaví. Sledovaný
 vrchol C1 **zůstává zachovaný** (žádný reset) — po `y` (jednoznakově, bez
