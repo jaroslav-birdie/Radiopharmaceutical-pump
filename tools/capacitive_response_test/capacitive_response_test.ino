@@ -8,18 +8,37 @@
 //  tenhle test odstranena, viz CLAUDE.md).
 //
 //  Vychazi z tools/capacitive_cycle_test (spojity pohyb, opakovane
-//  cykly), rozsireno o:
-//   1) DVE VARIANTY POCATECNIHO OBJEMU za sebou v jednom behu -
-//      Faze A (~20 ml, odber/doplneni 18 ml, cycleCount cyklu),
-//      pak Faze B (~10 ml, odber/doplneni 8 ml, cycleCount cyklu).
-//      Mezi fazemi obsluha RUCNE upravi objem v lahvicce - dalsi
-//      'g' to bez noveho 't' odmitne (viz awaitingRetare nize).
-//   2) USTALENI (5 s, motor stoji) PRED KAZDYM smerem pohybu se
-//      taky loguje (dir=settle) - zajima nas i chovani "v klidu
-//      pred/po pohybu", ne jen samotny pohyb.
-//   3) ZADNA detekce hrany, zadny prah - jen syrova data pro
-//      offline analyzu, drive nez se z ni navrhne novy prah pro
-//      hledani kriticke hladiny (viz CLAUDE.md a README.md tady).
+//  cykly). Puvodni verze tohoto sketche delala DVE ODDELENE faze se
+//  ZVLASTNIM rucnim naplnenim lahvicky mezi nimi (Faze A "~20 ml",
+//  pak Faze B "~10 ml") - to se ukazalo jako chyba navrhu testu:
+//  odsati 18 ml z rucne, od oka naplnene "~20 ml" lahvicky hranu
+//  prstence VUBEC nenaslo (C1 klesla max o 0.23 pF ze zhruba 1.1 pF
+//  potrebnych - viz analyza v repu). Dve nezavisle, od oka odhadnute
+//  zalivky nejsou vzajemne poromnatelne v ml.
+//
+//  Tahle verze proto dela JEDEN SOUVISLY beh bez rucniho zasahu:
+//   1) VELKA FAZE - cycleCount cyklu {odsej bigMoveMl, doplni zpet
+//      bigMoveMl} (vychozi 20 ml). Zadny rucni re-tare mezi cykly.
+//   2) PRECHOD - na POSLEDNIM cyklu velke faze se po odsati bigMoveMl
+//      doplni zpet jen smallMoveMl (vychozi 10 ml) - poloha se tim
+//      trvale posune o (bigMoveMl - smallMoveMl) hloubeji.
+//   3) MALA FAZE - cycleCount cyklu {odsej smallMoveMl, doplni zpet
+//      smallMoveMl} (vychozi 10 ml) kolem nove, hloubsi zakladny.
+//   Cele se to spusti JEDNIM 'g' po JEDNOM 't' - viz README.md.
+//
+//  DULEZITE: lahvicku naplnit RUCNE VYRAZNE NAD kritickou hladinu
+//  (ocima overit, ze hladina je jasne nad prstencem - ne jen "odhadem
+//  20 ml"). Sleduj ZIVE prvni "down" usek velke faze: pokud C1
+//  neklesne aspoň o desetiny pF, přeruš 'x', dolij vic a znovu 't'.
+//  Bez toho hrozi presne to, co se stalo puvodni Fazi A.
+//
+//   USTALENI (5 s, motor stoji) PRED KAZDYM smerem pohybu se taky
+//   loguje (dir=settle) - zajima nas i chovani "v klidu pred/po
+//   pohybu", ne jen samotny pohyb.
+//
+//   ZADNA detekce hrany, zadny prah - jen syrova data pro offline
+//   analyzu, drive nez se z ni navrhne novy prah pro hledani
+//   kriticke hladiny (viz CLAUDE.md a README.md tady).
 //
 //  DULEZITE - tohle NENI test odolnosti proti dotyku/ruseni (to je
 //  soucasti navazujiciho testu hledani hladiny) - studny se BEHEM
@@ -27,14 +46,16 @@
 //
 //  Postup (viz README.md v tomto adresari):
 //    1. Naplnit strikacku na rozumnou stredni hodnotu (~30 ml).
-//    2. Lahvicku naplnit RUCNE na ~20 ml, vlozit do studny.
+//    2. Lahvicku naplnit RUCNE vyrazne NAD kritickou hladinu, vlozit
+//       do studny.
 //    3. 'a' - overit CAPDAC (po zmene stineni se mohl posunout),
 //       volitelne 'n' - staticky test sumu.
 //    4. 'o' - driver ON, volitelne 'j'/'k' - odvzdusneni.
-//    5. 't' - tare (aktualni poloha = 20 ml, "plna" pro Fazi A).
-//    6. 'g' - spusti Fazi A (cycleCount cyklu, 18 ml odber/doplneni).
-//    7. Po dokonceni Faze A: vyprazdnit/upravit lahvicku na ~10 ml,
-//       vratit do studny, znovu 't' (poloha=10 ml), pak 'g' - Faze B.
+//    5. 't' - tare (aktualni poloha = 0.00 ml, referencni).
+//    6. 'g' - spusti CELY test (velka faze -> prechod -> mala faze,
+//       vse v jednom behu, bez dalsiho zasahu).
+//    7. Sleduj zive prvni "down" usek - pokud C1 zjevne neklesa,
+//       'x' (abort), dolij vic, znovu 't', pak zas 'g'.
 //    8. 'x' kdykoliv za behu = okamzite zastaveni (nouzove).
 // ============================================================
 #include <Arduino.h>
@@ -80,13 +101,15 @@
 #define SETTLE_MS          5000UL   // klid pred kazdym smerem pohybu (motor stoji), loguje se taky
 
 // Vyhradne HARDWAROVA ochrana zdvihu strikacky (60 ml) - stejny princip
-// jako v capacitive_edge_detect_test.ino. Faze A pohne az 18 ml od tare,
-// pohodlne pod timhle stropem.
+// jako v capacitive_edge_detect_test.ino. Nejhlubsi bod behu je
+// bigMoveMl (vychozi 20 ml) od tare - jak na konci posledniho cyklu
+// velke faze, tak v kazdem cyklu male faze (zakladna se posune o
+// bigMoveMl-smallMoveMl, pak +-smallMoveMl) - pohodlne pod timhle stropem.
 #define MECH_LIMIT_ML      25.0f
 
 // ---------- parametry (laditelne prikazy pred 't'/'g': wa/wb/r/p) ----------
-static float    phaseStartMl[2] = { 20.0f, 10.0f };  // jen popisek/level_ml, "plna" pri tare dane faze
-static float    phaseMoveMl[2]  = { 18.0f, 8.0f };   // kolik se odsaje a zase doplni za jeden cyklus
+static float    bigMoveMl      = 20.0f;   // velka faze - odber/doplneni za cyklus
+static float    smallMoveMl    = 10.0f;   // mala faze - odber/doplneni za cyklus; i prechodovy doplnek po poslednim odsati velke faze
 static uint8_t  cycleCount      = 10;
 static uint16_t samplePeriodMs  = 200;
 
@@ -94,15 +117,14 @@ static uint8_t  capdac[N_CH]   = { 0, 0 };
 static float    baseline[N_CH] = { 0.0f, 0.0f };
 static bool     tared          = false;
 static bool     driverEnabled  = false;
-static int32_t  posSteps       = 0;      // odchylka od tare (phaseStartMl[phaseIdx]) v krocich
+static int32_t  posSteps       = 0;      // odchylka od tare v krocich (0 pri tare, zaporne = odsato)
 static char     line[24];
 static uint8_t  lineLen        = 0;
 static uint32_t runStartMs     = 0;
 
-// 0 = dalsi 'g' spusti Fazi A (20/18 ml), 1 = dalsi 'g' spusti Fazi B
-// (10/8 ml, az po rucni uprave a novem 't'), 2 = obe faze hotovy
-static uint8_t  phaseIdx       = 0;
-static bool     awaitingRetare = false;   // true hned po dokonceni Faze A, dokud obsluha znovu neda 't'
+// true jakmile 'g' jednou spusti beh (dokoncenim i ABORTem) - dalsi 'g'
+// odmitne, dokud obsluha znovu nenastavi referenci 't'.
+static bool     testStarted    = false;
 
 // ---------- nizka uroven I2C ----------
 static void writeReg(uint8_t reg, uint16_t value) {
@@ -180,8 +202,11 @@ static int32_t stepsFor(float ml) {
     return (int32_t)(ml * SAL_STEPS_PER_ML + 0.5f);
 }
 
+// Signovana odchylka od tare v ml - 0.00 pri 't', zaporne = odsato.
+// UMYSLNE se nepredstira znalost skutecneho obsahu lahvicky (viz
+// hlavicka souboru - to byla chyba puvodni verze).
 static float levelMl() {
-    return phaseStartMl[phaseIdx < 2 ? phaseIdx : 1] + (float)posSteps / SAL_STEPS_PER_ML;
+    return (float)posSteps / SAL_STEPS_PER_ML;
 }
 
 static bool withinMechLimit() {
@@ -214,28 +239,25 @@ static void jogOnce(bool push) {
 static void printInfo() {
     Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
     Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
-    Serial.print(F("# faze A: start=")); Serial.print(phaseStartMl[0], 1);
-    Serial.print(F(" ml odber/doplneni=")); Serial.print(phaseMoveMl[0], 1);
-    Serial.print(F(" ml   faze B: start=")); Serial.print(phaseStartMl[1], 1);
-    Serial.print(F(" ml odber/doplneni=")); Serial.println(phaseMoveMl[1], 1);
+    Serial.print(F("# velka faze: ")); Serial.print(bigMoveMl, 1);
+    Serial.print(F(" ml/cyklus   mala faze: ")); Serial.print(smallMoveMl, 1);
+    Serial.println(F(" ml/cyklus"));
     Serial.print(F("# cycleCount=")); Serial.print(cycleCount);
     Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
-    Serial.print(F("# dalsi faze: "));
-    Serial.println(phaseIdx == 0 ? F("A (20 ml)") : (phaseIdx == 1 ? F("B (10 ml)") : F("zadna, obe hotovy")));
-    Serial.print(F("# awaitingRetare=")); Serial.println(awaitingRetare ? F("ano") : F("ne"));
+    Serial.print(F("# testStarted=")); Serial.println(testStarted ? F("ano (pro novy beh 't')") : F("ne"));
     Serial.print(F("# driver=")); Serial.print(driverEnabled ? F("ON") : F("OFF"));
     Serial.print(F(" tared=")); Serial.print(tared ? F("ano") : F("ne"));
     Serial.print(F(" level=")); Serial.print(levelMl(), 3);
-    Serial.println(F(" ml (orientacni)"));
+    Serial.println(F(" ml (odchylka od tare)"));
 }
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC n=sum"));
     Serial.println(F("# o=driver ON  x=driver OFF / STOP behem behu"));
-    Serial.println(F("# t=tare (poloha=start aktualni faze)  j/k=jog +-0.5ml"));
-    Serial.println(F("# g=spustit dalsi fazi (nejdriv A, pak po rucni uprave a 't' B)"));
+    Serial.println(F("# t=tare (poloha=0.00 ml)  j/k=jog +-0.5ml"));
+    Serial.println(F("# g=spustit cely test (velka faze -> prechod -> mala faze)"));
     Serial.println(F("# r<n>=pocet cyklu na fazi  p<ms>=perioda vzorku"));
-    Serial.println(F("# wa<ml>=odber/doplneni Faze A  wb<ml>=odber/doplneni Faze B"));
+    Serial.println(F("# wa<ml>=odber/doplneni velka faze  wb<ml>=odber/doplneni mala faze + prechod"));
 }
 
 static void noiseTest() {
@@ -340,45 +362,52 @@ static bool driveContinuous(uint8_t variantMl, bool push, float ml, const char *
     return true;
 }
 
-// ---------- jedna faze: cycleCount cyklu {ustaleni, odsavani, ustaleni, doplneni} ----------
-static void runPhase() {
+// ---------- cely test: velka faze -> prechod -> mala faze, jeden souvisly beh ----------
+static void runTest() {
     if (!driverEnabled) { Serial.println(F("# CHYBA: driver je vypnuty, nejdriv 'o'")); return; }
     if (!tared) { Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'")); return; }
-    if (phaseIdx == 1 && awaitingRetare) {
-        Serial.println(F("# CHYBA: nejdriv uprav lahvicku na 10 ml a znovu 't'"));
-        return;
-    }
-    if (phaseIdx > 1) { Serial.println(F("# obe faze uz jsou hotove (pro novy beh restartuj desku)")); return; }
+    if (testStarted) { Serial.println(F("# CHYBA: test uz probehl (nebo byl prerusen) - pro novy beh znovu 't'")); return; }
+    testStarted = true;
 
-    uint8_t variantMl = (uint8_t)phaseStartMl[phaseIdx];
-    float moveMl = phaseMoveMl[phaseIdx];
+    uint8_t bigVariant = (uint8_t)bigMoveMl;
+    uint8_t smallVariant = (uint8_t)smallMoveMl;
     runStartMs = millis();
-    Serial.print(F("# === FAZE ")); Serial.print(variantMl);
+
+    Serial.print(F("# === VELKA FAZE ")); Serial.print(bigMoveMl, 1);
     Serial.print(F(" ml: ")); Serial.print(cycleCount);
-    Serial.print(F(" cyklu, odber/doplneni ")); Serial.print(moveMl, 2);
-    Serial.println(F(" ml ==="));
+    Serial.println(F(" cyklu ==="));
     Serial.println(F("# variant;cycle;t_ms;level_ml;dir;C1_pF;C2_pF;d1;d2"));
 
     for (uint8_t c = 1; c <= cycleCount; c++) {
         Serial.print(F("# --- cyklus ")); Serial.print(c); Serial.print('/'); Serial.println(cycleCount);
-        if (!settleAndLog(variantMl, c)) { stopMotorDisable(); return; }
-        if (!driveContinuous(variantMl, false, moveMl, "down", c)) { return; }
-        if (!settleAndLog(variantMl, c)) { stopMotorDisable(); return; }
-        if (!driveContinuous(variantMl, true, moveMl, "up", c)) { return; }
+        if (!settleAndLog(bigVariant, c)) { stopMotorDisable(); return; }
+        if (!driveContinuous(bigVariant, false, bigMoveMl, "down", c)) { return; }
+        if (!settleAndLog(bigVariant, c)) { stopMotorDisable(); return; }
+
+        bool lastBigCycle = (c == cycleCount);
+        if (lastBigCycle) {
+            Serial.print(F("# --- prechod: doplni se jen ")); Serial.print(smallMoveMl, 1);
+            Serial.println(F(" ml (misto plne velke faze) - dale pokracuje mala faze ---"));
+        }
+        float upMl = lastBigCycle ? smallMoveMl : bigMoveMl;
+        if (!driveContinuous(bigVariant, true, upMl, "up", c)) { return; }
+    }
+
+    Serial.print(F("# === VELKA FAZE ")); Serial.print(bigMoveMl, 1); Serial.println(F(" ml HOTOVA ==="));
+    Serial.print(F("# === MALA FAZE ")); Serial.print(smallMoveMl, 1);
+    Serial.print(F(" ml: ")); Serial.print(cycleCount);
+    Serial.println(F(" cyklu ==="));
+
+    for (uint8_t c = 1; c <= cycleCount; c++) {
+        Serial.print(F("# --- cyklus ")); Serial.print(c); Serial.print('/'); Serial.println(cycleCount);
+        if (!settleAndLog(smallVariant, c)) { stopMotorDisable(); return; }
+        if (!driveContinuous(smallVariant, false, smallMoveMl, "down", c)) { return; }
+        if (!settleAndLog(smallVariant, c)) { stopMotorDisable(); return; }
+        if (!driveContinuous(smallVariant, true, smallMoveMl, "up", c)) { return; }
     }
 
     stopMotorDisable();
-    Serial.print(F("# === FAZE ")); Serial.print(variantMl); Serial.println(F(" ml HOTOVA ==="));
-
-    if (phaseIdx == 0) {
-        phaseIdx = 1;
-        awaitingRetare = true;
-        Serial.println(F("# Vyprazdni/uprav lahvicku na ~10 ml, vrat do studny,"));
-        Serial.println(F("# znovu 't' (tare), pak 'g' pro Fazi B."));
-    } else {
-        phaseIdx = 2;
-        Serial.println(F("# Obe faze dokonceny - test 1 kompletni."));
-    }
+    Serial.println(F("# === MALA FAZE HOTOVA - test 1 kompletni ==="));
 }
 
 // ---------- prikazy ----------
@@ -387,12 +416,12 @@ static void handleLine() {
 
     if (lineLen >= 3 && line[0] == 'w' && line[1] == 'a') {
         float v = atof(&line[2]);
-        if (v > 0.0f && v <= 60.0f) { phaseMoveMl[0] = v; Serial.print(F("# faze A odber/doplneni=")); Serial.println(phaseMoveMl[0], 2); }
+        if (v > 0.0f && v <= 60.0f) { bigMoveMl = v; Serial.print(F("# velka faze odber/doplneni=")); Serial.println(bigMoveMl, 2); }
         return;
     }
     if (lineLen >= 3 && line[0] == 'w' && line[1] == 'b') {
         float v = atof(&line[2]);
-        if (v > 0.0f && v <= 60.0f) { phaseMoveMl[1] = v; Serial.print(F("# faze B odber/doplneni=")); Serial.println(phaseMoveMl[1], 2); }
+        if (v > 0.0f && v <= 60.0f) { smallMoveMl = v; Serial.print(F("# mala faze odber/doplneni=")); Serial.println(smallMoveMl, 2); }
         return;
     }
 
@@ -418,10 +447,8 @@ static void handleLine() {
             posSteps = 0;
             for (uint8_t i = 0; i < N_CH; i++) baseline[i] = readPf(i);
             tared = true;
-            awaitingRetare = false;
-            Serial.print(F("# tare - aktualni poloha = "));
-            Serial.print(phaseStartMl[phaseIdx < 2 ? phaseIdx : 1], 1);
-            Serial.println(F(" ml"));
+            testStarted = false;
+            Serial.println(F("# tare - aktualni poloha = 0.00 ml (referencni)"));
             break;
         case 'j':
             if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
@@ -434,7 +461,7 @@ static void handleLine() {
             Serial.print(F("# jog -0.5ml, poloha=")); Serial.println(levelMl(), 2);
             break;
         case 'g':
-            runPhase();
+            runTest();
             break;
         case 'r': {
             int v = atoi(&line[1]);
@@ -493,11 +520,11 @@ void setup() {
     printInfo();
     printHelp();
     Serial.println(F("# POSTUP: 1) strikacka na strednich ~30 ml"));
-    Serial.println(F("#         2) lahvicka RUCNE na ~20 ml, do studny"));
+    Serial.println(F("#         2) lahvicka RUCNE vyrazne NAD kritickou hladinu, do studny"));
     Serial.println(F("#         3) 'a' overit CAPDAC, volitelne 'n' sum"));
-    Serial.println(F("#         4) 'o' driver ON, 't' tare"));
-    Serial.println(F("#         5) 'g' - Faze A (10x 18 ml odber/doplneni)"));
-    Serial.println(F("#         6) po dokonceni: uprav lahvicku na 10 ml, 't', 'g' - Faze B"));
+    Serial.println(F("#         4) 'o' driver ON, 't' tare (poloha=0.00 ml)"));
+    Serial.println(F("#         5) 'g' - CELY test (velka 20ml faze -> prechod -> mala 10ml faze)"));
+    Serial.println(F("#         6) sleduj zive prvni 'down' - neklesa-li C1, 'x', dolij vic, znovu 't'"));
 }
 
 void loop() {
