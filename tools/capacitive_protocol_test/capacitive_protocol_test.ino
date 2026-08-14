@@ -51,14 +51,14 @@
 //      nehybaly - pohyb lahvicky by byl presne ten common-mode zasah,
 //      ktery se snazime vyloucit, a navic by zamaskoval creep, ktery
 //      hledame.
-//   3) OCHRANA CIN2 POKRACUJE SAMA. V predchozim nastroji cekala na
-//      'y'. Tady se motor pozastavi, vrchol C1 i vyhlazovaci okno
-//      ZUSTAVAJI (viz ST_PAUSED v CLAUDE.md - reset by detekci
-//      zpozdil, coz je nebezpecny smer chyby) a beh sam pokracuje,
-//      jakmile je rychlost zmeny C2 pod prahem c2QuietSamples vzorku
-//      po sobe. Vyhlazovaci okno se behem pauzy dal plni (hladina se
-//      nehybe, takze prumer zustava platny) - na rozdil od v7/v8/v9
-//      se tedy pri pauze NEresetuje vubec nic.
+//      3) OCHRANA CIN2 POKRACUJE SAMA. V predchozim nastroji cekala na 'y'.
+//      Tady se motor pozastavi a beh sam pokracuje, jakmile je rychlost
+//      zmeny C2 pod prahem C2_QUIET_SAMPLES vzorku po sobe. Sledovany
+//      vrchol C1 pritom ZUSTAVA (pravidlo ST_PAUSED v CLAUDE.md - reset
+//      by detekci zpozdil, coz je nebezpecny smer chyby), zatimco
+//      vyhlazovaci okno se pred pokracovanim naplni znovu z cistych
+//      vzorku. Proc zrovna takhle je rozepsane u waitForQuiet() nize -
+//      je to nejchoulostivejsi misto celeho sketche.
 //   4) LOGUJE SE i odhadovany OBSAH LAHVICKY v ml (`vial_ml`), ne jen
 //      poloha strikacky. Diky automatickemu pocatecnimu naplneni je
 //      pocatecni stav znamy, takze absolutni objem v lahvicce dava
@@ -541,14 +541,29 @@ static void finalizeC2GuardThreshold() {
     c2AlarmCount = 0;
 }
 
-// Pauza kvuli ruseni: motor stoji, vrchol C1 i vyhlazovaci okno se
-// NERESETUJI (viz ST_PAUSED v CLAUDE.md - reset by detekci zpozdil).
-// Vyhlazovaci okno se dal plni, hladina se nehybe, takze prumer zustava
-// platny. Vraci true, kdyz je klid a lze pokracovat.
+// Pauza kvuli ruseni. Motor stoji. Ceka se, az rychlost zmeny C2 klesne pod
+// prah na C2_QUIET_SAMPLES vzorku po sobe, a pak se JESTE dojede plne
+// vyhlazovaci okno z cistych vzorku - teprve potom se pokracuje.
+//
+// Co se pri pauze ZACHOVA a co se ZAHODI (tohle rozliseni je zasadni):
+//  - sledovany vrchol C1 (`peakMax` u volajiciho) a citac potvrzeni ZUSTAVAJI.
+//    To je pravidlo ST_PAUSED z CLAUDE.md: reset by sledovani vrcholu spustil
+//    znovu od uz pokleslé hodnoty, takze by se kriticka hladina odhalila
+//    POZDEJI - nebezpecny smer chyby.
+//  - vyhlazovaci okno se naopak ZAHODI a naplni znovu. Pravidlo vyse mluvi
+//    o vrcholu; okno je neco jineho a drzi 25 vzorku ZPETNE. Kdyby se neslo
+//    dal, byly by v nem po obnoveni bezne poradi vzorky namerene BEHEM
+//    ruseni, takze prvni `sm` po rozjezdu by z nich bylo poskladane. Kdyz
+//    ruseni C1 zvedne, nafoukne to `peakMax` (= presne mechanismus obou
+//    selhani zdokumentovanych u ochrany CIN2 v CLAUDE.md); kdyz ho snizi,
+//    nafoukne to zase okamzity pokles. Hladina se pri pauze nehybe, takze
+//    cerstve okno meri tutez hladinu - nic se zahozenim neztraci.
+// Vraci true, kdyz je klid a lze pokracovat.
 static bool waitForQuiet(float peakRef) {
     uint32_t startMs = millis();
     uint32_t lastSampleMs = millis() - samplePeriodMs;
     uint8_t quiet = 0;
+    bool flushing = false;   // true = klid potvrzen, plni se cerstve okno
     while (millis() - startMs < C2_QUIET_TIMEOUT_MS) {
         if (abortRequested()) {
             stopMotorDisable();
@@ -564,14 +579,24 @@ static bool waitForQuiet(float peakRef) {
             float rate = 0.0f;
             pushC2AndCheck(raw2, &rate);
             logSample('p', raw1, sm, raw2, peakRef, rate);
+
             if (rate < c2GuardEffective) {
-                if (++quiet >= C2_QUIET_SAMPLES) {
+                quiet++;
+                if (!flushing && quiet >= C2_QUIET_SAMPLES) {
+                    flushing = true;
+                    resetSmooth();   // zahodit vzorky namerene behem ruseni
+                    Serial.println(F("# klid, plnim cerstve vyhlazovaci okno..."));
+                } else if (flushing && smoothCount >= SMOOTH_WINDOW) {
                     c2AlarmCount = 0;
-                    Serial.println(F("# klid obnoven, pokracuji v TEMZE vytlacovani (vrchol zachovan)"));
+                    Serial.println(F("# pokracuji v TEMZE vytlacovani (vrchol zachovan)"));
                     return true;
                 }
             } else {
                 quiet = 0;
+                if (flushing) {   // ruseni se vratilo uprostred plneni - zacit znovu
+                    flushing = false;
+                    resetSmooth();
+                }
             }
         }
     }

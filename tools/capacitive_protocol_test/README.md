@@ -89,14 +89,27 @@ vůči neznámému počátečnímu stavu. Teď se měří přesně to, co protok
 takže je dávka pevná.
 
 **Automatické pokračování po rušení** nahrazuje ruční `y`. Motor se
-pozastaví, sledovaný vrchol C1 **i vyhlazovací okno zůstávají** a běh sám
-pokračuje, jakmile je rychlost změny C2 pod prahem 15 vzorků po sobě.
-Na rozdíl od v7–v9 se při pauze **neresetuje vůbec nic** — vyhlazovací
-okno se během pauzy dál plní a protože se hladina nehýbe, průměr zůstává
-platný. To je přesně princip `ST_PAUSED` z `CLAUDE.md`: reset by detekci
-zpozdil, což je nebezpečný směr chyby. Pokud rušení neustane do 3 minut
-nebo se v jednom vytlačování nasčítá víc než 20 pauz, běh se ukončí
-a vypíše souhrn (nemá smysl pokračovat s podezřelými daty).
+pozastaví a běh sám pokračuje, jakmile je rychlost změny C2 pod prahem
+15 vzorků po sobě. Pokud rušení neustane do 3 minut nebo se v jednom
+vytlačování nasčítá víc než 20 pauz, běh se ukončí a vypíše souhrn
+(nemá smysl pokračovat s podezřelými daty).
+
+Co se při pauze zachová a co zahodí, je nejchoulostivější místo celého
+sketche:
+
+- **Sledovaný vrchol C1 a čítač potvrzení zůstávají.** To je pravidlo
+  `ST_PAUSED` z `CLAUDE.md` — reset by sledování vrcholu spustil znovu
+  od už poklesnuté hodnoty, takže by se kritická hladina odhalila
+  **později**, ne dřív. To je nebezpečný směr chyby.
+- **Vyhlazovací okno se naopak zahodí a naplní znovu** (proto pauza trvá
+  minimálně ~8 s). Pravidlo výše mluví o **vrcholu**; okno je něco jiného
+  a drží 25 vzorků zpětně. Kdyby se v něm pokračovalo, byly by v něm po
+  obnovení běžného pořadí vzorky naměřené **během rušení**, takže první
+  `sm` po rozjezdu by z nich bylo poskládané. Když rušení C1 zvedne,
+  nafoukne to sledovaný vrchol — a to je přesně mechanismus obou selhání
+  zdokumentovaných u ochrany CIN2. Když ho sníží, nafoukne to zase
+  okamžitý pokles. Hladina se během pauzy nehýbe, takže čerstvé okno měří
+  tutéž hladinu a zahozením se nic neztrácí.
 
 **Odhad obsahu lahvičky** (`vial_ml`) dává smysl teprve teď, kdy je
 počáteční stav známý, protože si ho nastavil sketch sám. Je to ale
