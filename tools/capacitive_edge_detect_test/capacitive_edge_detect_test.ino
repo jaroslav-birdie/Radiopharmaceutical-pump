@@ -405,12 +405,16 @@ static void stepperInit() {
     digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
 }
 
+// POZOR: musi ODEBRAT i znaky, ktere 'x' nejsou. Pouhy peek() by se zaseknul
+// na prvnim cizim znaku v bufferu a nouzove zastaveni by bylo po zbytek behu
+// mrtve - typicky na '\n', ktery zbyde v bufferu, kdyz Serial Monitor posila
+// "Both NL & CR" (prikaz 'g' ukonci uz '\r', '\n' zustane).
 static bool abortRequested() {
-    if (Serial.available() > 0 && Serial.peek() == 'x') {
-        Serial.read();
-        return true;
+    bool abort = false;
+    while (Serial.available() > 0) {
+        if ((char)Serial.read() == 'x') abort = true;
     }
-    return false;
+    return abort;
 }
 
 static int32_t stepsFor(float ml) {
