@@ -315,6 +315,64 @@ běžící vedle aparatury) ukázalo, že běžný šum tam samotný běžně p�
 > (10 cyklů, potvrzení `1`/`0`) **dvakrát** – jednou před přestavbou jako
 > referenci, podruhé po ní.
 
+### Chování detekce v iterativním protokolu (test 1, fyziologický roztok)
+
+Naměřená data z 10 cyklů byla přemapována na to, co přístroj **skutečně** dělá:
+jedno vytlačení na kritickou hladinu a pak opakovaně „doplnit `VOL_SAL_ITER_ML`
+→ vytlačit zpět na kritickou hladinu". Mapování: iterace *n* = cyklus *n*,
+vytlačování startuje na `sepnutí(n−1) + 3 ml`, sledované maximum se na začátku
+každého vytlačování resetuje.
+
+| Veličina | Průměr | Rozsah | Trend / iteraci | r |
+|---|---|---|---|---|
+| **Hloubka sepnutí pod vrcholem C1** | **2,53 ml** | 1,93 – 3,28 | +0,004 ml | 0,03 |
+| Vrchol C1 (absolutní hodnota) | 9,670 pF | 9,640 – 9,690 | +1,3 fF | 0,23 |
+| Pokles 2,0 ml pod vrcholem (cykly 2–10) | 0,147 pF | 0,020 – 0,219 | +12,4 fF | +0,58 |
+| Pokles 2,5 ml pod vrcholem (cykly 2–10) | 0,224 pF | 0,075 – 0,277 | +7,3 fF | +0,32 |
+| Pokles na konci zdvihu (patka) | 0,450 pF | 0,293 – 0,735 | **−41,5 fF** | **−0,91** |
+| Hladina vrcholu C1 | −16,59 ml | −15,69 – −17,19 | −0,103 ml | −0,72 |
+| Obnovený vrchol vs. skutečný (ustálený stav) | 0,3 fF | 0 – 3,2 fF | — | — |
+
+- ✅ **Vrchol křivky se do okna 3 ml vejde.** Práh sepne 2,53 ml pod vrcholem,
+  doplňuje se 3,0 ml → hladina se vrátí **nad** vrchol v 9 z 10 cyklů a příští
+  vytlačování ho projede celý. V ustáleném stavu si algoritmus obnoví vrchol
+  s chybou **≤ 3 fF** (1,5 % prahu). Nepohybujeme se jen po sestupné části.
+- ✅ **Creep patky detekci neohrožuje** – ale ne proto, že by neexistoval.
+  Roste **jen** nejhlubší úsek (2,5+ ml pod vrcholem), kam se reálný protokol
+  nikdy nedostane. Vrchol se nehýbe a úsek 1,0–2,5 ml pod vrcholem, který
+  detekce opravdu čte, **neplochne** (spíš o chlup strmější).
+- ❌ **Zbytkový objem s počtem iterací neroste.** Práh není absolutní hodnota,
+  ale pokles od maxima naměřeného **v tomtéž vytlačování**, takže rovnoměrný
+  posun signálu je pro něj neviditelný. Bod zastavení je bez trendu i při
+  extrapolaci na 12 iterací. (Kdyby patka přece jen zasáhla pracovní pásmo,
+  šlo by to **opačným** směrem – plošší sestup = pokles 0,22 pF nastane
+  později, tedy při **menším** zbytku. To by nebyl neškodný směr chyby.)
+- ✅ **Počet iterací není omezující.** 12 iterací se chová stejně jako 10,
+  smyčka se od 2. iterace usadí na pevném bodě a neujíždí. `ITER_COUNT = 9`
+  plus závěrečné vytlačení je uvnitř ověřeného rozsahu.
+- ✅ **Fáze 1 je nejsilnější případ, ne nejslabší** – startuje z plné lahvičky
+  a projede celý vrchol s největší dostupnou hloubkou poklesu (0,74 pF).
+- ✅ **Selhání okna není kaskádové.** V 1 z 10 cyklů byla hloubka sepnutí
+  3,28 ml > 3 ml, takže by další vytlačování startovalo na sestupné větvi
+  místo nad vrcholem. Stresový test ukázal, že se smyčka i tak usadí a sepne
+  ve všech 12 iteracích – jen s asi 0,3 ml nižším zbytkem.
+
+> ⚠️ **`VOL_SAL_ITER_ML` a `deltaCritical` jsou svázané parametry.**
+> Doplňovaný objem musí být větší než hloubka sepnutí pod vrcholem. Při 3,0 ml
+> je rezerva 0,47 ml a jeden cyklus z deseti ji vyčerpal; při 2,5 ml by mimo
+> okno spadla polovina cyklů. Práh se navíc **nesmí zvyšovat**: při 0,30 pF
+> skončí 4 z 10 cyklů za hranicí 3 ml a dva **nesepnou vůbec**. Kdyby se dávka
+> roztoku nebo práh měnily, tenhle rozbor se musí pustit znovu.
+
+> ⚠️ **Neověřený předpoklad – mapování iterace na cyklus.** Creep byl naměřen
+> při plných 20ml zdvizích; reálná iterace protáhne prstencem jen ~3 ml.
+> Oblast vrcholu projde hladina v obou režimech stejně, takže tam je mapování
+> obhajitelné, ale **hlubokou patku, kde creep sedí, reálný protokol nikdy
+> nenavštíví**. Creep tedy může být ve skutečnosti mírnější, silnější nebo
+> jiný. Z existujících dat to rozhodnout nejde – změřit se to dá jedině
+> sekvencí, která protokol imituje: jedno plné vytlačení a pak 12× (+3 ml →
+> vytlačit).
+
 ### Rozdíl proti současnému kódu
 
 `capacitive.cpp` konfiguruje dva kanály přesně podle skutečného zapojení:
@@ -464,6 +522,7 @@ je neznámý tlakový stav samotné **stříkačky** po ručním osazení pístu
 - ✅ Při `ST_EMERGENCY_STOP`: okamžitě `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_VIAL_TO_FILTER`, zastavit oba krokové motory
 - ✅ Při `ST_PAUSED`: zastavit oba krokové motory, ventily ponechat v aktuální poloze (na rozdíl od STOP se nemusí uzavírat, protože PAUSE má pokračovat automaticky ve stejném kroku)
 - ✅ **Detekce kritické hladiny přes PAUSE nesmí ztratit stav**: sledovaný vrchol C1 (referenční hodnota pro `deltaCritical`) i vyhlazovací buffer se **nesmí resetovat** při přechodu `ST_PAUSED` → `PLAY` – lahvička ani elektrody se během pauzy nehýbou, signál pokračuje přesně tam, kde skončil. Reset by znamenal, že se sledování vrcholu začne počítat znovu od aktuální (už pokleslé) hodnoty, takže kritická hladina by se odhalila **později**, ne dřív – to je nebezpečný směr chyby. (Ověřeno v `tools/capacitive_edge_detect_test` – viz README v tom adresáři pro historii ladění detekčního algoritmu.)
+- ✅ **Sledovaný vrchol C1 se naopak MUSÍ resetovat na začátku každého nového vytlačování** (`ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`) – nikdy se nesmí nést napříč iteracemi. Právě tenhle reset dělá z creepu patky neškodný jev: pokud by se maximum drželo z předchozí iterace, započítal by se do prahu posun signálu, který s hladinou nesouvisí, a detekce by se rozpadla. Není v rozporu s pravidlem o PAUSE výše – to se týká přerušení **uvnitř** téhož vytlačování, tohle přechodu **mezi** vytlačováními. (Ověřeno na datech test 1 – viz „Chování detekce v iterativním protokolu" výše.)
 - ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
 - ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` déle než `NO_FLOW_TIMEOUT_MS` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
 - ✅ Počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE`/`ST_ITER_EQUALIZE` → `ST_P1_FILL_AIR`/`ST_ITER_FILL_AIR`) se počítá **jak ve Fázi 1, tak v každé jednotlivé iteraci zvlášť**; po překročení `MAX_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
@@ -826,4 +885,6 @@ bilance vzduchové stříkačky, ne senzoru.
 - [ ] MAX_AIR_REFILLS ošetřen ve Fázi 1 i v každé iteraci → ST_ALARM_EXCESS_AIR
 - [ ] Naučený objem vzduchu pro další iteraci = součet nasátí + všech doplnění v aktuální iteraci
 - [ ] Zadaný objem enkodérem omezen na rozsah VOL_FINE_MIN/MAX_10ML resp. _20ML
+- [ ] Sledovaný vrchol C1 se resetuje na začátku každého vytlačování, ale NE při ST_PAUSED → PLAY
+- [ ] Změna VOL_SAL_ITER_ML nebo deltaCritical → znovu ověřit, že hloubka sepnutí zůstává pod doplňovaným objemem
 - [ ] Kompilace bez warningů
