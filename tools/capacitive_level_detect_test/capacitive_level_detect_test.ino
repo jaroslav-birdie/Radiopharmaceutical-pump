@@ -501,7 +501,6 @@ static bool phaseHold(uint8_t *confirm) {
     Serial.print(F("# att=")); Serial.print(attempt);
     Serial.println(F(" HOLD - zkontroluj hladinu, posli 1 (spravne) / 0 (spatne)"));
 
-    uint32_t lastSampleMs = millis() - samplePeriodMs;
     for (;;) {
         while (Serial.available() > 0) {
             char c = (char)Serial.read();
@@ -513,11 +512,6 @@ static bool phaseHold(uint8_t *confirm) {
                 Serial.println(F("# ABORT behem cekani na potvrzeni"));
                 return false;
             }
-        }
-        uint32_t now = millis();
-        if (now - lastSampleMs >= samplePeriodMs) {
-            lastSampleMs = now;
-            logSample("hold");
         }
     }
 }
