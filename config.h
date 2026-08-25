@@ -89,8 +89,7 @@
 
 // Doba, po kterou zůstane pacientský ventil OTEVŘENÝ i po dotlačení
 // vzduchu - kapalina dotéká hadičkou do pacienta. Teprve pak se uzavírá.
-// Prodloužení na 30 s se experimentálně NEOSVĚDČILO (přiteklo jen pár
-// kapek navíc), deficit se proto řeší přirážkou AIR_PUSH_COMPENSATION_ML.
+// Hodnota zatím není ověřená na přestavěné sestavě.
 #define FLUID_DRAIN_MS      5000UL
 
 // === OBJEMY (ml) ===
@@ -108,26 +107,6 @@
 #define VOL_FINE_MAX_10ML_DML  120      // 12,0 ml
 #define VOL_FINE_MIN_20ML_DML  180      // 18,0 ml
 #define VOL_FINE_MAX_20ML_DML  220      // 22,0 ml
-
-// === PROVIZORNÍ TESTOVACÍ REŽIM (kapacitní senzor zatím není osazen) ===
-// 1 = kritická hladina se NEDETEKUJE senzorem, ale nahrazuje se pevně
-// daným objemem vzduchu; hlídání stagnace hladiny (flowStalled) je vypnuté.
-// Až bude FDC1004 fyzicky osazen a odzkoušen, nastav zpět na 0.
-#define TEST_MODE_NO_SENSOR       1
-#define TEST_VOL_P1_PUSH_10ML_ML  7.0f   // Fáze 1, 10 ml varianta – pevný objem
-#define TEST_VOL_P1_PUSH_20ML_ML 17.0f   // Fáze 1, 20 ml varianta – pevný objem
-#define TEST_VOL_ITER_PUSH_ML     3.5f   // každá iterace – objem vzduchu VYTLAČENÝ do lahvičky
-#define TEST_VOL_ITER_FILL_ML     3.75f   // každá iterace – objem vzduchu NASÁTÝ zpět do stříkačky
-#define TEST_VOL_MARGIN_ML        0.01f  // tolerance zaokrouhlení kroků
-
-// Kompenzace stlačení vzduchu: část vtlačeného objemu se jen "schová" do
-// stlačení celého vzduchového sloupce (stříkačka + hadičky + headspace)
-// a poddajnosti mechaniky, takže kapalinu nevytlačí. Fyziologického
-// roztoku se NETÝKÁ - ten je nestlačitelný a doteče vždy v požadovaném
-// množství. Přirážka je jiná pro Fázi 1 (velký počáteční headspace) a
-// pro iterace (malý, ustálený objem 6 ml v lahvičce) - proto 2 konstanty.
-#define AIR_PUSH_COMPENSATION_P1_ML    2.0f   // Fáze 1 - ověřeno experimentálně
-#define AIR_PUSH_COMPENSATION_ITER_ML  1.0f   // iterace - DOLADIT (2 ml bylo příliš)
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)

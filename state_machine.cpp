@@ -69,10 +69,6 @@ void PumpController::begin() {
     if (!cap_.begin()) {
         Serial.println(F("VAROVANI: FDC1004 neodpovida!"));
     }
-#if TEST_MODE_NO_SENSOR
-    Serial.println(F("POZOR: TEST REZIM - kriticka hladina je simulovana"));
-    Serial.println(F("pevnym objemem vzduchu, senzor se NEPOUZIVA!"));
-#endif
     disp_.begin();
     kb_.begin();
     enc_.begin();
@@ -360,20 +356,7 @@ void PumpController::handlePushAir(bool phase1) {
             }
             break;
         case 3: {                        // monitorování průběhu
-#if TEST_MODE_NO_SENSOR
-            // PROVIZORNÍ: bez kapacitního senzoru se kritická hladina
-            // nahrazuje pevně daným cílovým objemem vzduchu (viz config.h).
-            // Přirážka kryje objem, který se jen stlačí a kapalinu nevytlačí -
-            // jiná pro Fázi 1 (velký headspace) a pro iterace (viz config.h).
-            float target = phase1
-                         ? (is20ml_ ? TEST_VOL_P1_PUSH_20ML_ML
-                                    : TEST_VOL_P1_PUSH_10ML_ML) + AIR_PUSH_COMPENSATION_P1_ML
-                         : TEST_VOL_ITER_PUSH_ML + AIR_PUSH_COMPENSATION_ITER_ML;
-            bool targetReached = (airUsedMl_ + airSyr_.movedMl())
-                                  >= (target - TEST_VOL_MARGIN_ML);
-#else
             bool targetReached = cap_.criticalLevel();
-#endif
             if (targetReached) {
                 airSyr_.stop();
                 finishAirMove(true);
@@ -401,10 +384,8 @@ void PumpController::handlePushAir(bool phase1) {
                     phaseT_ = millis();
                     phase_ = 7;
                 }
-#if !TEST_MODE_NO_SENSOR
             } else if (flowStalled()) {
                 pauseSystem(true);
-#endif
             }
             break;
         }
@@ -487,18 +468,9 @@ void PumpController::handleFillAir(bool phase1) {
                 break;
             }
             // Fáze 1 a doplňování: plná stříkačka; jinak naučený objem
-#if TEST_MODE_NO_SENSOR
-            // PROVIZORNÍ: pevný objem místo adaptivně naučeného.
-            // Nasává se i kompenzace, jinak by stříkačka na zvětšené
-            // tlačení nestačila a spustila by se zbytečná refill smyčka.
-            float target = (phase1 || refillMode_)
-                         ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : (TEST_VOL_ITER_FILL_ML + AIR_PUSH_COMPENSATION_ITER_ML);
-#else
             float target = (phase1 || refillMode_)
                          ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
                          : intakeMl_;
-#endif
             float room = VOL_AIR_SYRINGE_MAX_ML - airMl_;
             if (target > room) {
                 target = room;
@@ -531,9 +503,6 @@ void PumpController::handleFillAir(bool phase1) {
 
 // Přidání dávky fyziologického roztoku do lahvičky.
 void PumpController::handleAddSaline(bool phase1) {
-#if TEST_MODE_NO_SENSOR
-    (void)phase1;                    // nepoužito – učení objemu je vypnuté
-#endif
     switch (phase_) {
         case 0:
             // Tolerance 0,1 ml kryje zaokrouhlení kroků; stříkačka se plní
@@ -555,7 +524,6 @@ void PumpController::handleAddSaline(bool phase1) {
         case 1:
             if (salSyr_.idle()) {
                 salMl_ -= salSyr_.movedMl();
-#if !TEST_MODE_NO_SENSOR
                 if (!phase1) {
                     // Učení: příští nasátí = skutečná spotřeba + přirážka
                     float learned = airUsedMl_ + VOL_AIR_INTAKE_MARGIN_ML;
@@ -564,7 +532,6 @@ void PumpController::handleAddSaline(bool phase1) {
                     if (learned > maxIntake) learned = maxIntake;
                     intakeMl_ = learned;
                 }
-#endif
                 airUsedMl_ = 0.0f;
                 refills_ = 0;
                 refillMode_ = false;
