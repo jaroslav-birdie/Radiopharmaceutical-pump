@@ -1,3 +1,6 @@
+build/
+*.o
+*.elf
+*.hex
 __pycache__/
 *.pyc
-build/
