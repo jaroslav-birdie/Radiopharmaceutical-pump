@@ -1,235 +1,217 @@
-# Simulace skutečného aplikačního protokolu (FDC1004)
+# capacitive_protocol_test – detekce kritické hladiny při vytlačování **vzduchem**
 
-Předchozí nástroje (`capacitive_cycle_test`, `capacitive_edge_detect_test`)
-pracovaly s **plnými zdvihy**: lahvička se vyprázdnila o 20 ml a pak zase
-doplnila na plno. Skutečný přístroj ale dělá něco jiného — jedno vytlačení
-na kritickou hladinu a pak stále dokola „doplnit 3 ml → vytlačit zpátky".
-Rozdíl není kosmetický:
+Poslední otevřená otázka celé analýzy kapacitní detekce: **půjde pokles na
+kritickou hladinu detekovat v situaci, která odpovídá reálnému přístroji?**
 
-- V plném zdvihu projede hladina **celou** křivku C1 včetně hluboké patky.
-- V reálné iteraci se hladina pohybuje jen v **~3 ml pásmu kolem vrcholu**
-  a do patky se nikdy nedostane.
+Všechna dosavadní data (`capacitive_cycle_test`, `capacitive_edge_detect_test`)
+vznikla tak, že hladinou hýbal **stříkačkový motor přímo** – odsával kapalinu
+z lahvičky. To je tvrdý, přesný pohyb: kolik kroků, tolik mililitrů. Reálný
+přístroj ale kapalinu **vytlačuje vzduchem**. Mezi motorem a hladinou je
+stlačitelný sloupec vzduchu (stříkačka + hadičky + headspace), takže:
 
-A právě v patce sedí naměřený **creep** (růst signálu při úplném odčerpání,
-−41,5 fF/cyklus, r = −0,91). Analýza v `CLAUDE.md` („Chování detekce
-v iterativním protokolu") proto musela plné zdvihy na iterace
-**přemapovat** — v oblasti vrcholu je to obhájitelné, ale je to
-předpoklad, ne měření. Tenhle nástroj protokol imituje přímo, takže se
-už nic přemapovávat nemusí.
+- pohyb hladiny je pomalejší, měkčí a **nelineární** vůči krokům motoru,
+- na začátku zdvihu se hladina nehne skoro vůbec (jen se stlačuje vzduch),
+- přibývá vibrací a EMI z druhého motoru a ze servo ventilů.
+
+Právě v tomhle režimu se musí detekce osvědčit. Tento sketch nic nepřemapovává
+ani nesimuluje – jede protokol tak, jak ho jede přístroj.
 
 ```
-krok 0 (fáze 1) : lahvička 10 ml  ->  vytlačit na kritickou hladinu
-krok 1..12      : doplnit 3,0 ml  ->  vytlačit na kritickou hladinu
+naplnění lahvičky na 10 ml   (odvzdušněnou lahvičkou, motorem roztoku)
+extrakce 0  : vytlačit vzduchem → kritická hladina
+extrakce 1  : +3 ml roztoku → vytlačit vzduchem → kritická hladina
+   ...
+extrakce 12 : +3 ml roztoku → vytlačit vzduchem → kritická hladina
 ```
 
-Celý běh je **zcela automatický** — včetně počátečního naplnění lahvičky.
-Obsluha vloží **prázdnou** lahvičku do studny a spustí `g`; dál už nesahá
-na nic. To je záměr, ne pohodlí: každý dotyk studny mezi iteracemi je
-přesně ten common-mode zásah, kvůli kterému vznikla ochrana CIN2, a
-zároveň by zamaskoval creep, který hledáme.
+Běh je zcela automatický, obsluha po `g` nezasahuje. Trvá zhruba 60–90 minut.
 
 ---
 
-## Co nástroj měří
+## Řízení pumpy
 
-Klíčová veličina je **hloubka sepnutí pod vrcholem**:
+Piny, úhly ventilů, pořadí kroků, rezerva vzduchové stříkačky i doběhy jsou
+převzaté 1:1 z `Radiopharmaceutical-pump.ino` / `state_machine.cpp` / `config.h`.
+Úhly ventilů se **čtou z EEPROM** (stejný magic flag i adresy jako firmware),
+takže sketch používá úhly nakalibrované pro konkrétní kus; když je EEPROM
+neplatná, vezmou se výchozí hodnoty z `config.h`.
 
-```
-hloubka = vrchol_vial_ml − sepnutí_vial_ml
-```
-
-tedy o kolik mililitrů pod vrcholem křivky C1 práh sepnul. Musí vyjít
-**menší než doplňovaná dávka** (3,0 ml), jinak další vytlačování začne
-na sestupné větvi místo nad vrcholem a algoritmus ztratí referenci.
-
-Z přemapovaných dat vyšlo `2,53 ml` (rozsah 1,93–3,28; 1 z 10 cyklů mimo
-okno). Tenhle běh to buď potvrdí, nebo ne. Sketch hlásí překročení
-**přímo za běhu**, takže se na výsledek nemusí čekat do konce:
-
-```
-# !!! HLOUBKA SEPNUTI 3,12 ml >= davka 3,00 ml - dalsi vytlacovani zacne POD vrcholem !!!
-```
-
-Druhá sledovaná věc je sloupec `novy_vrchol`: `1` = sledované maximum
-během vytlačování přešlo nad startovní hodnotu (vrchol byl v okně
-znovu zachycen), `0` = pohybovali jsme se jen po sestupné větvi.
-
----
-
-## Co přebírá beze změny
-
-Detekční jádro je **totožné** s `capacitive_edge_detect_test` (v9), aby
-byly výsledky srovnatelné:
-
-- klouzavý průměr 25 vzorků (~5 s při 200 ms/vzorek)
-- pokles o `deltaCritical` (0,22 pF) od **neomezeného maxima** od začátku
-  vytlačování
-- potvrzení přes 5 po sobě jdoucích vzorků
-- **reset sledovaného maxima na začátku každého vytlačování** — to je
-  nutná podmínka toho, aby creep patky detekci neovlivnil (viz
-  bezpečnostní pravidla v `CLAUDE.md`)
-- samo-kalibrující se ochrana proti rušení přes CIN2 včetně „živého"
-  kalibračního okna s běžícím motorem (v9) a kontroly znečištěné
-  kalibrace proti zdravé základně (v8)
-
----
-
-## V čem se liší (a proč)
-
-| | `capacitive_edge_detect_test` | tenhle nástroj |
+| Prvek | Pin | Poznámka |
 |---|---|---|
-| Doplňovaný objem | náhodných 6–17 ml | **pevných 3,0 ml** |
-| Potvrzení mezi cykly | obsluha `1`/`0` | **žádné, běh je nepřetržitý** |
-| Po rušení CIN2 | čeká na `y` | **pokračuje sama, až je klid** |
-| Počáteční naplnění | ručně obsluhou | **sketch sám z prázdné lahvičky** |
-| Osa v logu | poloha stříkačky od `tare` | **+ odhad obsahu lahvičky v ml** |
-
-**Náhodné doplňování** mělo smysl, dokud se testovala robustnost detekce
-vůči neznámému počátečnímu stavu. Teď se měří přesně to, co protokol dělá,
-takže je dávka pevná.
-
-**Automatické pokračování po rušení** nahrazuje ruční `y`. Motor se
-pozastaví a běh sám pokračuje, jakmile je rychlost změny C2 pod prahem
-15 vzorků po sobě. Pokud rušení neustane do 3 minut nebo se v jednom
-vytlačování nasčítá víc než 20 pauz, běh se ukončí a vypíše souhrn
-(nemá smysl pokračovat s podezřelými daty).
-
-Co se při pauze zachová a co zahodí, je nejchoulostivější místo celého
-sketche:
-
-- **Sledovaný vrchol C1 a čítač potvrzení zůstávají.** To je pravidlo
-  `ST_PAUSED` z `CLAUDE.md` — reset by sledování vrcholu spustil znovu
-  od už poklesnuté hodnoty, takže by se kritická hladina odhalila
-  **později**, ne dřív. To je nebezpečný směr chyby.
-- **Vyhlazovací okno se naopak zahodí a naplní znovu** (proto pauza trvá
-  minimálně ~8 s). Pravidlo výše mluví o **vrcholu**; okno je něco jiného
-  a drží 25 vzorků zpětně. Kdyby se v něm pokračovalo, byly by v něm po
-  obnovení běžného pořadí vzorky naměřené **během rušení**, takže první
-  `sm` po rozjezdu by z nich bylo poskládané. Když rušení C1 zvedne,
-  nafoukne to sledovaný vrchol — a to je přesně mechanismus obou selhání
-  zdokumentovaných u ochrany CIN2. Když ho sníží, nafoukne to zase
-  okamžitý pokles. Hladina se během pauzy nehýbe, takže čerstvé okno měří
-  tutéž hladinu a zahozením se nic neztrácí.
-
-**Odhad obsahu lahvičky** (`vial_ml`) dává smysl teprve teď, kdy je
-počáteční stav známý, protože si ho nastavil sketch sám. Je to ale
-**dopočet z kroků motoru, ne měření** — předpokládá prázdnou lahvičku
-před startem a nulové ztráty.
+| Vzduchový stepper | D4 STEP / D5 DIR | tlačí i nasává |
+| Stepper roztoku | D6 STEP / D7 DIR | **jen tlačí** |
+| nENBL obou driverů | A3 | sepnut po celý běh |
+| Servo pacientský ventil | D9 (OC1A) | |
+| Servo vzduchový ventil | D10 (OC1B) | |
 
 ---
 
-## Postup
+## Tři pravidla ze zadání a jak jsou vynucená
 
-1. Naplnit stříkačku na rozumnou střední hodnotu (~30 ml) — viz
-   `MECH_LIMIT_ML` níže.
-2. Do studny vložit **prázdnou** lahvičku (10ml varianta).
-3. `o` — driver ON, volitelně `j`/`k` — odvzdušnění hadičky.
-4. `t` — tare (referenční bod krokového počítadla).
-5. `g` — start. Běh trvá zhruba 40–60 minut.
-6. `x` kdykoliv = okamžité zastavení.
+**1. Oba drivery zůstávají po celý běh ENABLED.**
+`nENBL` se sepne jednou při `g` a během běhu se už nikdy nepustí – ani při
+pauze kvůli rušení, ani mezi iteracemi, ani při přejezdu ventilů. Motory tak
+drží polohu pístu proti zpětnému tlaku. DISABLE nastane jen na úplném konci
+běhu nebo při nouzovém `x` (totéž co `ST_COMPLETE` / `ST_EMERGENCY_STOP`
+ve firmwaru).
 
-Pokud je lahvička naplněná ručně, vypnout automatické plnění (`f0`)
-a nastavit skutečný objem (`v10`).
+**2. Motor roztoku nikdy necouvne.**
+Do `PIN_SAL_DIR` se zapisuje **jediným řádkem v `setup()`**, kde se nastaví na
+`SAL_DIR_PUSH_LEVEL`. V celém zbytku sketche do toho pinu nikdo nepíše a
+neexistuje funkce, která by uměla roztokem couvnout – ani jog (`l` jede taky
+jen dopředu). Není to disciplína, je to struktura kódu.
 
-### Příkazy
+**3. Při doplňování roztoku je vzduchový ventil otevřen do atmosféry.**
+Pořadí je: vzduchový ventil → `V↔F` → vyrovnat tlak → **doplnit 3 ml roztoku**
+→ vyrovnat tlak → teprve pak ventil → `S↔F` → **nasát vzduch**. Funkce
+`salDispense()` navíc kontroluje polohu vzduchového ventilu a při jiné než
+`V↔F` běh zastaví s chybou. Souběh obou operací se v tomhle projektu už jednou
+zkoušel a selhal právě na neodvzdušněné lahvičce – viz `CLAUDE.md`,
+sekce „Co bylo vyzkoušeno a NEFUNGUJE".
 
-| Příkaz | Význam |
-|---|---|
-| `h` / `i` | nápověda / info |
-| `a` | autokalibrace CAPDAC |
-| `n` | statický test šumu (256 vzorků na kanál) |
-| `o` / `x` | driver ON / OFF (za běhu `x` = okamžitý STOP) |
-| `t` | tare |
-| `j` / `k` | jog ±0,5 ml |
-| `g` | spustit celý protokol |
-| `r<n>` | počet iterací po fázi 1 (1–12, výchozí 12) |
-| `s<ml>` | dávka roztoku na iteraci (výchozí 3,0) |
-| `v<ml>` | počáteční objem v lahvičce (výchozí 10,0) |
-| `f1` / `f0` | automatické počáteční naplnění ano / ne |
-| `dc<pF>` | `deltaCritical` (výchozí 0,22) |
-| `cf<n>` | potvrzovacích vzorků (výchozí 5) |
-| `p<ms>` | perioda vzorků (výchozí 200) |
-| `cm<x>` | násobitel prahu CIN2 (0 = vypnout) |
-| `cg<pF>` | minimální podlaha prahu CIN2 |
-| `ck<n>` | potvrzovacích vzorků ochrany CIN2 |
-| `#<text>` | značka do logu |
+Totéž platí pro počáteční naplnění lahvičky na 10 ml – jede přes stejnou cestu,
+tedy taky do odvzdušněné lahvičky.
+
+---
+
+## Průběh jedné extrakce
+
+1. Vzduchový ventil `S↔V`, pacientský ventil `OPEN`.
+2. Ustálení ~5 s + naplnění vyhlazovacího okna (25 vzorků) – motory stojí.
+   Odtud se bere klidová část kalibrace ochrany CIN2.
+3. Vytlačování: vzduchový motor tlačí, dokud stříkačka nedojede na trvalou
+   rezervu (`VOL_AIR_RESERVE_ML` = 3 ml). Prvních 20 vzorků běhu tvoří „živé"
+   kalibrační okno ochrany CIN2 (motor už běží – viz v9), teprve po něm se
+   vyhodnotí práh.
+4. Nestačí-li vzduch, proběhne **doplnění**: doběh kapaliny → pacient
+   `ISOLATE` → lahvička `V↔F` + vyrovnání → `S↔F` + nasátí na plnou →
+   vyrovnání → `S↔V` → pacient `OPEN` → obnova vyhlazovacího okna → pokračuje
+   se **v téže extrakci**. Max. `MAX_AIR_REFILLS` = 5, pak alarm.
+5. Detekce kritické hladiny: pokles vyhlazeného C1 o `deltaCritical` = 0,22 pF
+   od neomezeného maxima od začátku extrakce, potvrzený 5 vzorky po sobě.
+6. Po detekci: motor stop, doběh kapaliny 5 s s otevřeným pacientem, pacient
+   `ISOLATE`, vzduchový ventil `V↔F`.
+
+### Co přežije přerušení a co ne
+
+Sledovaný vrchol C1 se resetuje **na začátku každé extrakce** a nikde jinde.
+Přežije tedy jak doplnění vzduchu, tak pauzu kvůli rušení CIN2 – v obou
+případech jde pořád o totéž vytlačování a hladina se mezitím nehýbe. Reset by
+znamenal, že se sledování rozjede znovu od už poklesnuté hodnoty, takže by se
+kritická hladina odhalila **později** – nebezpečný směr chyby.
+
+Vyhlazovací okno se naopak po každém přerušení **zahodí a naplní znovu**.
+Drží 25 vzorků zpětně, takže by po obnovení obsahovalo vzorky naměřené během
+přerušení; kdyby rušení C1 zvedlo, nafouklo by to sledovaný vrchol – přesně
+mechanismus obou selhání zdokumentovaných u ochrany CIN2 v `CLAUDE.md`.
+
+---
+
+## Jak se měří „hloubka" bez znalosti objemu v lahvičce
+
+Při odsávání stříkačkou byl objem v lahvičce přesně znám z kroků motoru. Teď
+už ne – část vtlačeného vzduchu se jen stlačí a kapalinu nevytlačí. Měřenou
+veličinou je proto objem **vzduchu** vytlačený mezi vrcholem C1 a sepnutím
+prahu (`hloubka_ml` ve výstupu).
+
+Při modelu „komprese spotřebuje na začátku zdvihu pevný objem *C* a dál je
+převod vzduch→kapalina 1:1" platí, že v ustáleném stavu vyteče právě dávka
+(3 ml), takže *C* = `vzduch_celkem − 3`, a po dosazení:
+
+```
+hloubka_kapalina = vzduch_celkem − vzduch_při_vrcholu = hloubka_vzduch
+```
+
+Hloubka měřená ve vzduchu je tedy **přímo hloubka v mililitrech kapaliny**.
+Sketch proto hlásí i `komprese_odh` = `vzduch_celkem − dávka`; když se ta mezi
+iteracemi vyrazně mění, model neplatí a je to v datech vidět.
+
+**Klíčová podmínka je pořád stejná:** hloubka musí vyjít **menší než 3 ml**,
+jinak další extrakce začne už na sestupné větvi a vrchol se v ní nikdy nenajde.
 
 ---
 
 ## Formát logu
 
-Řádky začínající `#` jsou komentáře a hlášky. Data mají dva druhy řádků.
-
-### Vzorky (jeden řádek na vzorek)
+Hlavička per vzorek:
 
 ```
-push;t_ms;vial_ml;level_ml;faze;C1_raw;C1_sm;peak_ref;C2_raw;c2rate
+it;t_ms;faze;vzduch_ml;vytlaceno_ml;roztok_ml;servo_pac;servo_vzd;C1_raw;C1_sm;vrchol;C2_raw;c2rate
 ```
 
 | Sloupec | Význam |
 |---|---|
-| `push` | 0 = fáze 1, 1..12 = iterace |
-| `t_ms` | ms od stisku `g` |
-| `vial_ml` | odhad obsahu lahvičky (dopočet z kroků) |
-| `level_ml` | poloha stříkačky od `tare` (pro mechanickou ochranu) |
-| `faze` | `F` počáteční plnění · `s` ustálení · `w` vytlačování · `p` pauza kvůli rušení · `r` doplnění roztoku |
-| `C1_raw` | CIN1, syrová hodnota [pF] |
-| `C1_sm` | CIN1 po klouzavém průměru 25 vzorků [pF] |
-| `peak_ref` | sledované maximum C1 v tomto vytlačování [pF] |
-| `C2_raw` | CIN2, syrová hodnota [pF] |
-| `c2rate` | rychlost změny vyhlazeného C2 přes 3 vzorky [pF] |
+| `it` | 0 = fáze 1, 1..12 = iterace |
+| `faze` | viz tabulka níže |
+| `vzduch_ml` | obsah vzduchové stříkačky |
+| `vytlaceno_ml` | kumulativně vytlačený vzduch **v této extrakci** (přes doplnění) |
+| `roztok_ml` | kumulativně podaný roztok (jen roste) |
+| `servo_pac` / `servo_vzd` | aktuální úhly obou ventilů |
+| `C1_raw` / `C1_sm` | prstencová elektroda, syrová a MA25 |
+| `vrchol` | sledované maximum, od kterého se počítá pokles |
+| `C2_raw` / `c2rate` | svislá elektroda a rychlost její změny (ochrana) |
 
-### Výsledek vytlačování (řádky `#>`)
+Znaky fáze: `F` počáteční náplň · `r` doplnění roztoku · `e` vyrovnání tlaku ·
+`a` nasávání vzduchu · `v` přejezd ventilu · `s` ustálení před extrakcí ·
+`q` obnova vyhlazovacího okna · `w` **vytlačování** · `d` doběh kapaliny ·
+`p` pauza kvůli rušení CIN2
 
-Vypíše se hned po každém sepnutí a znovu celý blok v závěrečném souhrnu:
+Řádky `#>` nesou výsledek extrakce a na konci souhrn:
 
 ```
-#> push;start_vial_ml;vrchol_vial_ml;vrchol_C1;sepnuti_vial_ml;sepnuti_C1;pokles_pF;hloubka_ml;drah_ml;novy_vrchol;pauzy
+#> it;vzduch_pri_vrcholu_ml;vzduch_celkem_ml;hloubka_ml;komprese_odh_ml;vrchol_C1;sepnuti_C1;pokles_pF;doplneni;pauzy;novy_vrchol
 ```
 
-`hloubka_ml` je ta veličina, kvůli které tenhle test vznikl.
-`drah_ml` = kolik se v tomhle vytlačování skutečně odčerpalo
-(v ustáleném stavu by mělo být blízko 3,0 ml — pokud je systematicky
-větší, hladina se s iteracemi propadá).
-
-Souhrn na konci navíc uvádí průměr / min / max hloubky, kolik iterací
-padlo mimo okno a kolik jich proběhlo bez zachycení nového vrcholu.
-**Fáze 1 se do těchhle statistik nezapočítává** — startuje z plné
-lahvičky, takže její hloubka není srovnatelná s iteracemi.
+`novy_vrchol = 1` znamená, že sledované maximum přelezlo startovní hodnotu,
+tedy že hladina v této iteraci vrchol křivky **znovu projela**. Kdyby vycházelo
+`0` napříč iteracemi, pohybujeme se jen po sestupné větvi a algoritmus měří
+pokles od náhodného startovního bodu, ne od skutečného vrcholu.
 
 ---
 
-## Bezpečnostní meze
+## Postup na hardwaru
 
-`MECH_LIMIT_ML = 25` je **výhradně hardwarová ochrana zdvihu stříkačky**,
-ne detekční ani alarmový koncept (stejně jako v `capacitive_edge_detect_test`
-v5 — skutečná aplikace žádný objemový failsafe nemá, protože objem vytlačený
-vzduchem proti neznámému odporu je právě ta neznámá veličina, kterou
-kapacitní snímání nahrazuje).
+1. Vzduchová stříkačka **plná** (10 ml), stříkačka roztoku **plná** (60 ml).
+   Celková spotřeba je 10 + 12×3 = 46 ml, takže se to vejde a motor nikdy
+   nemusí couvnout.
+2. Osadit oba ventily a obě stříkačky; **prázdná** lahvička (10ml varianta)
+   s jehlami se připojuje jako **poslední** – stejné instalační pořadí jako
+   u přístroje.
+3. `t` – deklarace výchozího stavu (vzduch 10 ml, roztok 0 ml podáno).
+   Volitelně `u0`–`u4` na kontrolu úhlů ventilů, `n` na test šumu.
+4. `g` – a dál už nic.
+5. `x` kdykoli = okamžité zastavení (motory se odpojí, ventily do bezpečných
+   poloh).
 
-Bilance běhu: s automatickým plněním se nejdřív dávkuje +10 ml (naplnění
-lahvičky), fáze 1 pak odebere ~9 ml a každá iterace doplní 3,0 a odebere
-~3,1 ml. Poloha stříkačky se tedy pohybuje zhruba v pásmu −1 až +10 ml od
-`tare`; bez automatického plnění je to stejně široké pásmo posunuté o
-−10 ml. K mezi 25 ml se to za normálních okolností nepřiblíží. Pokud na ni
-sketch narazí, něco je jinak, než se čeká — zastaví se a vypíše souhrn.
+Je-li lahvička plněná ručně, vypnout `f0` a nastavit `v<ml>`.
+
+Zachycení logu: `tools/serial_log.py`.
 
 ---
 
-## Vyhodnocení
+## Příkazy
 
-Co z běhu potřebujeme vědět:
+| | |
+|---|---|
+| `h` `i` | nápověda, info |
+| `a` `n` | autoCAPDAC, test šumu |
+| `t` | deklarace výchozího stavu |
+| `g` `x` | start / nouzové zastavení |
+| `j` `k` | jog vzduchu ±0,5 ml |
+| `l` | jog roztoku +0,5 ml (**jen dopředu**) |
+| `u0`–`u4` | pacient IZOLACE / OTEVŘENO, vzduch S↔V / S↔F / V↔F |
+| `r<n>` `s<ml>` `v<ml>` `f0`/`f1` | počet iterací, dávka, počáteční náplň, autofill |
+| `dc<pF>` `cf<n>` `p<ms>` | práh detekce, potvrzovacích vzorků, perioda vzorku |
+| `cm<x>` `cg<pF>` `ck<n>` | ochrana CIN2: násobitel (0 = vypnout), podlaha, potvrzení |
+| `#<text>` | značka do logu |
 
-1. **Vejde se vrchol do okna 3 ml?** — sloupec `hloubka_ml` musí být
-   pod `refillMl` a sloupec `novy_vrchol` má být `1`.
-2. **Má hloubka trend?** — proložit `hloubka_ml` přes iterace. Analýza
-   z přemapovaných dat říká, že trend být nemá (+0,004 ml/iteraci,
-   r = 0,03). Kdyby se objevil, je celý závěr o creepu k přepsání.
-3. **Chová se creep v úzkém pásmu jinak?** — sledovat `vrchol_C1`
-   (má být stabilní) a `pokles_pF` (dostupná hloubka poklesu).
-4. **Propadá se hladina?** — `drah_ml` systematicky nad 3,0 ml znamená,
-   že každá iterace odebere víc, než se doplní.
+---
 
-Body 1 a 2 rozhodují, jestli zůstává v platnosti to, co je dnes
-zapsané v `CLAUDE.md`. Pokud ano, poznámka o neověřeném mapování
-iterace na cyklus se může škrtnout.
+## Kompilace
+
+```
+arduino-cli compile --fqbn arduino:avr:uno tools/capacitive_protocol_test
+```
+
+Poslední ověřený překlad: **Flash 23 572 B (73,1 %), SRAM 934 B (45,6 %)**,
+bez varování.

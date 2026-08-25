@@ -1,30 +1,41 @@
 // ============================================================
-//  Simulace SKUTECNEHO aplikacniho protokolu na kapacitnim snimani
+//  Simulace SKUTECNEHO aplikacniho protokolu - vytlacovani VZDUCHEM
 //
-//  Ucel: zavrit posledni otevrenou diru v analyze detekce kriticke
-//  hladiny. Dosavadni data (tools/capacitive_cycle_test,
-//  tools/capacitive_edge_detect_test) vznikla pri PLNYCH zdvizich
-//  (0 -> -20 ml a zpet na plno). Realny protokol ale projede prstencem
-//  jen ~3 ml na iteraci a hlubokou "patku" krivky, kde sedi namereny
-//  creep, nikdy nenavstivi. Analyza v CLAUDE.md ("Chovani detekce
-//  v iterativnim protokolu") proto stoji na PREMAPOVANI plnych zdvihu
-//  na iterace - obhajitelnem v oblasti vrcholu, ale neoverenem.
-//  Tenhle sketch mericky protokol imituje primo, takze uz nic
-//  premapovavat netreba:
+//  Ucel: overit, jestli je pokles na kritickou hladinu detekovatelny
+//  v situaci, ktera odpovida realnemu pristroji. Predchozi nastroje
+//  (capacitive_cycle_test, capacitive_edge_detect_test) menily hladinu
+//  ODSAVANIM kapaliny primo strikackou - to je cisty, tvrdy pohyb
+//  hladiny bez stlacitelneho clenu. Realny pristroj ale kapalinu
+//  VYTLACUJE VZDUCHEM: mezi motorem a hladinou je stlacitelny vzduchovy
+//  sloupec, pohyb hladiny je proto pomalejsi, mekci a nelinearni vuci
+//  krokum motoru. Prave v tomhle rezimu se musi detekce osvedcit.
 //
-//     krok 0 (faze 1) : lahvicka 10 ml -> vytlacit na kritickou hladinu
-//     krok 1..N       : doplnit 3,0 ml -> vytlacit na kritickou hladinu
+//     krok 0 (faze 1) : lahvicka 10 ml -> vytlacit vzduchem na kritickou
+//     krok 1..N       : doplnit 3,0 ml roztoku -> vytlacit na kritickou
 //
-//  Cely beh je ZCELA AUTOMATICKY, bez zasahu obsluhy - vcetne
-//  pocatecniho naplneni lahvicky (viz autoFill nize). Obsluha jen
-//  vlozi PRAZDNOU lahvicku do studny a spusti 'g'.
+//  Beh je ZCELA AUTOMATICKY. Rizeni pumpy (piny, uhly ventilu, poradi
+//  kroku, rezerva vzduchove strikacky, dobehy) je prevzate 1:1
+//  z Radiopharmaceutical-pump.ino / state_machine.cpp.
 //
-//  SAMOSTATNY diagnosticky sketch - nema nic spolecneho s firmware
-//  cerpadla. Ovlada fyziologicky krokovy motor (D6/D7, DRV8825 na
-//  sdilenem nENBL A3) - odsava z lahvicky I davkuje zpet, ze stejne
-//  strikacky (zpetna klapka byla pro tenhle test odstranena).
-//  Vzduchova vetev ani ventily se nepouzivaji - meri se chovani
-//  SENZORU, ne pneumatika.
+//  ---------------------------------------------------------------
+//  ZAVAZNA PRAVIDLA ZADANI (jsou vynucena strukturou kodu, ne kazni)
+//  ---------------------------------------------------------------
+//   1) OBA DRIVERY ZUSTAVAJI PO CELY BEH ENABLED. nENBL (A3) se sepne
+//      jednou pri 'g' a uz se behem behu nikdy nepusti - ani pri pauze
+//      kvuli ruseni, ani mezi iteracemi. Motor tak drzi polohu pistu
+//      proti zpetnemu tlaku. DISABLE nastane jen na uplnem konci behu
+//      nebo pri nouzovem 'x' (stejne jako ST_COMPLETE / ST_EMERGENCY_STOP
+//      ve firmwaru).
+//   2) MOTOR ROZTOKU NIKDY NECOUVNE. Pin PIN_SAL_DIR se nastavi jednou
+//      v setup() na SAL_DIR_PUSH_LEVEL a v celem sketchi uz do nej nikdo
+//      nezapise - neexistuje funkce, ktera by to umela. Strikacka
+//      roztoku se tedy muze pohybovat vyhradne smerem "tlacit kapalinu".
+//   3) PRI DOPLNOVANI ROZTOKU JE VZDUCHOVY VENTIL OTEVREN DO ATMOSFERY
+//      (V<->F). Lahvicka je pri davkovani odvzdusnena, takze v ni
+//      nevznika pretlak. Vzduch se do strikacky nasava az POTOM
+//      (prepnuti na S<->F). Souběh obou operaci se v tomhle projektu uz
+//      jednou zkousel a selhal prave na neodvzdusnene lahvicce -
+//      viz CLAUDE.md, "Co bylo vyzkouseno a NEFUNGUJE".
 //
 //  ---------------------------------------------------------------
 //  CO PREBIRA z tools/capacitive_edge_detect_test (v9) beze zmeny
@@ -32,59 +43,56 @@
 //   - detekce kriticke hladiny: klouzavy prumer 25 vzorku, pokles
 //     o deltaCritical od NEOMEZENEHO maxima od zacatku vytlacovani,
 //     potvrzeni pres confirmSamples po sobe jdoucich vzorku
-//   - sledovane maximum se resetuje na zacatku KAZDEHO vytlacovani
-//     (to je prave ta vlastnost, ktera dela z creepu patky neskodny
-//     jev - viz bezpecnostni pravidla v CLAUDE.md)
-//   - samo-kalibrujici se ochrana proti ruseni pres CIN2 vcetne
-//     "ziveho" kalibracniho okna s bezicim motorem (v9) a kontroly
-//     znecistene kalibrace proti zdrave zakladne (v8)
+//   - sledovane maximum se resetuje na zacatku KAZDE extrakce, ale NE
+//     pri jejim preruseni (doplneni vzduchu, pauza kvuli ruseni) -
+//     viz bezpecnostni pravidla v CLAUDE.md
+//   - samo-kalibrujici se ochrana proti ruseni pres CIN2 vcetne "ziveho"
+//     kalibracniho okna s bezicim motorem (v9) a kontroly znecistene
+//     kalibrace proti zdrave zakladne (v8)
 //
 //  ---------------------------------------------------------------
-//  V CEM SE LISI (a proc)
+//  JAK SE MERI "HLOUBKA" BEZ ZNALOSTI OBJEMU V LAHVICCE
 //  ---------------------------------------------------------------
-//   1) DOPLNUJE SE PEVNYCH refillMl (3,0 ml), ne nahodnych 6-17 ml.
-//      Nahodne doplnovani melo smysl, dokud se testovala robustnost
-//      detekce vuci neznamemu pocatecnimu stavu. Ted se meri prave
-//      to, co protokol opravdu dela, takze je davka pevna.
-//   2) ZADNE POTVRZOVANI OBSLUHOU mezi iteracemi ('1'/'0' v predchozim
-//      nastroji). Beh je nepretrzity, aby se elektrody mezi iteracemi
-//      nehybaly - pohyb lahvicky by byl presne ten common-mode zasah,
-//      ktery se snazime vyloucit, a navic by zamaskoval creep, ktery
-//      hledame.
-//      3) OCHRANA CIN2 POKRACUJE SAMA. V predchozim nastroji cekala na 'y'.
-//      Tady se motor pozastavi a beh sam pokracuje, jakmile je rychlost
-//      zmeny C2 pod prahem C2_QUIET_SAMPLES vzorku po sobe. Sledovany
-//      vrchol C1 pritom ZUSTAVA (pravidlo ST_PAUSED v CLAUDE.md - reset
-//      by detekci zpozdil, coz je nebezpecny smer chyby), zatimco
-//      vyhlazovaci okno se pred pokracovanim naplni znovu z cistych
-//      vzorku. Proc zrovna takhle je rozepsane u waitForQuiet() nize -
-//      je to nejchoulostivejsi misto celeho sketche.
-//   4) LOGUJE SE i odhadovany OBSAH LAHVICKY v ml (`vial_ml`), ne jen
-//      poloha strikacky. Diky automatickemu pocatecnimu naplneni je
-//      pocatecni stav znamy, takze absolutni objem v lahvicce dava
-//      poprve smysl. POZOR: je to dopocet z kroku motoru, ne mereni -
-//      predpoklada prazdnou lahvicku pred startem a nulove ztraty.
-//   5) KLICOVA VYSTUPNI VELICINA je `hloubka` = vrchol_ml - sepnuti_ml,
-//      tedy o kolik ml pod vrcholem krivky prah sepnul. Musi vyjit
-//      MENSI nez refillMl, jinak dalsi vytlacovani zacne na sestupne
-//      vetvi misto nad vrcholem. Sketch to hlida a hlasi primo za behu.
+//  Pri odsavani strikackou byl objem v lahvicce presne znamy z kroku
+//  motoru. Ted uz ne - cast vtlaceneho vzduchu se jen stlaci a kapalinu
+//  nevytlaci. Merenou velicinou je proto objem VZDUCHU vytlaceny mezi
+//  vrcholem C1 a sepnutim prahu (`hloubka_vzduch_ml`).
+//
+//  Pri modelu "komprese spotrebuje na zacatku zdvihu pevny objem C a
+//  dal uz je prevod vzduch->kapalina 1:1" plati:
+//      kapalina vytlacena do vrcholu = vzduch_pri_vrcholu - C
+//      C = vzduch_celkem - davka                (v ustalenem stavu)
+//   => hloubka_kapalina = davka - (vzduch_pri_vrcholu - C)
+//                       = vzduch_celkem - vzduch_pri_vrcholu
+//                       = hloubka_vzduch
+//  Hloubka mereny ve vzduchu je tedy za tohoto predpokladu primo
+//  hloubka v mililitrech kapaliny. Sketch navic hlasi odhad komprese
+//  (`komprese_odh` = vzduch_celkem - davka), aby se dal predpoklad
+//  z dat zpetne overit - kdyby se komprese mezi iteracemi vyrazne
+//  menila, model neplati a je to v logu videt.
+//
+//  Klicova podminka zustava stejna: hloubka musi vyjit MENSI nez davka
+//  (3 ml), jinak dalsi extrakce zacne uz na sestupne vetvi a vrchol
+//  se v ni nikdy nenajde.
 //
 //  ---------------------------------------------------------------
 //  POSTUP
 //  ---------------------------------------------------------------
-//    1. Naplnit strikacku na rozumnou stredni hodnotu (~30 ml) -
-//       viz MECH_LIMIT_ML nize, proc.
-//    2. Do studny vlozit PRAZDNOU lahvicku (10ml varianta).
-//    3. 'o' driver ON, volitelne 'j'/'k' odvzdusneni hadicky.
-//    4. 't' tare (referencni bod krokoveho pocitadla).
-//    5. 'g' - a dal uz nic. Beh trva zhruba 40-60 minut.
-//    6. 'x' kdykoliv = okamzite zastaveni.
+//    1. Vzduchova strikacka PLNA (10 ml), roztokova PLNA (60 ml).
+//    2. Oba ventily a obe strikacky osazeny; lahvicka (PRAZDNA, 10ml
+//       varianta) s jehlami se pripojuje jako POSLEDNI - stejne
+//       instalacni poradi jako u pristroje.
+//    3. 't' = deklarace vychoziho stavu (vzduch 10 ml, roztok 0 ml
+//       podano). Volitelne 'u<n>' na kontrolu uhlu ventilu.
+//    4. 'g' - a dal uz nic. Beh trva zhruba 60-90 minut.
+//    5. 'x' kdykoliv = okamzite zastaveni (motory se odpoji, ventily
+//       do bezpecnych poloh).
 //
-//  Pokud je lahvicka naplnena rucne, vypnout autoFill prikazem 'f0'
-//  a nastavit skutecny objem 'v<ml>'.
+//  Pokud je lahvicka naplnena rucne, vypnout 'f0' a nastavit 'v<ml>'.
 // ============================================================
 #include <Arduino.h>
 #include <Wire.h>
+#include <EEPROM.h>
 
 // ---------- FDC1004 ----------
 #define FDC_ADDR          0x50
@@ -103,94 +111,133 @@
 
 #define N_CH              2   // CIN1 + CIN2
 
-// ---------- fyziologicky krokovy motor (piny sdileny s hlavnim firmware) ----------
+// ---------- piny (shodne s config.h hlavniho firmware) ----------
+#define PIN_AIR_STEP      4
+#define PIN_AIR_DIR       5
 #define PIN_SAL_STEP      6
 #define PIN_SAL_DIR       7
 #define PIN_STEPPER_EN    A3
+#define PIN_SERVO_PATIENT 9    // OC1A
+#define PIN_SERVO_AIR    10    // OC1B
+
+#define AIR_DIR_PUSH_LEVEL      HIGH
+#define SAL_DIR_PUSH_LEVEL      HIGH
 #define STEPPER_ENABLED_LEVEL   LOW
 #define STEPPER_DISABLED_LEVEL  HIGH
-#define SAL_DIR_PUSH_LEVEL      HIGH     // HIGH = davkovani do lahvicky
 
+// ---------- serva (Timer1 HW PWM, prevzato ze servo_valve.cpp) ----------
+#define SERVO_MIN_US      544
+#define SERVO_MAX_US     2503
+#define SERVO_SETTLE_MS  1000UL
+
+// vychozi uhly (prepsane z EEPROM, pokud je platna)
+#define PATIENT_VALVE_OPEN_DEFAULT            0
+#define PATIENT_VALVE_ISOLATE_DEFAULT        90
+#define AIR_VALVE_SYRINGE_TO_VIAL_DEFAULT    90
+#define AIR_VALVE_SYRINGE_TO_FILTER_DEFAULT   0
+#define AIR_VALVE_VIAL_TO_FILTER_DEFAULT    180
+
+#define EEPROM_MAGIC_VALUE           0xA6
+#define EEPROM_ADDR_VALID_FLAG        0
+#define EEPROM_ADDR_PATIENT_OPEN      1
+#define EEPROM_ADDR_PATIENT_ISOLATE   2
+#define EEPROM_ADDR_AIR_SYR_TO_VIAL   3
+#define EEPROM_ADDR_AIR_SYR_TO_FILT   4
+#define EEPROM_ADDR_AIR_VIAL_TO_FILT  5
+
+// ---------- mechanika ----------
 #define SCREW_PITCH_MM     8.0f
 #define STEPS_PER_REV      200
 #define MICROSTEP_DIV      16
 #define STEPS_PER_MM       ((STEPS_PER_REV * MICROSTEP_DIV) / SCREW_PITCH_MM)   // 400
+#define AIR_SYR_ML_PER_MM  0.2f
 #define SAL_SYR_ML_PER_MM  0.625f
+#define AIR_STEPS_PER_ML   (STEPS_PER_MM / AIR_SYR_ML_PER_MM)                   // 2000
 #define SAL_STEPS_PER_ML   (STEPS_PER_MM / SAL_SYR_ML_PER_MM)                   // 640
 
-#define FLOW_S_PER_ML      5UL
-#define SAL_STEP_INTERVAL_US  ((uint32_t)(1000000.0f * FLOW_S_PER_ML / SAL_STEPS_PER_ML))  // ~7812 us
+#define FLOW_S_PER_ML          5UL
+#define AIR_FILL_SPEED_FACTOR  2
+#define AIR_STEP_INTERVAL_US   ((uint32_t)(1000000.0f * FLOW_S_PER_ML / AIR_STEPS_PER_ML))  // 2500
+#define SAL_STEP_INTERVAL_US   ((uint32_t)(1000000.0f * FLOW_S_PER_ML / SAL_STEPS_PER_ML))  // ~7812
+
+// ---------- objemy a casovani (shodne s config.h) ----------
+#define VOL_AIR_SYRINGE_MAX_ML  10.0f
+#define VOL_AIR_RESERVE_ML       3.0f   // trvala rezerva - pod ni se netlaci
+#define VOL_SAL_TOTAL_ML        60.0f
+#define FLUID_DRAIN_MS        5000UL    // dobeh kapaliny hadickou k pacientovi
+#define EQUALIZE_TIME_MS      3000UL    // vyrovnani tlaku pres filtr
+#define MAX_AIR_REFILLS          5
 
 #define JOG_ML             0.5f
 
-// ---------- vyhlazeni signalu (overeno na datech z capacitive_cycle_test) ----------
+// ---------- vyhlazeni signalu ----------
 #define SMOOTH_WINDOW      25      // ~5 s pri 200 ms/vzorek
-#define SETTLE_MS          5000UL  // klid pred kazdym vytlacovanim (motor stoji)
+#define SETTLE_MS          5000UL  // klid pred kazdou extrakci (motory stoji)
 
-// Kolik vytlacovani se vejde do pameti: faze 1 + MAX_ITER iteraci.
 #define MAX_ITER           12
 #define MAX_PUSH           (MAX_ITER + 1)
 
-// Vyhradne HARDWAROVA ochrana zdvihu strikacky - NENI to detekcni ani
-// "alarm" koncept (viz capacitive_edge_detect_test v5). Bilance behu:
-// s autoFill se nejdriv davkuje +10 ml (naplneni lahvicky), faze 1 pak
-// odebere ~9 ml a kazda iterace doplni 3,0 a odebere ~3,1 ml - poloha se
-// tedy pohybuje zhruba v pasmu -1 az +10 ml od tare. Bez autoFill je to
-// stejne siroke pasmo posunute o -10 ml. Strop 25 ml je v obou pripadech
-// pohodlna rezerva, ktera se pri ocekavanem chovani nepriblizi.
-#define MECH_LIMIT_ML      25.0f
-
 // ---------- ochrana proti vnejsimu ruseni pres CIN2 ----------
-#define C2_MA_WINDOW       5    // kratke vyhlazeni C2
-#define C2_LAG             3    // pres kolik vzorku se meri zmena (0,6 s pri 200 ms)
+#define C2_MA_WINDOW       5
+#define C2_LAG             3
+#define C2_BASELINE_OUTLIER_MULT 4.0f
+#define C2_RUNNING_CALIB_SAMPLES 20
+#define C2_GUARD_MAX_CEILING 0.150f
+#define C2_QUIET_SAMPLES     15
+#define C2_QUIET_TIMEOUT_MS  180000UL
+#define MAX_PAUSES_PER_PUSH  20
 
-// ---------- parametry (2-znakove prikazy: dc/cf/cg/ck/cm) ----------
-static float    deltaCritical   = 0.22f;   // pF - pokles od (neomezeneho) maxima = kriticka hladina
-static uint8_t  confirmSamples  = 5;       // kolik po sobe jdoucich vzorku musi prah drzet
+// ---------- parametry ----------
+static float    deltaCritical   = 0.22f;
+static uint8_t  confirmSamples  = 5;
 static uint16_t samplePeriodMs  = 200;
-static uint8_t  iterCountTarget = MAX_ITER;// pocet iteraci PO fazi 1
-static float    refillMl        = 3.0f;    // davka roztoku na iteraci (= VOL_SAL_ITER_ML)
-static float    vialStartMl     = 10.0f;   // pocatecni objem v lahvicce (10ml varianta)
-static bool     autoFill        = true;    // true = sketch lahvicku naplni sam z prazdne
+static uint8_t  iterCountTarget = MAX_ITER;
+static float    refillMl        = 3.0f;    // davka roztoku na iteraci
+static float    vialStartMl     = 10.0f;   // pocatecni napln lahvicky
+static bool     autoFill        = true;
 
-// Prah ochrany CIN2 se pocita znovu pred kazdym vytlacovanim z prave
-// namereneho sumu (klidoveho i s bezicim motorem) - viz v7-v9
-// v capacitive_edge_detect_test, proc pevna konstanta nestaci.
 static float    c2GuardMultiplier = 2.5f;
-static float    c2GuardMinFloor = 0.020f;  // pF
+static float    c2GuardMinFloor = 0.020f;
 static uint8_t  c2GuardConfirm  = 2;
 static float    c2GuardEffective = 0.0f;
 static float    c2CalibMax      = 0.0f;
 static float    c2BaselineQuiet = 0.0f;
-#define C2_BASELINE_OUTLIER_MULT 4.0f
-#define C2_RUNNING_CALIB_SAMPLES 20
-#define C2_GUARD_MAX_CEILING 0.150f
 
-// Automaticke pokracovani po ruseni (nahrada za 'y' v predchozim nastroji).
-#define C2_QUIET_SAMPLES     15      // kolik vzorku po sobe musi byt klid, aby se pokracovalo
-#define C2_QUIET_TIMEOUT_MS  180000UL // po teto dobe bez klidu se beh vzda (rusi trvale)
-#define MAX_PAUSES_PER_PUSH  20      // pojistka proti nekonecnemu ping-pongu
+// ---------- uhly ventilu ----------
+static uint8_t angPatOpen, angPatIsolate;
+static uint8_t angAirSyrVial, angAirSyrFilt, angAirVialFilt;
+static uint8_t curPatAngle = 255, curAirAngle = 255;
 
+// ---------- stav ----------
 static uint8_t  capdac[N_CH]   = { 0, 0 };
 static bool     tared          = false;
-static bool     driverEnabled  = false;
-static int32_t  posSteps       = 0;      // 0 = pri tare; zaporne = odsato
-static int32_t  runStartSteps  = 0;      // poloha pri 'g' - odtud se pocita obsah lahvicky
-static float    vialBaseMl     = 0.0f;   // obsah lahvicky v okamziku 'g'
+static bool     running        = false;
 static char     line[24];
 static uint8_t  lineLen        = 0;
 static uint32_t runStartMs     = 0;
-static bool     running        = false;
 static uint8_t  pushIndex      = 0;      // 0 = faze 1, 1..N = iterace
 
-// ---------- vysledky jednotlivych vytlacovani ----------
-static float   resStartVial[MAX_PUSH];   // obsah lahvicky na zacatku vytlacovani
-static float   resPeakVial[MAX_PUSH];    // obsah pri vrcholu C1
+static int32_t  airSteps       = 0;      // obsah vzduchove strikacky v krocich
+static int32_t  salSteps       = 0;      // kumulativne podano roztoku (jen roste!)
+
+// ---------- prubeh aktualni extrakce (prezije doplneni vzduchu i pauzu) ----------
+static float    pkMax;        // sledovane maximum vyhlazeneho C1
+static float    pkAirMl;      // kolik vzduchu bylo vytlaceno v okamziku vrcholu
+static float    pkStartSm;    // vyhlazena hodnota na startu extrakce
+static int32_t  pushStepsTot; // kumulativne vytlaceny vzduch v teto extrakci
+static uint8_t  belowCnt;
+static uint8_t  refillCnt;
+static uint8_t  pauseCnt;
+static uint16_t liveCalib;
+
+// ---------- vysledky ----------
+static float   resPeakAir[MAX_PUSH];
+static float   resTotAir[MAX_PUSH];
 static float   resPeakC1[MAX_PUSH];
-static float   resTrigVial[MAX_PUSH];    // obsah pri sepnuti prahu
 static float   resTrigC1[MAX_PUSH];
+static uint8_t resRefills[MAX_PUSH];
 static uint8_t resPauses[MAX_PUSH];
-static bool    resNewPeak[MAX_PUSH];     // dosahlo sledovane maximum nad startovni hodnotu?
+static bool    resNewPeak[MAX_PUSH];
 static uint8_t pushDone        = 0;
 
 // ---------- klouzavy prumer C1 ----------
@@ -319,14 +366,80 @@ static void autoCapdac(uint8_t ch) {
     }
 }
 
-// ---------- stepper ----------
-static void stepperInit() {
-    pinMode(PIN_SAL_STEP, OUTPUT);
-    pinMode(PIN_SAL_DIR, OUTPUT);
-    pinMode(PIN_STEPPER_EN, OUTPUT);
-    digitalWrite(PIN_SAL_STEP, LOW);
+// ============================================================
+//  Serva - Timer1 fast PWM 50 Hz (prevzato ze servo_valve.cpp)
+// ============================================================
+static void servoTimerInit() {
+    pinMode(PIN_SERVO_PATIENT, OUTPUT);
+    pinMode(PIN_SERVO_AIR, OUTPUT);
+    TCCR1A = _BV(WGM11);
+    TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS11);   // prescaler 8 -> 0,5 us/tik
+    ICR1 = 39999;                                    // 20 ms
+    OCR1A = 0;
+    OCR1B = 0;
+}
+
+static uint16_t angleTicks(uint8_t angle) {
+    if (angle > 180) angle = 180;
+    uint16_t us = SERVO_MIN_US
+                + (uint16_t)(((uint32_t)(SERVO_MAX_US - SERVO_MIN_US) * angle) / 180);
+    return us * 2;
+}
+
+static void servoAttach() {
+    OCR1A = angleTicks(curPatAngle);
+    OCR1B = angleTicks(curAirAngle);
+    TCCR1A |= _BV(COM1A1) | _BV(COM1B1);   // vystupy az po nastaveni OCR
+}
+
+static void loadValveAngles() {
+    if (EEPROM.read(EEPROM_ADDR_VALID_FLAG) == EEPROM_MAGIC_VALUE) {
+        angPatOpen     = EEPROM.read(EEPROM_ADDR_PATIENT_OPEN);
+        angPatIsolate  = EEPROM.read(EEPROM_ADDR_PATIENT_ISOLATE);
+        angAirSyrVial  = EEPROM.read(EEPROM_ADDR_AIR_SYR_TO_VIAL);
+        angAirSyrFilt  = EEPROM.read(EEPROM_ADDR_AIR_SYR_TO_FILT);
+        angAirVialFilt = EEPROM.read(EEPROM_ADDR_AIR_VIAL_TO_FILT);
+        Serial.println(F("# uhly ventilu nacteny z EEPROM"));
+    } else {
+        angPatOpen     = PATIENT_VALVE_OPEN_DEFAULT;
+        angPatIsolate  = PATIENT_VALVE_ISOLATE_DEFAULT;
+        angAirSyrVial  = AIR_VALVE_SYRINGE_TO_VIAL_DEFAULT;
+        angAirSyrFilt  = AIR_VALVE_SYRINGE_TO_FILTER_DEFAULT;
+        angAirVialFilt = AIR_VALVE_VIAL_TO_FILTER_DEFAULT;
+        Serial.println(F("# EEPROM neplatna - vychozi uhly z config.h"));
+    }
+}
+
+// ============================================================
+//  Motory
+// ============================================================
+// nENBL se sepne pri 'g' a behem celeho behu se uz NIKDY nepousti -
+// motory drzi polohu pistu proti zpetnemu tlaku (pravidlo 1 v hlavicce).
+static void steppersEnable() {
+    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
+}
+
+static void steppersDisable() {
     digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
 }
+
+static void stepPulse(uint8_t pin) {
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(3);      // DRV8825 potrebuje >= 1,9 us
+    digitalWrite(pin, LOW);
+}
+
+// Smer vzduchove strikacky - jedina strikacka, ktera smi couvat (nasavani
+// vzduchu z atmosfery). Roztokova strikacka zadnou takovou funkci nema.
+static void airDir(bool push) {
+    digitalWrite(PIN_AIR_DIR, push ? AIR_DIR_PUSH_LEVEL
+                                   : (AIR_DIR_PUSH_LEVEL == HIGH ? LOW : HIGH));
+    delayMicroseconds(10);
+}
+
+static float airMl() { return (float)airSteps / AIR_STEPS_PER_ML; }
+static float salMl() { return (float)salSteps / SAL_STEPS_PER_ML; }
+static float pushedMl() { return (float)pushStepsTot / AIR_STEPS_PER_ML; }
 
 // POZOR: musi ODEBRAT i znaky, ktere 'x' nejsou. Pouhy peek() by se zaseknul
 // na prvnim cizim znaku v bufferu a nouzove zastaveni by bylo po zbytek behu
@@ -340,61 +453,23 @@ static bool abortRequested() {
     return abort;
 }
 
-static int32_t stepsFor(float ml) {
-    return (int32_t)(ml * SAL_STEPS_PER_ML + 0.5f);
-}
-
-// Poloha strikacky od posledniho 'tare' - slouzi jen pro mechanickou ochranu.
-static float levelMl() {
-    return (float)posSteps / SAL_STEPS_PER_ML;
-}
-
-// Odhad obsahu lahvicky. Dopocet z kroku motoru, NE mereni - predpoklada
-// znamy pocatecni stav a nulove ztraty.
-static float vialMl() {
-    return vialBaseMl + (float)(posSteps - runStartSteps) / SAL_STEPS_PER_ML;
-}
-
-static bool withinMechLimit() {
-    float ml = levelMl();
-    if (ml < 0.0f) ml = -ml;
-    return ml <= MECH_LIMIT_ML;
-}
-
-static void stopMotorDisable() {
-    digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
-    driverEnabled = false;
-}
-
-static void motorStart(bool push) {
-    digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
-    driverEnabled = true;
-    digitalWrite(PIN_SAL_DIR, push ? SAL_DIR_PUSH_LEVEL
-                                    : (SAL_DIR_PUSH_LEVEL == HIGH ? LOW : HIGH));
-    delayMicroseconds(10);
-}
-
-static void jogOnce(bool push) {
-    int32_t steps = stepsFor(JOG_ML);
-    motorStart(push);
-    for (int32_t i = 0; i < steps; i++) {
-        digitalWrite(PIN_SAL_STEP, HIGH);
-        delayMicroseconds(3);
-        digitalWrite(PIN_SAL_STEP, LOW);
-        delayMicroseconds(SAL_STEP_INTERVAL_US - 3);
-        posSteps += push ? 1 : -1;
-    }
-}
-
-// ---------- log ----------
-// faze: F=pocatecni plneni  s=ustaleni (motor stoji)  w=vytlacovani
-//       p=pauza kvuli ruseni  r=doplneni roztoku
-static void logSample(char phase, float raw1, float sm1, float raw2, float ref, float c2rate) {
+// ============================================================
+//  Log
+// ============================================================
+// faze: F=pocatecni napln  r=doplneni roztoku  e=vyrovnani tlaku (V<->F)
+//       a=nasavani vzduchu (S<->F)  v=prejezd ventilu  s=ustaleni pred extrakci
+//       q=obnova vyhlazovaciho okna  w=vytlacovani vzduchem  d=dobeh kapaliny
+//       p=pauza kvuli ruseni CIN2
+static void logSample(char phase, float raw1, float sm1, float ref,
+                      float raw2, float c2rate) {
     Serial.print(pushIndex);
     Serial.print(';'); Serial.print(millis() - runStartMs);
-    Serial.print(';'); Serial.print(vialMl(), 3);
-    Serial.print(';'); Serial.print(levelMl(), 3);
     Serial.print(';'); Serial.print(phase);
+    Serial.print(';'); Serial.print(airMl(), 3);
+    Serial.print(';'); Serial.print(pushedMl(), 3);
+    Serial.print(';'); Serial.print(salMl(), 3);
+    Serial.print(';'); Serial.print(curPatAngle);
+    Serial.print(';'); Serial.print(curAirAngle);
     Serial.print(';'); Serial.print(raw1, 4);
     Serial.print(';'); Serial.print(sm1, 4);
     Serial.print(';'); Serial.print(ref, 4);
@@ -403,112 +478,132 @@ static void logSample(char phase, float raw1, float sm1, float raw2, float ref, 
 }
 
 static void printLogHeader() {
-    Serial.println(F("# push;t_ms;vial_ml;level_ml;faze;C1_raw;C1_sm;peak_ref;C2_raw;c2rate"));
+    Serial.println(F("# it;t_ms;faze;vzduch_ml;vytlaceno_ml;roztok_ml;"
+                     "servo_pac;servo_vzd;C1_raw;C1_sm;vrchol;C2_raw;c2rate"));
 }
 
-// ---------- diagnostika ----------
-static void printInfo() {
-    Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
-    Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
-    Serial.print(F("# deltaCritical=")); Serial.print(deltaCritical, 4);
-    Serial.print(F(" confirmSamples=")); Serial.print(confirmSamples);
-    Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
-    Serial.print(F("# vialStartMl=")); Serial.print(vialStartMl, 2);
-    Serial.print(F(" autoFill=")); Serial.print(autoFill ? F("ano") : F("ne"));
-    Serial.print(F(" refillMl=")); Serial.print(refillMl, 2);
-    Serial.print(F(" iterCountTarget=")); Serial.println(iterCountTarget);
-    Serial.print(F("# c2GuardMultiplier=")); Serial.print(c2GuardMultiplier, 2);
-    Serial.print(F(" c2GuardMinFloor=")); Serial.print(c2GuardMinFloor, 4);
-    Serial.print(F(" c2GuardConfirm=")); Serial.print(c2GuardConfirm);
-    if (c2GuardMultiplier <= 0.0f) Serial.print(F("  *** OCHRANA CIN2 VYPNUTA ***"));
-    Serial.println();
-    Serial.print(F("# c2GuardEffective=")); Serial.print(c2GuardEffective, 4);
-    Serial.print(F(" pF (posledni kalibrace max=")); Serial.print(c2CalibMax, 4);
-    Serial.print(F(" pF, zdrava zakladna=")); Serial.print(c2BaselineQuiet, 4);
-    Serial.println(F(" pF)"));
-    Serial.print(F("# MECH_LIMIT_ML=")); Serial.print(MECH_LIMIT_ML, 1);
-    Serial.println(F(" (hardwarova ochrana zdvihu, ne detekcni alarm)"));
-    Serial.print(F("# driver=")); Serial.print(driverEnabled ? F("ON") : F("OFF"));
-    Serial.print(F(" tared=")); Serial.print(tared ? F("ano") : F("ne"));
-    Serial.print(F(" bezi=")); Serial.print(running ? F("ano") : F("ne"));
-    Serial.print(F(" poloha strikacky(od tare)=")); Serial.print(levelMl(), 3);
-    Serial.println(F(" ml"));
-}
-
-static void printHelp() {
-    Serial.println(F("# h=napoveda i=info a=autoCAPDAC n=sum"));
-    Serial.println(F("# o=driver ON  x=driver OFF / STOP behem behu"));
-    Serial.println(F("# t=tare (reset pocitadla, po naplneni strikacky)"));
-    Serial.println(F("# j/k=jog +-0.5ml (odvzdusneni)"));
-    Serial.println(F("# g=spustit CELY protokol (faze 1 + iterCountTarget iteraci)"));
-    Serial.println(F("#   beh je zcela automaticky, obsluha uz nic nedela"));
-    Serial.println(F("# r<n>=pocet iteraci po fazi 1  s<ml>=davka roztoku na iteraci"));
-    Serial.println(F("# v<ml>=pocatecni objem v lahvicce  f1/f0=automaticke plneni ano/ne"));
-    Serial.println(F("# dc<pF>=delta kriticka hladina  cf<n>=potvrzovacich vzorku"));
-    Serial.println(F("# p<ms>=perioda vzorku"));
-    Serial.println(F("# cm<x>=nasobitel prahu CIN2 (0=vypnout)  cg<pF>=min. podlaha prahu"));
-    Serial.println(F("# ck<n>=potvrzovacich vzorku ochrany CIN2"));
-    Serial.println(F("# #<text>=znacka"));
-}
-
-static void noiseTest() {
-    Serial.println(F("# test sumu, nehybat sestavou..."));
-    for (uint8_t ch = 0; ch < N_CH; ch++) {
-        float mn = 1e9f, mx = -1e9f, sum = 0.0f, sumSq = 0.0f;
-        const uint16_t N = 256;
-        for (uint16_t i = 0; i < N; i++) {
-            float v = readPf(ch);
-            if (v < mn) mn = v;
-            if (v > mx) mx = v;
-            sum += v; sumSq += v * v;
-            delay(5);
-        }
-        float mean = sum / N;
-        float var = sumSq / N - mean * mean;
-        if (var < 0.0f) var = 0.0f;
-        Serial.print(F("# CIN")); Serial.print(ch + 1);
-        Serial.print(F(": prum=")); Serial.print(mean, 4);
-        Serial.print(F(" min=")); Serial.print(mn, 4);
-        Serial.print(F(" max=")); Serial.print(mx, 4);
-        Serial.print(F(" p-p=")); Serial.print(mx - mn, 4);
-        Serial.print(F(" sigma=")); Serial.print(sqrt(var), 5);
-        Serial.println(F(" pF"));
-    }
-}
-
-// ---------- ustaleni pred vytlacovanim ----------
-// Motor stoji, sbira se klidova cast kalibrace ochrany CIN2 a plni se
-// vyhlazovaci okno, aby vytlacovani zacinalo s cerstvym plnym prumerem.
-// Prah se JESTE nevyhodnocuje - to dela finalizeC2GuardThreshold() az po
-// "zivem" okne s bezicim motorem (viz v9 v capacitive_edge_detect_test).
-static bool settleBeforePush() {
-    resetSmooth();
-    resetC2Guard();
-    Serial.print(F("# ustaleni pred vytlacovanim ")); Serial.print(pushIndex);
-    Serial.println(F(" (motor stoji, cca 5 s)..."));
+// ============================================================
+//  Vzorkovani behem cekani (prejezd ventilu, dobeh, vyrovnani tlaku)
+// ============================================================
+// feedSmooth = plnit i vyhlazovaci okno (pouziva se jen tam, kde ma navazovat
+// na nasledujici extrakci). Ochrana CIN2 se tu jen SBIRA, nevyhodnocuje -
+// pohyb ventilu i stoupajici hladina jsou legitimni zmeny C2.
+static bool sampleFor(uint32_t ms, char phase, float ref, bool feedSmooth) {
     uint32_t startMs = millis();
     uint32_t lastSampleMs = millis() - samplePeriodMs;
-    while (millis() - startMs < SETTLE_MS || smoothCount < SMOOTH_WINDOW) {
-        if (abortRequested()) {
-            stopMotorDisable();
-            Serial.println(F("# ABORT - beh zastaven"));
-            return false;
-        }
+    while (millis() - startMs < ms) {
+        if (abortRequested()) return false;
         uint32_t now = millis();
         if (now - lastSampleMs >= samplePeriodMs) {
             lastSampleMs = now;
             float raw1 = readPf(0);
             float raw2 = readPf(1);
-            float sm = pushSmooth(raw1);
+            float sm = feedSmooth ? pushSmooth(raw1) : raw1;
             float rate = 0.0f;
             pushC2AndCheck(raw2, &rate);
-            logSample('s', raw1, sm, raw2, 0.0f, rate);
+            logSample(phase, raw1, sm, ref, raw2, rate);
         }
     }
-    c2AlarmCount = 0;
     return true;
 }
 
+static bool patientValveTo(uint8_t angle, float ref) {
+    if (angle == curPatAngle) return true;
+    curPatAngle = angle;
+    OCR1A = angleTicks(angle);
+    return sampleFor(SERVO_SETTLE_MS, 'v', ref, false);
+}
+
+static bool airValveTo(uint8_t angle, float ref) {
+    if (angle == curAirAngle) return true;
+    curAirAngle = angle;
+    OCR1B = angleTicks(angle);
+    return sampleFor(SERVO_SETTLE_MS, 'v', ref, false);
+}
+
+// ============================================================
+//  Roztokova strikacka - VYHRADNE smerem tlaceni
+// ============================================================
+// Nikde v tomhle sketchi neexistuje zapis do PIN_SAL_DIR mimo setup().
+// Roztokova strikacka se proto nemuze rozjet zpet ani omylem.
+// Volat SMI se jen tehdy, kdyz je vzduchovy ventil v V<->F (lahvicka
+// odvzdusnena) - viz volajici mista.
+static bool salDispense(float ml, char phase) {
+    int32_t stepsToGo = (int32_t)(ml * SAL_STEPS_PER_ML + 0.5f);
+    if (salSteps + stepsToGo > (int32_t)(VOL_SAL_TOTAL_ML * SAL_STEPS_PER_ML)) {
+        Serial.println(F("# *** DOSLA ZASOBA ROZTOKU - beh ukoncen ***"));
+        return false;
+    }
+    if (curAirAngle != angAirVialFilt) {
+        // Pojistka proti chybe v poradi kroku: davkovat do neodvzdusnene
+        // lahvicky je presne to, co v tomhle projektu uz jednou selhalo.
+        Serial.println(F("# *** CHYBA: davkovani roztoku pri neodvzdusnene lahvicce ***"));
+        return false;
+    }
+    int32_t done = 0;
+    uint32_t lastStepUs = micros();
+    uint32_t lastSampleMs = millis();
+    while (done < stepsToGo) {
+        if (abortRequested()) return false;
+        uint32_t nowUs = micros();
+        if (nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
+            lastStepUs = nowUs;
+            stepPulse(PIN_SAL_STEP);
+            done++;
+            salSteps++;
+        }
+        uint32_t nowMs = millis();
+        if (nowMs - lastSampleMs >= samplePeriodMs) {
+            lastSampleMs = nowMs;
+            float raw1 = readPf(0);
+            float raw2 = readPf(1);
+            float rate = 0.0f;
+            pushC2AndCheck(raw2, &rate);
+            logSample(phase, raw1, raw1, 0.0f, raw2, rate);
+        }
+    }
+    return true;
+}
+
+// ============================================================
+//  Nasavani vzduchu z atmosfery (S<->F)
+// ============================================================
+static bool airAspirate(float ml, float ref) {
+    int32_t room = (int32_t)(VOL_AIR_SYRINGE_MAX_ML * AIR_STEPS_PER_ML) - airSteps;
+    int32_t stepsToGo = (int32_t)(ml * AIR_STEPS_PER_ML + 0.5f);
+    if (stepsToGo > room) stepsToGo = room;
+    if (stepsToGo <= 0) return true;
+
+    airDir(false);
+    int32_t done = 0;
+    uint32_t lastStepUs = micros();
+    uint32_t lastSampleMs = millis();
+    uint32_t interval = AIR_STEP_INTERVAL_US / AIR_FILL_SPEED_FACTOR;
+    while (done < stepsToGo) {
+        if (abortRequested()) return false;
+        uint32_t nowUs = micros();
+        if (nowUs - lastStepUs >= interval) {
+            lastStepUs = nowUs;
+            stepPulse(PIN_AIR_STEP);
+            done++;
+            airSteps++;
+        }
+        uint32_t nowMs = millis();
+        if (nowMs - lastSampleMs >= samplePeriodMs) {
+            lastSampleMs = nowMs;
+            float raw1 = readPf(0);
+            float raw2 = readPf(1);
+            float rate = 0.0f;
+            pushC2AndCheck(raw2, &rate);
+            logSample('a', raw1, raw1, ref, raw2, rate);
+        }
+    }
+    return true;
+}
+
+// ============================================================
+//  Kalibrace prahu ochrany CIN2
+// ============================================================
 static void finalizeC2GuardThreshold() {
     float calibSource = c2CalibMax;
     bool calibOutlier = false;
@@ -541,35 +636,16 @@ static void finalizeC2GuardThreshold() {
     c2AlarmCount = 0;
 }
 
-// Pauza kvuli ruseni. Motor stoji. Ceka se, az rychlost zmeny C2 klesne pod
-// prah na C2_QUIET_SAMPLES vzorku po sobe, a pak se JESTE dojede plne
-// vyhlazovaci okno z cistych vzorku - teprve potom se pokracuje.
-//
-// Co se pri pauze ZACHOVA a co se ZAHODI (tohle rozliseni je zasadni):
-//  - sledovany vrchol C1 (`peakMax` u volajiciho) a citac potvrzeni ZUSTAVAJI.
-//    To je pravidlo ST_PAUSED z CLAUDE.md: reset by sledovani vrcholu spustil
-//    znovu od uz pokleslé hodnoty, takze by se kriticka hladina odhalila
-//    POZDEJI - nebezpecny smer chyby.
-//  - vyhlazovaci okno se naopak ZAHODI a naplni znovu. Pravidlo vyse mluvi
-//    o vrcholu; okno je neco jineho a drzi 25 vzorku ZPETNE. Kdyby se neslo
-//    dal, byly by v nem po obnoveni bezne poradi vzorky namerene BEHEM
-//    ruseni, takze prvni `sm` po rozjezdu by z nich bylo poskladane. Kdyz
-//    ruseni C1 zvedne, nafoukne to `peakMax` (= presne mechanismus obou
-//    selhani zdokumentovanych u ochrany CIN2 v CLAUDE.md); kdyz ho snizi,
-//    nafoukne to zase okamzity pokles. Hladina se pri pauze nehybe, takze
-//    cerstve okno meri tutez hladinu - nic se zahozenim neztraci.
-// Vraci true, kdyz je klid a lze pokracovat.
-static bool waitForQuiet(float peakRef) {
-    uint32_t startMs = millis();
+// ============================================================
+//  Naplneni vyhlazovaciho okna cerstvymi vzorky (motory stoji)
+// ============================================================
+// Pouziva se na startu extrakce i po kazdem jejim preruseni. Sledovany
+// vrchol se pritom NIKDY nemeni - to resi volajici.
+static bool fillSmoothWindow(char phase) {
+    resetSmooth();
     uint32_t lastSampleMs = millis() - samplePeriodMs;
-    uint8_t quiet = 0;
-    bool flushing = false;   // true = klid potvrzen, plni se cerstve okno
-    while (millis() - startMs < C2_QUIET_TIMEOUT_MS) {
-        if (abortRequested()) {
-            stopMotorDisable();
-            Serial.println(F("# ABORT - beh zastaven"));
-            return false;
-        }
+    while (smoothCount < SMOOTH_WINDOW) {
+        if (abortRequested()) return false;
         uint32_t now = millis();
         if (now - lastSampleMs >= samplePeriodMs) {
             lastSampleMs = now;
@@ -578,235 +654,306 @@ static bool waitForQuiet(float peakRef) {
             float sm = pushSmooth(raw1);
             float rate = 0.0f;
             pushC2AndCheck(raw2, &rate);
-            logSample('p', raw1, sm, raw2, peakRef, rate);
+            logSample(phase, raw1, sm, pkMax, raw2, rate);
+        }
+    }
+    c2AlarmCount = 0;
+    return true;
+}
+
+// ============================================================
+//  Pauza kvuli ruseni CIN2
+// ============================================================
+// Motor stoji (ale ZUSTAVA ENABLED). Ceka se, az rychlost zmeny C2 klesne
+// pod prah na C2_QUIET_SAMPLES vzorku po sobe, a pak se JESTE dojede plne
+// vyhlazovaci okno z cistych vzorku.
+//
+// Co se ZACHOVA a co ZAHODI:
+//  - sledovany vrchol C1 (pkMax) a citac potvrzeni ZUSTAVAJI. To je
+//    pravidlo ST_PAUSED z CLAUDE.md: reset by sledovani vrcholu spustil
+//    znovu od uz pokleslé hodnoty, takze by se kriticka hladina odhalila
+//    POZDEJI - nebezpecny smer chyby.
+//  - vyhlazovaci okno se ZAHODI a naplni znovu. Drzi 25 vzorku ZPETNE,
+//    takze by po obnoveni obsahovalo vzorky namerene BEHEM ruseni; kdyz
+//    ruseni C1 zvedne, nafoukne to pkMax (= mechanismus obou selhani
+//    zdokumentovanych u ochrany CIN2 v CLAUDE.md). Hladina se pri pauze
+//    nehybe, takze cerstve okno meri tutez hladinu - nic se neztraci.
+static bool waitForQuiet() {
+    uint32_t startMs = millis();
+    uint32_t lastSampleMs = millis() - samplePeriodMs;
+    uint8_t quiet = 0;
+    bool flushing = false;
+    while (millis() - startMs < C2_QUIET_TIMEOUT_MS) {
+        if (abortRequested()) return false;
+        uint32_t now = millis();
+        if (now - lastSampleMs >= samplePeriodMs) {
+            lastSampleMs = now;
+            float raw1 = readPf(0);
+            float raw2 = readPf(1);
+            float sm = pushSmooth(raw1);
+            float rate = 0.0f;
+            pushC2AndCheck(raw2, &rate);
+            logSample('p', raw1, sm, pkMax, raw2, rate);
 
             if (rate < c2GuardEffective) {
                 quiet++;
                 if (!flushing && quiet >= C2_QUIET_SAMPLES) {
                     flushing = true;
-                    resetSmooth();   // zahodit vzorky namerene behem ruseni
+                    resetSmooth();
                     Serial.println(F("# klid, plnim cerstve vyhlazovaci okno..."));
                 } else if (flushing && smoothCount >= SMOOTH_WINDOW) {
                     c2AlarmCount = 0;
-                    Serial.println(F("# pokracuji v TEMZE vytlacovani (vrchol zachovan)"));
+                    Serial.println(F("# pokracuji v TEZE extrakci (vrchol zachovan)"));
                     return true;
                 }
             } else {
                 quiet = 0;
-                if (flushing) {   // ruseni se vratilo uprostred plneni - zacit znovu
+                if (flushing) {
                     flushing = false;
                     resetSmooth();
                 }
             }
         }
     }
-    stopMotorDisable();
     Serial.println(F("# *** RUSENI NEUSTALO v casovem limitu - beh ukoncen ***"));
     return false;
 }
 
-// ---------- davkovani do lahvicky (pocatecni plneni i doplneni roztoku) ----------
-static bool dispense(float ml, char phase) {
-    motorStart(true);
-    int32_t stepsToGo = stepsFor(ml);
-    int32_t stepsDone = 0;
+// ============================================================
+//  Jeden segment vytlacovani vzduchem (po rezervu strikacky)
+// ============================================================
+// Vraci: 0 = kriticka hladina detekovana, 1 = dosla zasoba vzduchu,
+//        2 = abort / chyba.
+static uint8_t airPushSegment() {
+    int32_t reserveSteps = (int32_t)(VOL_AIR_RESERVE_ML * AIR_STEPS_PER_ML);
+    int32_t stepsToGo = airSteps - reserveSteps;
+    if (stepsToGo <= 0) return 1;
+
+    airDir(true);
+    int32_t done = 0;
     uint32_t lastStepUs = micros();
     uint32_t lastSampleMs = millis();
 
-    while (stepsDone < stepsToGo) {
-        if (abortRequested()) {
-            stopMotorDisable();
-            Serial.println(F("# ABORT - beh zastaven"));
-            return false;
-        }
+    while (done < stepsToGo) {
+        if (abortRequested()) return 2;
         uint32_t nowUs = micros();
-        if (nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
+        if (nowUs - lastStepUs >= AIR_STEP_INTERVAL_US) {
             lastStepUs = nowUs;
-            digitalWrite(PIN_SAL_STEP, HIGH);
-            delayMicroseconds(3);
-            digitalWrite(PIN_SAL_STEP, LOW);
-            stepsDone++;
-            posSteps++;
-            if (!withinMechLimit()) {
-                stopMotorDisable();
-                Serial.println(F("# *** MECHANICKY DORAZ STRIKACKY (davkovani) *** beh zastaven ***"));
-                return false;
-            }
+            stepPulse(PIN_AIR_STEP);
+            done++;
+            airSteps--;
+            pushStepsTot++;
         }
         uint32_t nowMs = millis();
-        if (nowMs - lastSampleMs >= samplePeriodMs) {
-            lastSampleMs = nowMs;
-            float raw1 = readPf(0);
-            float raw2 = readPf(1);
-            // Pri davkovani hladina stoupa, takze C2 legitimne roste rychle -
-            // ochrana se tu nevyhodnocuje a filtr se stejne resetuje
-            // v settleBeforePush() pred dalsim vytlacovanim.
-            logSample(phase, raw1, raw1, raw2, 0.0f, 0.0f);
+        if (nowMs - lastSampleMs < samplePeriodMs) continue;
+        lastSampleMs = nowMs;
+
+        float raw1 = readPf(0);
+        float raw2 = readPf(1);
+        float sm = pushSmooth(raw1);
+        float c2rate = 0.0f;
+        bool interference = pushC2AndCheck(raw2, &c2rate);
+
+        if (liveCalib > 0) {
+            interference = false;      // jeste se meri "zivy" sum, prah neznamy
+            liveCalib--;
+            if (liveCalib == 0) finalizeC2GuardThreshold();
+        }
+
+        // Pri ruseni se NESMI aktualizovat pkMax ani vyhodnotit detekce -
+        // nafouknuty vrchol byl pricinou obou selhani v davkovem testu.
+        if (interference) {
+            logSample('w', raw1, sm, pkMax, raw2, c2rate);
+            pauseCnt++;
+            Serial.print(F("# *** RUSENI (CIN2) *** it=")); Serial.print(pushIndex);
+            Serial.print(F(" vytlaceno=")); Serial.print(pushedMl(), 2);
+            Serial.print(F(" ml zmena_C2=")); Serial.print(c2rate, 4);
+            Serial.print(F(" pF prah=")); Serial.print(c2GuardEffective, 4);
+            Serial.print(F(" pF (pauza c. ")); Serial.print(pauseCnt);
+            Serial.println(F(") - motor stoji (ENABLED), vrchol NEZTRACEN"));
+            if (pauseCnt > MAX_PAUSES_PER_PUSH) {
+                Serial.println(F("# *** PRILIS MNOHO PAUZ - beh ukoncen ***"));
+                return 2;
+            }
+            if (!waitForQuiet()) return 2;
+            airDir(true);
+            lastStepUs = micros();
+            lastSampleMs = millis();
+            continue;                  // pkMax i belowCnt zustavaji nezmenene
+        }
+
+        if (sm > pkMax) {
+            pkMax = sm;
+            pkAirMl = pushedMl();
+        }
+        logSample('w', raw1, sm, pkMax, raw2, c2rate);
+
+        if (pkMax - sm >= deltaCritical) {
+            belowCnt++;
+            if (belowCnt >= confirmSamples) {
+                resTrigC1[pushIndex] = sm;
+                return 0;
+            }
+        } else {
+            belowCnt = 0;
         }
     }
-    stopMotorDisable();
-    return true;
+    return 1;
 }
 
-// ---------- jedno vytlacovani na kritickou hladinu ----------
-static bool runPush() {
-    Serial.print(F("# --- VYTLACOVANI "));
+// ============================================================
+//  Doplneni vzduchu do strikacky (uvnitr probihajici extrakce)
+// ============================================================
+// Poradi je shodne s firmwarem: dobeh kapaliny -> izolovat pacienta ->
+// odvzdusnit lahvicku (V<->F) -> nasat vzduch (S<->F) -> zpet na S<->V.
+static bool airRefillCycle() {
+    if (!sampleFor(FLUID_DRAIN_MS, 'd', pkMax, false)) return false;
+    if (!patientValveTo(angPatIsolate, pkMax)) return false;
+    if (!airValveTo(angAirVialFilt, pkMax)) return false;
+    if (!sampleFor(EQUALIZE_TIME_MS, 'e', pkMax, false)) return false;
+    if (!airValveTo(angAirSyrFilt, pkMax)) return false;
+    if (!airAspirate(VOL_AIR_SYRINGE_MAX_ML, pkMax)) return false;
+    if (!sampleFor(EQUALIZE_TIME_MS, 'e', pkMax, false)) return false;
+    if (!airValveTo(angAirSyrVial, pkMax)) return false;
+    if (!patientValveTo(angPatOpen, pkMax)) return false;
+    // Vrchol se NEresetuje - je to porad TATAZ extrakce, hladina se behem
+    // doplnovani nehybala. Obnovi se jen vyhlazovaci okno.
+    return fillSmoothWindow('q');
+}
+
+// ============================================================
+//  Jedna kompletni extrakce na kritickou hladinu
+// ============================================================
+static bool runExtraction() {
+    Serial.print(F("# --- EXTRAKCE "));
     Serial.print(pushIndex);
     if (pushIndex == 0) Serial.println(F(" (faze 1, z plne lahvicky) ---"));
     else { Serial.print(F(" (iterace ")); Serial.print(pushIndex); Serial.println(F(") ---")); }
 
-    if (!settleBeforePush()) return false;
+    pkMax = 0.0f;                  // jen pro sloupec "vrchol" v logu pred startem
+    pkAirMl = 0.0f;
+    pushStepsTot = 0;
+    belowCnt = 0;
+    refillCnt = 0;
+    pauseCnt = 0;
+    liveCalib = C2_RUNNING_CALIB_SAMPLES;
+    resetC2Guard();
+    c2GuardEffective = 0.0f;       // prah plati az po "zivem" okne
 
-    float startVial = vialMl();
-    float startSm = smoothSum / smoothCount;   // vyhlazena hodnota na startu (okno je plne)
+    // Ventily do polohy pro vytlacovani, pak klid a naplneni okna.
+    if (!airValveTo(angAirSyrVial, 0.0f)) return false;
+    if (!patientValveTo(angPatOpen, 0.0f)) return false;
+    Serial.println(F("# ustaleni pred extrakci (motory stoji, ~5-10 s)..."));
+    if (!sampleFor(SETTLE_MS, 's', 0.0f, false)) return false;
+    if (!fillSmoothWindow('s')) return false;
+    pkStartSm = smoothSum / smoothCount;
 
-    motorStart(false);   // smer odsavani
-
-    // Neomezene maximum od zacatku TOHOTO vytlacovani - reset je zamerny
-    // a je to nutna podminka toho, aby creep patky detekci neovlivnil
-    // (viz bezpecnostni pravidla v CLAUDE.md).
-    float peakMax = -1e9f;
-    float peakVial = startVial;
-    uint8_t belowCount = 0;
-    uint8_t pauses = 0;
-    uint32_t lastStepUs = micros();
-    uint32_t lastSampleMs = millis();
-    uint16_t liveCalibRemaining = C2_RUNNING_CALIB_SAMPLES;
+    // Reset sledovaneho vrcholu na zacatku KAZDE extrakce - az tady, kdyz uz
+    // se nic neloguje s prazdnou referenci. Uvnitr extrakce (doplneni vzduchu,
+    // pauza kvuli ruseni) se vrchol NIKDY neresetuje - viz CLAUDE.md.
+    pkMax = -1e9f;
 
     while (true) {
-        if (abortRequested()) {
-            stopMotorDisable();
-            Serial.println(F("# ABORT - beh zastaven"));
+        uint8_t r = airPushSegment();
+        if (r == 2) return false;
+        if (r == 0) break;                       // kriticka hladina
+
+        refillCnt++;
+        Serial.print(F("# zasoba vzduchu vycerpana, doplneni c. "));
+        Serial.println(refillCnt);
+        if (refillCnt > MAX_AIR_REFILLS) {
+            Serial.println(F("# *** ALARM: prekrocen MAX_AIR_REFILLS - mozna netesnost ***"));
             return false;
         }
-        uint32_t nowUs = micros();
-        if (nowUs - lastStepUs >= SAL_STEP_INTERVAL_US) {
-            lastStepUs = nowUs;
-            digitalWrite(PIN_SAL_STEP, HIGH);
-            delayMicroseconds(3);
-            digitalWrite(PIN_SAL_STEP, LOW);
-            posSteps--;
-            if (!withinMechLimit()) {
-                stopMotorDisable();
-                Serial.print(F("# *** MECHANICKY DORAZ STRIKACKY (vytlacovani "));
-                Serial.print(pushIndex);
-                Serial.println(F(") *** kriticka hladina NEBYLA nalezena, beh zastaven ***"));
-                return false;
-            }
-        }
-        uint32_t nowMs = millis();
-        if (nowMs - lastSampleMs >= samplePeriodMs) {
-            lastSampleMs = nowMs;
-            float raw1 = readPf(0);
-            float raw2 = readPf(1);
-            float sm = pushSmooth(raw1);
-            float c2rate = 0.0f;
-            bool interference = pushC2AndCheck(raw2, &c2rate);
-
-            if (liveCalibRemaining > 0) {
-                interference = false;   // jeste se meri "zivy" sum, prah zatim neznamy
-                liveCalibRemaining--;
-                if (liveCalibRemaining == 0) finalizeC2GuardThreshold();
-            }
-
-            // Pri ruseni se NESMI aktualizovat peakMax ani vyhodnotit detekce -
-            // nafouknuty peakMax byl pricinou obou selhani v davkovem testu.
-            if (interference) {
-                stopMotorDisable();
-                logSample('w', raw1, sm, raw2, peakMax, c2rate);
-                pauses++;
-                Serial.print(F("# *** RUSENI (CIN2) *** vytlacovani=")); Serial.print(pushIndex);
-                Serial.print(F(" vial=")); Serial.print(vialMl(), 2);
-                Serial.print(F(" ml zmena_C2=")); Serial.print(c2rate, 4);
-                Serial.print(F(" pF prah=")); Serial.print(c2GuardEffective, 4);
-                Serial.print(F(" pF (pauza c. ")); Serial.print(pauses);
-                Serial.println(F(") - motor stoji, vrchol NEZTRACEN"));
-                if (pauses > MAX_PAUSES_PER_PUSH) {
-                    Serial.println(F("# *** PRILIS MNOHO PAUZ v jednom vytlacovani - beh ukoncen ***"));
-                    return false;
-                }
-                if (!waitForQuiet(peakMax)) return false;
-                motorStart(false);
-                lastStepUs = micros();
-                lastSampleMs = millis();
-                continue;   // peakMax i belowCount zustavaji nezmenene
-            }
-
-            if (sm > peakMax) {
-                peakMax = sm;
-                peakVial = vialMl();
-            }
-            logSample('w', raw1, sm, raw2, peakMax, c2rate);
-
-            float drop = peakMax - sm;
-            if (drop >= deltaCritical) {
-                belowCount++;
-                if (belowCount >= confirmSamples) {
-                    stopMotorDisable();
-                    float trigVial = vialMl();
-                    resStartVial[pushIndex] = startVial;
-                    resPeakVial[pushIndex]  = peakVial;
-                    resPeakC1[pushIndex]    = peakMax;
-                    resTrigVial[pushIndex]  = trigVial;
-                    resTrigC1[pushIndex]    = sm;
-                    resPauses[pushIndex]    = pauses;
-                    resNewPeak[pushIndex]   = (peakMax > startSm + 0.005f);
-                    pushDone = pushIndex + 1;
-
-                    float depth = peakVial - trigVial;
-                    Serial.print(F("#> ")); Serial.print(pushIndex);
-                    Serial.print(';'); Serial.print(startVial, 3);
-                    Serial.print(';'); Serial.print(peakVial, 3);
-                    Serial.print(';'); Serial.print(peakMax, 4);
-                    Serial.print(';'); Serial.print(trigVial, 3);
-                    Serial.print(';'); Serial.print(sm, 4);
-                    Serial.print(';'); Serial.print(drop, 4);
-                    Serial.print(';'); Serial.print(depth, 3);
-                    Serial.print(';'); Serial.print(startVial - trigVial, 3);
-                    Serial.print(';'); Serial.print(resNewPeak[pushIndex] ? '1' : '0');
-                    Serial.print(';'); Serial.println(pauses);
-
-                    if (depth >= refillMl) {
-                        Serial.print(F("# !!! HLOUBKA SEPNUTI "));
-                        Serial.print(depth, 2);
-                        Serial.print(F(" ml >= davka "));
-                        Serial.print(refillMl, 2);
-                        Serial.println(F(" ml - dalsi vytlacovani zacne POD vrcholem !!!"));
-                    }
-                    if (!resNewPeak[pushIndex]) {
-                        Serial.println(F("# pozn.: sledovane maximum nepreslo nad startovni hodnotu"));
-                        Serial.println(F("#        (pohybujeme se jen po sestupne vetvi)"));
-                    }
-                    return true;
-                }
-            } else {
-                belowCount = 0;
-            }
-        }
+        if (!airRefillCycle()) return false;
     }
+
+    // Kriticka hladina: motor stoji, pacient jeste dobiha, pak se uzavre.
+    Serial.println(F("# KRITICKA HLADINA"));
+    if (!sampleFor(FLUID_DRAIN_MS, 'd', pkMax, false)) return false;
+    if (!patientValveTo(angPatIsolate, pkMax)) return false;
+    if (!airValveTo(angAirVialFilt, pkMax)) return false;
+
+    resPeakAir[pushIndex]  = pkAirMl;
+    resTotAir[pushIndex]   = pushedMl();
+    resPeakC1[pushIndex]   = pkMax;
+    resRefills[pushIndex]  = refillCnt;
+    resPauses[pushIndex]   = pauseCnt;
+    resNewPeak[pushIndex]  = (pkMax > pkStartSm + 0.005f);
+    pushDone = pushIndex + 1;
+
+    float depth = pushedMl() - pkAirMl;
+    Serial.print(F("#> ")); Serial.print(pushIndex);
+    Serial.print(';'); Serial.print(pkAirMl, 3);
+    Serial.print(';'); Serial.print(pushedMl(), 3);
+    Serial.print(';'); Serial.print(depth, 3);
+    Serial.print(';'); Serial.print(pkMax, 4);
+    Serial.print(';'); Serial.print(resTrigC1[pushIndex], 4);
+    Serial.print(';'); Serial.print(pkMax - resTrigC1[pushIndex], 4);
+    Serial.print(';'); Serial.print(refillCnt);
+    Serial.print(';'); Serial.print(pauseCnt);
+    Serial.print(';'); Serial.println(resNewPeak[pushIndex] ? '1' : '0');
+
+    if (pushIndex > 0 && depth >= refillMl) {
+        Serial.print(F("# !!! HLOUBKA "));
+        Serial.print(depth, 2);
+        Serial.print(F(" ml >= davka "));
+        Serial.print(refillMl, 2);
+        Serial.println(F(" ml - dalsi extrakce zacne POD vrcholem !!!"));
+    }
+    if (!resNewPeak[pushIndex]) {
+        Serial.println(F("# pozn.: vrchol nepresel nad startovni hodnotu"));
+        Serial.println(F("#        (pohybujeme se jen po sestupne vetvi)"));
+    }
+    return true;
 }
 
-// ---------- souhrn ----------
+// ============================================================
+//  Doplneni roztoku - lahvicka MUSI byt odvzdusnena (V<->F)
+// ============================================================
+// Poradi podle zadani: nejdriv odvzdusnit lahvicku a doplnit roztok,
+// TEPRVE POTOM nasat vzduch pro dalsi tlaceni.
+static bool addSalineThenAir() {
+    Serial.print(F("# --- doplneni roztoku ")); Serial.print(refillMl, 2);
+    Serial.println(F(" ml (lahvicka odvzdusnena V<->F) ---"));
+    if (!airValveTo(angAirVialFilt, 0.0f)) return false;
+    if (!sampleFor(EQUALIZE_TIME_MS, 'e', 0.0f, false)) return false;
+    if (!salDispense(refillMl, 'r')) return false;
+    if (!sampleFor(EQUALIZE_TIME_MS, 'e', 0.0f, false)) return false;
+
+    Serial.println(F("# --- nasati vzduchu do strikacky (S<->F) ---"));
+    if (!airValveTo(angAirSyrFilt, 0.0f)) return false;
+    if (!airAspirate(VOL_AIR_SYRINGE_MAX_ML, 0.0f)) return false;
+    return sampleFor(EQUALIZE_TIME_MS, 'e', 0.0f, false);
+}
+
+// ============================================================
+//  Souhrn
+// ============================================================
 static void printSummary() {
     Serial.println(F("# === SOUHRN ==="));
-    Serial.println(F("#> push;start_vial_ml;vrchol_vial_ml;vrchol_C1;sepnuti_vial_ml;sepnuti_C1;pokles_pF;hloubka_ml;drah_ml;novy_vrchol;pauzy"));
+    Serial.println(F("#> it;vzduch_pri_vrcholu_ml;vzduch_celkem_ml;hloubka_ml;komprese_odh_ml;"
+                     "vrchol_C1;sepnuti_C1;pokles_pF;doplneni;pauzy;novy_vrchol"));
     float dSum = 0.0f, dMin = 1e9f, dMax = -1e9f;
     uint8_t overWindow = 0, noPeak = 0;
     uint16_t pauseTotal = 0;
     for (uint8_t i = 0; i < pushDone; i++) {
-        float depth = resPeakVial[i] - resTrigVial[i];
+        float depth = resTotAir[i] - resPeakAir[i];
         Serial.print(F("#> ")); Serial.print(i);
-        Serial.print(';'); Serial.print(resStartVial[i], 3);
-        Serial.print(';'); Serial.print(resPeakVial[i], 3);
+        Serial.print(';'); Serial.print(resPeakAir[i], 3);
+        Serial.print(';'); Serial.print(resTotAir[i], 3);
+        Serial.print(';'); Serial.print(depth, 3);
+        // komprese_odh plati jen pro iterace (v ustalenem stavu vytece prave
+        // davka); u faze 1 je vytecena kapalina jina, proto se neuvadi
+        Serial.print(';');
+        if (i > 0) Serial.print(resTotAir[i] - refillMl, 3); else Serial.print('-');
         Serial.print(';'); Serial.print(resPeakC1[i], 4);
-        Serial.print(';'); Serial.print(resTrigVial[i], 3);
         Serial.print(';'); Serial.print(resTrigC1[i], 4);
         Serial.print(';'); Serial.print(resPeakC1[i] - resTrigC1[i], 4);
-        Serial.print(';'); Serial.print(depth, 3);
-        Serial.print(';'); Serial.print(resStartVial[i] - resTrigVial[i], 3);
-        Serial.print(';'); Serial.print(resNewPeak[i] ? '1' : '0');
-        Serial.print(';'); Serial.println(resPauses[i]);
-        if (i > 0) {   // faze 1 startuje z plne lahvicky, do statistiky okna nepatri
+        Serial.print(';'); Serial.print(resRefills[i]);
+        Serial.print(';'); Serial.print(resPauses[i]);
+        Serial.print(';'); Serial.println(resNewPeak[i] ? '1' : '0');
+        if (i > 0) {   // faze 1 startuje z plne lahvicky, do statistiky nepatri
             dSum += depth;
             if (depth < dMin) dMin = depth;
             if (depth > dMax) dMax = depth;
@@ -817,7 +964,7 @@ static void printSummary() {
     }
     uint8_t n = (pushDone > 1) ? (uint8_t)(pushDone - 1) : 0;
     if (n > 0) {
-        Serial.print(F("# hloubka sepnuti pod vrcholem (iterace 1..")); Serial.print(n);
+        Serial.print(F("# hloubka pod vrcholem (iterace 1..")); Serial.print(n);
         Serial.print(F("): prumer=")); Serial.print(dSum / n, 3);
         Serial.print(F(" min=")); Serial.print(dMin, 3);
         Serial.print(F(" max=")); Serial.print(dMax, 3);
@@ -827,50 +974,158 @@ static void printSummary() {
         Serial.print('/'); Serial.println(n);
         Serial.print(F("# bez noveho vrcholu (jen sestupna vetev): ")); Serial.print(noPeak);
         Serial.print('/'); Serial.println(n);
+        Serial.println(F("# komprese_odh = vzduch_celkem - davka; ma-li byt hloubka"));
+        Serial.println(F("# ve vzduchu = hloubka v kapaline, musi byt stabilni"));
     }
     Serial.print(F("# celkem pauz kvuli ruseni: ")); Serial.println(pauseTotal);
-    Serial.println(F("# vial_ml je DOPOCET z kroku motoru, ne mereni"));
+    Serial.print(F("# celkem podano roztoku: ")); Serial.print(salMl(), 2);
+    Serial.println(F(" ml"));
     Serial.println(F("# === BEH HOTOV ==="));
 }
 
-// ---------- cely protokol ----------
+// ============================================================
+//  Cely protokol
+// ============================================================
 static void runProtocol() {
     running = true;
     runStartMs = millis();
-    runStartSteps = posSteps;
-    vialBaseMl = autoFill ? 0.0f : vialStartMl;
     pushDone = 0;
     pushIndex = 0;
+    pkMax = 0.0f;
+    pushStepsTot = 0;
     c2BaselineQuiet = 0.0f;
+    c2GuardEffective = 0.0f;
 
     printLogHeader();
+    steppersEnable();                 // ENABLED po CELY beh, viz pravidlo 1
+    Serial.println(F("# drivery ENABLED (zustanou po cely beh)"));
 
+    bool ok = true;
+
+    // Pocatecni napln lahvicky - i tady musi byt lahvicka odvzdusnena.
     if (autoFill) {
-        Serial.print(F("# --- pocatecni naplneni lahvicky ")); Serial.print(vialStartMl, 2);
-        Serial.println(F(" ml ---"));
-        if (!dispense(vialStartMl, 'F')) { running = false; return; }
+        Serial.print(F("# --- pocatecni napln lahvicky ")); Serial.print(vialStartMl, 2);
+        Serial.println(F(" ml (V<->F) ---"));
+        ok = patientValveTo(angPatIsolate, 0.0f)
+          && airValveTo(angAirVialFilt, 0.0f)
+          && salDispense(vialStartMl, 'F')
+          && sampleFor(EQUALIZE_TIME_MS, 'e', 0.0f, false);
     } else {
         Serial.print(F("# lahvicka naplnena rucne, predpokladany obsah "));
         Serial.print(vialStartMl, 2); Serial.println(F(" ml"));
     }
 
-    // faze 1 + iterCountTarget iteraci
-    for (pushIndex = 0; pushIndex <= iterCountTarget; pushIndex++) {
+    for (pushIndex = 0; ok && pushIndex <= iterCountTarget; pushIndex++) {
         if (pushIndex > 0) {
-            Serial.print(F("# --- doplneni roztoku ")); Serial.print(refillMl, 2);
-            Serial.print(F(" ml (pred iteraci ")); Serial.print(pushIndex);
-            Serial.println(F(") ---"));
-            if (!dispense(refillMl, 'r')) break;
+            ok = addSalineThenAir();
+            if (!ok) break;
         }
-        if (!runPush()) break;
+        ok = runExtraction();
     }
 
-    stopMotorDisable();
+    // Bezpecne polohy a teprve ted DISABLE (konec behu = ST_COMPLETE).
+    curPatAngle = angPatIsolate; OCR1A = angleTicks(angPatIsolate);
+    curAirAngle = angAirVialFilt; OCR1B = angleTicks(angAirVialFilt);
+    delay(SERVO_SETTLE_MS);
+    steppersDisable();
+    Serial.println(F("# ventily do bezpecnych poloh, drivery DISABLED"));
     printSummary();
     running = false;
 }
 
-// ---------- prikazy ----------
+// ============================================================
+//  Diagnostika a prikazy
+// ============================================================
+static void printInfo() {
+    Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
+    Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
+    Serial.print(F("# deltaCritical=")); Serial.print(deltaCritical, 4);
+    Serial.print(F(" confirmSamples=")); Serial.print(confirmSamples);
+    Serial.print(F(" samplePeriod=")); Serial.println(samplePeriodMs);
+    Serial.print(F("# vialStartMl=")); Serial.print(vialStartMl, 2);
+    Serial.print(F(" autoFill=")); Serial.print(autoFill ? F("ano") : F("ne"));
+    Serial.print(F(" refillMl=")); Serial.print(refillMl, 2);
+    Serial.print(F(" iterCountTarget=")); Serial.println(iterCountTarget);
+    Serial.print(F("# uhly: pacient OPEN=")); Serial.print(angPatOpen);
+    Serial.print(F(" ISOLATE=")); Serial.print(angPatIsolate);
+    Serial.print(F(" | vzduch S-V=")); Serial.print(angAirSyrVial);
+    Serial.print(F(" S-F=")); Serial.print(angAirSyrFilt);
+    Serial.print(F(" V-F=")); Serial.println(angAirVialFilt);
+    Serial.print(F("# c2GuardMultiplier=")); Serial.print(c2GuardMultiplier, 2);
+    Serial.print(F(" c2GuardMinFloor=")); Serial.print(c2GuardMinFloor, 4);
+    Serial.print(F(" c2GuardConfirm=")); Serial.print(c2GuardConfirm);
+    if (c2GuardMultiplier <= 0.0f) Serial.print(F("  *** OCHRANA CIN2 VYPNUTA ***"));
+    Serial.println();
+    Serial.print(F("# vzduch v strikacce=")); Serial.print(airMl(), 2);
+    Serial.print(F(" ml  podano roztoku=")); Serial.print(salMl(), 2);
+    Serial.print(F(" ml  tared=")); Serial.print(tared ? F("ano") : F("ne"));
+    Serial.print(F(" bezi=")); Serial.println(running ? F("ano") : F("ne"));
+}
+
+static void printHelp() {
+    Serial.println(F("# h=napoveda i=info a=autoCAPDAC n=sum"));
+    Serial.println(F("# t=deklarace vychoziho stavu (vzduch PLNY 10 ml, roztok 0 ml)"));
+    Serial.println(F("# g=spustit CELY protokol   x=NOUZOVE ZASTAVENI"));
+    Serial.println(F("# j/k=jog vzduch +-0.5ml   l=jog roztok +0.5ml (jen tlaceni!)"));
+    Serial.println(F("# u0=pacient IZOLACE u1=pacient OTEVRENO"));
+    Serial.println(F("# u2=vzduch S-V u3=vzduch S-F u4=vzduch V-F"));
+    Serial.println(F("# r<n>=pocet iteraci  s<ml>=davka roztoku  v<ml>=pocatecni napln"));
+    Serial.println(F("# f1/f0=automaticka pocatecni napln ano/ne"));
+    Serial.println(F("# dc<pF>=delta kriticka hladina  cf<n>=potvrzovacich vzorku"));
+    Serial.println(F("# p<ms>=perioda vzorku"));
+    Serial.println(F("# cm<x>=nasobitel prahu CIN2 (0=vypnout)  cg<pF>=min. podlaha"));
+    Serial.println(F("# ck<n>=potvrzovacich vzorku ochrany CIN2   #<text>=znacka"));
+}
+
+static void noiseTest() {
+    Serial.println(F("# test sumu, nehybat sestavou..."));
+    for (uint8_t ch = 0; ch < N_CH; ch++) {
+        float mn = 1e9f, mx = -1e9f, sum = 0.0f, sumSq = 0.0f;
+        const uint16_t N = 256;
+        for (uint16_t i = 0; i < N; i++) {
+            float v = readPf(ch);
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+            sum += v; sumSq += v * v;
+            delay(5);
+        }
+        float mean = sum / N;
+        float var = sumSq / N - mean * mean;
+        if (var < 0.0f) var = 0.0f;
+        Serial.print(F("# CIN")); Serial.print(ch + 1);
+        Serial.print(F(": prum=")); Serial.print(mean, 4);
+        Serial.print(F(" min=")); Serial.print(mn, 4);
+        Serial.print(F(" max=")); Serial.print(mx, 4);
+        Serial.print(F(" p-p=")); Serial.print(mx - mn, 4);
+        Serial.print(F(" sigma=")); Serial.print(sqrt(var), 5);
+        Serial.println(F(" pF"));
+    }
+}
+
+static void jogAir(bool push) {
+    steppersEnable();
+    airDir(push);
+    int32_t steps = (int32_t)(JOG_ML * AIR_STEPS_PER_ML);
+    for (int32_t i = 0; i < steps; i++) {
+        stepPulse(PIN_AIR_STEP);
+        delayMicroseconds(AIR_STEP_INTERVAL_US - 3);
+        airSteps += push ? -1 : 1;
+    }
+    Serial.print(F("# vzduch v strikacce=")); Serial.println(airMl(), 2);
+}
+
+// Jog roztoku - i tady VYHRADNE smerem tlaceni (zadny parametr smeru).
+static void jogSaline() {
+    steppersEnable();
+    int32_t steps = (int32_t)(JOG_ML * SAL_STEPS_PER_ML);
+    for (int32_t i = 0; i < steps; i++) {
+        stepPulse(PIN_SAL_STEP);
+        delayMicroseconds(SAL_STEP_INTERVAL_US - 3);
+        salSteps++;
+    }
+    Serial.print(F("# podano roztoku=")); Serial.println(salMl(), 2);
+}
+
 static void handleLine() {
     if (lineLen == 0) return;
 
@@ -896,8 +1151,7 @@ static void handleLine() {
     }
     if (lineLen >= 2 && line[0] == 'c' && line[1] == 'm') {
         c2GuardMultiplier = atof(&line[2]);
-        Serial.print(F("# c2GuardMultiplier=")); Serial.print(c2GuardMultiplier, 2);
-        Serial.println(c2GuardMultiplier > 0.0f ? F("") : F("  (OCHRANA VYPNUTA!)"));
+        Serial.print(F("# c2GuardMultiplier=")); Serial.println(c2GuardMultiplier, 2);
         return;
     }
 
@@ -909,30 +1163,32 @@ static void handleLine() {
             printInfo();
             break;
         case 'n': noiseTest(); break;
-        case 'o':
-            digitalWrite(PIN_STEPPER_EN, STEPPER_ENABLED_LEVEL);
-            driverEnabled = true;
-            Serial.println(F("# driver ON"));
+        case 't':
+            airSteps = (int32_t)(VOL_AIR_SYRINGE_MAX_ML * AIR_STEPS_PER_ML);
+            salSteps = 0;
+            tared = true;
+            Serial.println(F("# vychozi stav: vzduch 10 ml, roztok 0 ml podano"));
             break;
         case 'x':
-            stopMotorDisable();
-            Serial.println(F("# driver OFF"));
+            steppersDisable();
+            Serial.println(F("# drivery DISABLED"));
             break;
-        case 't':
-            posSteps = 0;
-            tared = true;
-            Serial.println(F("# tare - pocitadlo pozice vynulovano"));
+        case 'j': jogAir(true); break;
+        case 'k': jogAir(false); break;
+        case 'l': jogSaline(); break;
+        case 'u': {
+            uint8_t ang;
+            switch (line[1]) {
+                case '0': ang = angPatIsolate;  curPatAngle = ang; OCR1A = angleTicks(ang); break;
+                case '1': ang = angPatOpen;     curPatAngle = ang; OCR1A = angleTicks(ang); break;
+                case '2': ang = angAirSyrVial;  curAirAngle = ang; OCR1B = angleTicks(ang); break;
+                case '3': ang = angAirSyrFilt;  curAirAngle = ang; OCR1B = angleTicks(ang); break;
+                case '4': ang = angAirVialFilt; curAirAngle = ang; OCR1B = angleTicks(ang); break;
+                default: Serial.println(F("# u0..u4")); return;
+            }
+            Serial.print(F("# ventil -> ")); Serial.println(ang);
             break;
-        case 'j':
-            if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
-            jogOnce(true);
-            Serial.print(F("# jog +0.5ml, poloha=")); Serial.println(levelMl(), 2);
-            break;
-        case 'k':
-            if (!driverEnabled) { Serial.println(F("# driver je OFF, napred 'o'")); break; }
-            jogOnce(false);
-            Serial.print(F("# jog -0.5ml, poloha=")); Serial.println(levelMl(), 2);
-            break;
+        }
         case 'p': {
             int v = atoi(&line[1]);
             if (v >= 20 && v <= 5000) { samplePeriodMs = (uint16_t)v; Serial.print(F("# samplePeriodMs=")); Serial.println(samplePeriodMs); }
@@ -960,10 +1216,10 @@ static void handleLine() {
             break;
         case 'g':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
-            if (!tared) { Serial.println(F("# CHYBA: neprovedeno tare, nejdriv 't'")); break; }
+            if (!tared) { Serial.println(F("# CHYBA: neprovedeno 't'")); break; }
             runProtocol();
             break;
-        case '#': break;   // znacka do logu
+        case '#': break;
         default:
             Serial.println(F("# neznamy prikaz, h=napoveda"));
             break;
@@ -991,9 +1247,30 @@ void setup() {
     Wire.setClock(100000UL);
     delay(100);
 
-    Serial.println(F("# FDC1004 - simulace realneho aplikacniho protokolu"));
-    Serial.println(F("# faze 1 (10 ml -> kriticka hladina) + 12x (+3 ml -> kriticka hladina)"));
-    Serial.println(F("# pouziva fyziologicky stepper D6/D7, EN=A3 (odsavani i davkovani)"));
+    Serial.println(F("# FDC1004 - realny protokol, vytlacovani VZDUCHEM"));
+    Serial.println(F("# faze 1 (10 ml -> kriticka) + 12x (+3 ml -> kriticka)"));
+
+    // Drivery zatim odpojeny - obsluha jeste osazuje strikacky a lahvicku.
+    pinMode(PIN_STEPPER_EN, OUTPUT);
+    digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
+    pinMode(PIN_AIR_STEP, OUTPUT);
+    pinMode(PIN_AIR_DIR, OUTPUT);
+    pinMode(PIN_SAL_STEP, OUTPUT);
+    pinMode(PIN_SAL_DIR, OUTPUT);
+    digitalWrite(PIN_AIR_STEP, LOW);
+    digitalWrite(PIN_SAL_STEP, LOW);
+    // JEDINY zapis do PIN_SAL_DIR v celem sketchi - strikacka roztoku
+    // se od ted muze pohybovat vyhradne smerem tlaceni kapaliny.
+    digitalWrite(PIN_SAL_DIR, SAL_DIR_PUSH_LEVEL);
+
+    loadValveAngles();
+    // Ventily ihned do pracovnich poloh - servo 0 stupnu NENI bezpecna
+    // izolacni poloha (viz CLAUDE.md).
+    curPatAngle = angPatIsolate;
+    curAirAngle = angAirSyrFilt;
+    servoTimerInit();
+    servoAttach();
+
     uint16_t manuf = readReg(REG_MANUF_ID);
     uint16_t dev = readReg(REG_DEVICE_ID);
     Serial.print(F("# MANUFACTURER_ID=0x")); Serial.print(manuf, HEX);
@@ -1004,14 +1281,13 @@ void setup() {
 
     applyConfig();
     for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
-    stepperInit();
 
     printInfo();
     printHelp();
-    Serial.println(F("# POSTUP: 1) strikacka na strednich ~30 ml"));
-    Serial.println(F("#         2) PRAZDNA lahvicka do studny (sketch ji naplni sam)"));
-    Serial.println(F("#         3) 'o' driver ON, 't' tare, 'g' start"));
-    Serial.println(F("#         4) dal uz nic - beh je zcela automaticky (~40-60 min)"));
+    Serial.println(F("# POSTUP: 1) vzduchova strikacka PLNA (10 ml), roztokova PLNA"));
+    Serial.println(F("#         2) ventily a strikacky osazene, lahvicka az POSLEDNI"));
+    Serial.println(F("#         3) 't' vychozi stav, 'g' start"));
+    Serial.println(F("#         4) dal uz nic - beh je automaticky (~60-90 min)"));
 }
 
 void loop() {
