@@ -1064,6 +1064,7 @@ static void printInfo() {
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC n=sum"));
+    Serial.println(F("# m=stream syrovych vzorku (diagnostika rusení, ukonci 'x')"));
     Serial.println(F("# t=deklarace vychoziho stavu (vzduch PLNY 10 ml, roztok 0 ml)"));
     Serial.println(F("# g=spustit CELY protokol   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5ml   l=jog roztok +0.5ml (jen tlaceni!)"));
@@ -1075,6 +1076,32 @@ static void printHelp() {
     Serial.println(F("# p<ms>=perioda vzorku"));
     Serial.println(F("# cm<x>=nasobitel prahu CIN2 (0=vypnout)  cg<pF>=min. podlaha"));
     Serial.println(F("# ck<n>=potvrzovacich vzorku ochrany CIN2   #<text>=znacka"));
+}
+
+// Streamovani syrovych vzorku obou kanalu, dokud neprijde 'x'. Nic se
+// nehybe - motory ani ventily. Slouzi k identifikaci elektrickeho rusení:
+// pusti se postupne s drivery OFF ('x') a ON ('o'), pripadne pri jemnem
+// zkouseni konektoru, a hleda se, kdy signal zacne skakat mezi dvema
+// hladinami. Na rozdil od 'n' vraci celou casovou radu, ne jen statistiku.
+static void streamRaw() {
+    Serial.println(F("# stream: t_ms;C1;C2;c2rate   (ukonci 'x')"));
+    resetC2Guard();
+    uint32_t t0 = millis();
+    uint32_t last = millis() - samplePeriodMs;
+    while (!abortRequested()) {
+        uint32_t now = millis();
+        if (now - last < samplePeriodMs) continue;
+        last = now;
+        float raw1 = readPf(0);
+        float raw2 = readPf(1);
+        float rate = 0.0f;
+        pushC2AndCheck(raw2, &rate);
+        Serial.print(now - t0);
+        Serial.print(';'); Serial.print(raw1, 4);
+        Serial.print(';'); Serial.print(raw2, 4);
+        Serial.print(';'); Serial.println(rate, 4);
+    }
+    Serial.println(F("# stream ukoncen"));
 }
 
 static void noiseTest() {
@@ -1163,6 +1190,7 @@ static void handleLine() {
             printInfo();
             break;
         case 'n': noiseTest(); break;
+        case 'm': streamRaw(); break;
         case 't':
             airSteps = (int32_t)(VOL_AIR_SYRINGE_MAX_ML * AIR_STEPS_PER_ML);
             salSteps = 0;
