@@ -26,7 +26,7 @@ Pět cyklů, polo-automaticky. V každém:
 | 2 | ventily: vzduch `S↔V`, pacient `OPEN` | `v` | ~3,5 s |
 | 3 | **klid při atmosférickém tlaku** — referenční bod | `k` | 5 s |
 | 4 | **tlačení 20 ml vzduchu**, 1 ml / 5 s | `w` | 100 s |
-| 5 | mezi tím 2× doplnění vzduchu | `a`, `e`, `v` | ~2× 15 s |
+| 5 | mezi tím 1× doplnění vzduchu (celá stříkačka, při 10 ml) | `a`, `e`, `v` | ~15 s |
 | 6 | klid po dojezdu, lahvička **pod tlakem** | `d` | 15 s |
 | 7 | **odvzdušnění** + klid při atmosférickém tlaku | `o` | 8 s |
 | 8 | obsluha potvrdí, že je lahvička prázdná | — | ruční |
@@ -44,6 +44,28 @@ Firmware při něm lahvičku odvzdušní (`V↔F`), ale tady se jde přímo
 `S↔V` → `S↔F` → `S↔V`: v poloze `S↔F` je rameno lahvičky zaslepené, takže
 si lahvička **drží tlak** a přerušení nedělá do dat tlakový skok. Pacientský
 ventil se během celého cyklu vůbec nehne.
+
+### Proč je náplň nastavená na celou stříkačku (10 ml), ne na část
+
+V testu 1 padlo doplnění přesně na 7 ml a 14 ml — tedy jednou přímo na
+začátek rampy (přechod hladina nad/pod prstencem) a podruhé těsně před
+jejím koncem. Obě přerušení tak rozsekla zrovna tu část dat, která je
+nejzajímavější, a klouzavé okno na detekci sklonu (viz analýza testu 1)
+tam po každém doplnění muselo najíždět od nuly.
+
+Stříkačka má fyzickou kapacitu 10 ml a start je vždy plná — **první
+doplnění proto nemůže nastat dřív než při 10 ml vytlačeného vzduchu, ať je
+`l` nastaveno na cokoli** (menší náplně jen rozdělí těch samých 10 ml na
+víc kroků, doplnění samo se tím k nižšímu objemu nepřesune). Úplně mimo
+pásmo 5–15 ml se tedy nedostane za žádných okolností — jde jen o to dostat
+je **co nejpozději a jen jednou**. `l10` dá jediné doplnění přesně při
+10 ml a dva souvislé úseky bez přerušení: 0–10 ml (celé plató i začátek
+rampy) a 10–20 ml (zbytek rampy i podlaha). To stačí na to, aby klouzavé
+okno vidělo přechod plató→rampa vcelku, i když přerušení samo o sobě z
+intervalu 5–15 ml nezmizí.
+
+Cena je vyšší riziko: píst při každé náplni dojíždí až na dno (žádná
+rezerva jako u menších `l`), viz upozornění u příkazu `l` níže.
 
 Je to záměrná odchylka od firmwaru — cílem je vidět tvar křivky s co nejmenším
 počtem artefaktů, ne věrně imitovat přístroj.
@@ -115,14 +137,16 @@ potvrzení mezi cykly se dají odesílat přímo z něj.
 | `p<ms>` | perioda vzorku (výchozí 50) |
 | `c<n>` | počet cyklů (výchozí 5) |
 | `v<ml>` | vzduch na cyklus (výchozí 20) |
-| `l<ml>` | vzduch na jednu náplň stříkačky (výchozí 7) |
+| `l<ml>` | vzduch na jednu náplň stříkačky (výchozí 10) |
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `#<text>` | značka do logu |
 
-`l` určuje, kolikrát se tlačení přeruší doplněním: při 7 ml to jsou dvě
-přerušení (7 + 7 + 6). Rezerva 3 ml odpovídá `VOL_AIR_RESERVE_ML` z firmwaru,
-takže píst nedojede na doraz. Kdo chce méně přerušení, může jít na `l10`
-(2 náplně) — ale na vlastní riziko, píst pak dojíždí až na dno.
+`l` určuje, kolikrát se tlačení přeruší doplněním a kde. Výchozích 10 ml
+znamená celou stříkačku na jednu náplň → jediné doplnění, přesně při 10 ml
+(viz „Proč je náplň nastavená na celou stříkačku" výše) — píst při něm
+dojíždí až na doraz, bez rezervy. Kdo chce menší riziko na úkor dalšího
+přerušení navíc v datech, může jít zpátky na `l7` (dvě přerušení, 7 + 7 + 6,
+s rezervou 3 ml odpovídající `VOL_AIR_RESERVE_ML` z firmwaru).
 
 `s` je tam kvůli otázce, jestli 1 ml / 5 s není moc rychle. Pokud z dat vyjde,
 že se hladina za signálem opožďuje, stačí `s10` a měření zopakovat.
@@ -135,5 +159,7 @@ takže píst nedojede na doraz. Kdo chce méně přerušení, může jít na `l1
 arduino-cli compile --fqbn arduino:avr:uno tools/air_push_profile
 ```
 
-Poslední ověřený překlad: **Flash 14 406 B (44,7 %), SRAM 484 B (23,6 %)**,
-bez varování.
+Poslední ověřený překlad (`avr-g++`, `arduino-cli` v tomto prostředí není
+dostupné — čísla proto nejsou přímo srovnatelná s dřívějším překladem, který
+neprováděl stejné odstranění nepoužitých sekcí): **Flash 17 980 B (54,9 %),
+SRAM 504 B (24,6 %)**, bez varování.

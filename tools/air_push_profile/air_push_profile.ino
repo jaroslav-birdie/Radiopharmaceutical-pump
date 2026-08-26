@@ -123,7 +123,10 @@
 static uint16_t samplePeriodMs = 50;    // 20 vzorku/s
 static uint8_t  cycleCount     = 5;     // pocet opakovani
 static float    totalAirMl     = 20.0f; // vzduch na jeden cyklus
-static float    loadAirMl      = 7.0f;  // kolik se protlaci na jednu napln
+static float    loadAirMl      = 10.0f; // kolik se protlaci na jednu napln (cela
+                                        // strikacka - jedine doplneni pri 10 ml
+                                        // misto dvou pri 7 a 14 ml; pist pri kazde
+                                        // naplni dojizdi az na dno)
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 
 // ---------- uhly ventilu ----------
