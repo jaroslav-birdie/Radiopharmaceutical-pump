@@ -33,11 +33,20 @@
 //  doplnenim. Firmware pri nem lahvicku odvzdusni (V<->F), ale tady
 //  se jde primo S<->V -> S<->F -> S<->V: pri poloze S<->F je rameno
 //  lahvicky zaslepene, takze lahvicka si tlak DRZI a preruseni nedela
-//  do dat tlakovy skok. Pacientsky ventil se behem celeho cyklu vubec
-//  nehne - kapalina tedy i behem doplnovani dal dotekava.
+//  do dat tlakovy skok.
 //
-//  Je to zamerna odchylka od firmwaru: cilem experimentu je videt tvar
-//  krivky s co nejmene artefakty, ne verne imitovat pristroj.
+//  Pacientsky ventil se pri doplneni ZAVIRA (na dobu celeho refillAir())
+//  a zase OTVIRA az pred navratem k tlaceni - lahvicka je tak behem
+//  doplneni uzavrena z OBOU stran (vzduch i pacient), zadny zbytkovy
+//  tlak nema kudy dal tlacit kapalinu k pacientovi. Bez toho by
+//  kapalina i behem doplnovani dal dotekava - presne to byl efekt
+//  namereny v prvnim behu testu 1 (pokles C1 ve fazi 'a').
+//
+//  Je to zamerna odchylka od firmwaru jen v tom, ze se doplneni resi
+//  primo S<->V -> S<->F -> S<->V misto pres V<->F: cilem experimentu
+//  je videt tvar krivky s co nejmene artefakty, ne verne imitovat
+//  pristroj. Chovani pacientskeho ventilu (zavreno mimo aktivni
+//  tlaceni) uz s firmwarem shodne je.
 //
 //  ---------------------------------------------------------------
 //  POSTUP
@@ -379,16 +388,27 @@ static bool moveAir(float ml, bool push, char phase, uint8_t speedFactor) {
 // ============================================================
 //  Doplneni vzduchu BEZ odvzdusneni lahvicky
 // ============================================================
-// S<->V -> S<->F (rameno lahvicky zaslepene, tlak zustava) -> nasat
-// -> zpet S<->V. Pacientsky ventil se nehne.
+// Pacient ISOLATE -> S<->V -> S<->F (rameno lahvicky zaslepene, tlak
+// zustava) -> nasat -> zpet S<->V -> pacient OPEN. Lahvicka je tak po
+// celou dobu doplneni uzavrena z obou stran - zadny zbytkovy tlak
+// nemuze mezitim tlacit kapalinu k pacientovi (viz komentar na
+// zacatku souboru).
+//
+// Poradi zavirani/otevirani pacientskeho ventilu je schvalne stejne
+// jako u planovaneho chovani pri detekci kriticke hladiny: pacient se
+// zavira JAKO PRVNI (driv nez se cokoli jineho zmeni) a otevira se
+// JAKO POSLEDNI (az kdyz uz je vzduchova strana zpet v poloze pro
+// tlaceni).
 static bool refillAir() {
-    Serial.print(F("# doplneni vzduchu (lahvicka drzi tlak), vytlaceno "));
+    Serial.print(F("# doplneni vzduchu (pacient uzavren), vytlaceno "));
     Serial.print(pushedMl(), 2); Serial.println(F(" ml"));
+    if (!patientValveTo(angPatIsolate)) return false;
     if (!airValveTo(angAirSyrFilt)) return false;
     if (!sampleFor(VALVE_SETTLE_MS, 'e')) return false;
     if (!moveAir(AIR_SYR_MAX_ML - airMl(), false, 'a', AIR_FILL_SPEED_FACTOR)) return false;
     if (!sampleFor(VALVE_SETTLE_MS, 'e')) return false;
     if (!airValveTo(angAirSyrVial)) return false;
+    if (!patientValveTo(angPatOpen)) return false;
     return sampleFor(VALVE_SETTLE_MS, 'e');
 }
 
@@ -428,8 +448,9 @@ static bool runCycle(uint8_t n) {
     pushedSteps = 0;
     cycleT0 = millis();
 
-    // Ventily do polohy pro vytlacovani. Pacientsky ventil se uz do konce
-    // cyklu nehne - zadny jeho prejezd tedy do dat nezanese skok.
+    // Ventily do polohy pro vytlacovani. Pacientsky ventil se pak jeste
+    // zavira a otevira pri kazdem doplneni vzduchu (viz refillAir()) -
+    // mimo tato doplneni zustava OPEN az do zaverecneho klidu 'd'.
     if (!airValveTo(angAirSyrVial)) return false;
     if (!patientValveTo(angPatOpen)) return false;
     if (!sampleFor(VALVE_SETTLE_MS, 'v')) return false;

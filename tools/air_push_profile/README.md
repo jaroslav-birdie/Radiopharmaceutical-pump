@@ -26,12 +26,12 @@ Pět cyklů, polo-automaticky. V každém:
 | 2 | ventily: vzduch `S↔V`, pacient `OPEN` | `v` | ~3,5 s |
 | 3 | **klid při atmosférickém tlaku** — referenční bod | `k` | 5 s |
 | 4 | **tlačení 20 ml vzduchu**, 1 ml / 5 s | `w` | 100 s |
-| 5 | mezi tím 1× doplnění vzduchu (celá stříkačka, při 10 ml) | `a`, `e`, `v` | ~15 s |
+| 5 | mezi tím 1× doplnění vzduchu (celá stříkačka, při 10 ml, pacient dočasně uzavřen) | `a`, `e`, `v` | ~35 s |
 | 6 | klid po dojezdu, lahvička **pod tlakem** | `d` | 15 s |
 | 7 | **odvzdušnění** + klid při atmosférickém tlaku | `o` | 8 s |
 | 8 | obsluha potvrdí, že je lahvička prázdná | — | ruční |
 
-Jeden cyklus tedy trvá zhruba 2,5 minuty čistého měření.
+Jeden cyklus tedy trvá necelé 3 minuty čistého měření.
 
 **20 ml vzduchu je záměrně přebytek** proti ~10 ml kapaliny. Cílem je vidět
 i konec — jak vypadá signál, když už lahvičkou prochází jen vzduch. Bez toho
@@ -42,8 +42,16 @@ by se nedalo poznat, která část křivky je ještě hladina a která už ne.
 Dvacet ml se do 10ml stříkačky nevejde, takže se tlačení přeruší doplněním.
 Firmware při něm lahvičku odvzdušní (`V↔F`), ale tady se jde přímo
 `S↔V` → `S↔F` → `S↔V`: v poloze `S↔F` je rameno lahvičky zaslepené, takže
-si lahvička **drží tlak** a přerušení nedělá do dat tlakový skok. Pacientský
-ventil se během celého cyklu vůbec nehne.
+si lahvička **drží tlak** a přerušení nedělá do dat tlakový skok.
+
+Pacientský ventil se při doplnění **zavírá** (na celou dobu `refillAir()`)
+a znovu **otevírá** až těsně před návratem k tlačení — lahvička je tak po
+dobu doplnění uzavřená z obou stran, nejen ze strany vzduchu. V prvním běhu
+testu 1 zůstával pacientský ventil při doplnění otevřený a C1 ve fázi `a`
+kvůli tomu dál klesalo (zbytkový tlak měl pořád kudy tlačit kapalinu
+k pacientovi) — to je teď opravené. Pořadí zavírání/otevírání odpovídá
+plánovanému chování při detekci kritické hladiny: pacient se zavírá jako
+první, otevírá jako poslední.
 
 ### Proč je náplň nastavená na celou stříkačku (10 ml), ne na část
 
@@ -161,5 +169,5 @@ arduino-cli compile --fqbn arduino:avr:uno tools/air_push_profile
 
 Poslední ověřený překlad (`avr-g++`, `arduino-cli` v tomto prostředí není
 dostupné — čísla proto nejsou přímo srovnatelná s dřívějším překladem, který
-neprováděl stejné odstranění nepoužitých sekcí): **Flash 17 980 B (54,9 %),
+neprováděl stejné odstranění nepoužitých sekcí): **Flash 18 006 B (54,9 %),
 SRAM 504 B (24,6 %)**, bez varování.
