@@ -1,5 +1,13 @@
 # Test 1 – profil signálu při vytlačování vzduchem
 
+> **Sketch je nyní tříkanálový (test 3 – dva prstence).** Protokol a předem
+> stanovená kritéria vyhodnocení viz [`TEST3.md`](TEST3.md). Popis níže
+> platí dál, změny: log má sloupec `C3`, sériová linka běží na **115200 Bd**,
+> první dávka cyklu je nastavitelná (`f`, výchozí 5 ml) a stříkačka se na
+> konci každého cyklu doplní na 10 ml.
+> Části o `l10` a doplnění „přesně při 10 ml" níže popisují test 1; s `f5`
+> padá doplnění na 5 a 15 ml.
+
 První měření nové série. Předchozí data vznikla **odsáváním kapaliny stříkačkou** —
 tvrdý, přesný pohyb hladiny bez stlačitelného členu. Ukázalo se, že na
 vytlačování **vzduchem** přenositelná nejsou, protože mezi motorem a hladinou
@@ -95,20 +103,22 @@ vzduch neměl kam uniknout.
 ## Formát logu
 
 ```
-cyklus;t_ms;faze;vytlaceno_ml;C1;C2
+cyklus;t_ms;faze;vytlaceno_ml;C1;C2;C3
 ```
 
 - `t_ms` je **relativní k začátku cyklu** — cykly jsou tak přímo porovnatelné
 - `vytlaceno_ml` je kumulativně vytlačený vzduch v rámci cyklu (přes doplnění)
-- `C1`, `C2` v pF, **bez jakékoli filtrace**
+- `C1` (spodní prstenec), `C2` (svislá), `C3` (horní prstenec) v pF,
+  **bez jakékoli filtrace**
 
 Znaky fáze: `v` přejezd ventilu · `k` klid před tlačením · `w` **tlačení** ·
 `a` nasávání vzduchu · `e` ustálení po přepnutí · `d` klid pod tlakem ·
 `o` klid po odvzdušnění
 
 Vzorkuje se **20× za sekundu** (`samplePeriodMs` = 50). FDC1004 běží na
-400 S/s, takže při dvou kanálech je každý vzorek z čerstvě dokončené konverze.
-Při 9600 Bd zabere log zhruba 700 B/s ze 960 B/s, což se vejde i s rezervou.
+400 S/s, takže i při třech kanálech je každý vzorek z čerstvě dokončené
+konverze. Řádek se třemi kanály má ~45 B, tj. ~900 B/s – při 9600 Bd
+(960 B/s) by blokující výpis brzdil krokování, proto **115200 Bd**.
 
 ---
 
@@ -124,7 +134,7 @@ Při 9600 Bd zabere log zhruba 700 B/s ze 960 B/s, což se vejde i s rezervou.
 Zachycení logu:
 
 ```
-tools/serial_log.py /dev/ttyUSB0 test1.csv
+tools/serial_log.py /dev/ttyUSB0 test3.csv --baud 115200
 ```
 
 Skript zapisuje po řádcích a zároveň propouští, co napíšeš, na sériovou linku —
@@ -145,6 +155,7 @@ potvrzení mezi cykly se dají odesílat přímo z něj.
 | `p<ms>` | perioda vzorku (výchozí 50) |
 | `c<n>` | počet cyklů (výchozí 5) |
 | `v<ml>` | vzduch na cyklus (výchozí 20) |
+| `f<ml>` | první dávka cyklu – posouvá doplnění (výchozí 5) |
 | `l<ml>` | vzduch na jednu náplň stříkačky (výchozí 10) |
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `#<text>` | značka do logu |
@@ -169,5 +180,5 @@ arduino-cli compile --fqbn arduino:avr:uno tools/air_push_profile
 
 Poslední ověřený překlad (`avr-g++`, `arduino-cli` v tomto prostředí není
 dostupné — čísla proto nejsou přímo srovnatelná s dřívějším překladem, který
-neprováděl stejné odstranění nepoužitých sekcí): **Flash 18 006 B (54,9 %),
-SRAM 504 B (24,6 %)**, bez varování.
+neprováděl stejné odstranění nepoužitých sekcí): **Flash 16 512 B (50,4 %),
+SRAM 495 B (24,2 %)**, bez varování.

@@ -142,6 +142,7 @@ CIN2    konec svislé elektrody
 > bez kalibrace kapacita↔objem. Kombinace `C1 − k·C2` (různé typy elektrod)
 > naopak **nefunguje**: žádné stabilní `k` neexistuje, korelace rychlé složky
 > mění mezi cykly i znaménko. **Rozdílový signál zatím není ověřen měřením.**
+> Ověřovací měření a předem stanovená kritéria: `tools/air_push_profile/TEST3.md`.
 
 ### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
 

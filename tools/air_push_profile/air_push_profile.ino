@@ -1,9 +1,15 @@
 // ============================================================
 //  TEST 1 (nova serie) – PROFIL SIGNALU PRI VYTLACOVANI VZDUCHEM
+//  TEST 3 – totez se DVEMA PRSTENCI (CIN1 spodni, CIN3 horni)
 //
-//  Otazka, na kterou ma odpovedet: existuje pri vytlacovani VZDUCHEM
-//  na CIN1 rozpoznatelny prechod pres kritickou hladinu, a jak je velky
+//  Otazka testu 1: existuje pri vytlacovani VZDUCHEM na CIN1
+//  rozpoznatelny prechod pres kritickou hladinu, a jak je velky
 //  proti tlakovemu artefaktu?
+//
+//  Otazka testu 3: pomohl druhy prstenec? Tj. je rozdil C1 - C3
+//  ostrejsi a mene zatizeny tlakem nez samotne C1 (kriteria viz
+//  README.md). Loguji se vsechny tri kanaly, rozdil se pocita az
+//  pri vyhodnoceni.
 //
 //  Tenhle sketch NIC NEDETEKUJE. Zadny klouzavy prumer, zadny prah,
 //  zadna ochrana proti ruseni, zadne rozhodovani. Jen syrova data.
@@ -14,12 +20,14 @@
 //  ---------------------------------------------------------------
 //  PRUBEH JEDNOHO CYKLU (5x dokola, polo-automaticky)
 //  ---------------------------------------------------------------
-//    1. obsluha naplni penicilinku na 10 ml a potvrdi
+//    1. obsluha naplni penicilinku NAD 10 ml a potvrdi (odeslany
+//       text, napr. naplneny objem, se zapise do logu)
 //    2. ventily do polohy pro vytlacovani (vzduch S<->V, pacient OPEN)
 //    3. KLID_PRE_MS klidu pri atmosferickem tlaku – referencni bod
 //    4. protlaci se TOTAL_AIR_ML vzduchu rychlosti 1 ml / FLOW_S_PER_ML
 //    5. KLID_POST_MS klidu – jak se signal usadi po dojezdu
-//    6. obsluha potvrdi, ze je lahvicka prazdna
+//    6. vzduchova strikacka se doplni na 10 ml (pripravena na dalsi cyklus)
+//    7. obsluha potvrdi, ze je lahvicka prazdna
 //
 //  20 ml vzduchu je zamerne PREBYTEK proti ~10 ml kapaliny. Cilem je
 //  videt i konec: jak vypada signal, kdyz uz lahvickou prochazi jen
@@ -52,13 +60,14 @@
 //  POSTUP
 //  ---------------------------------------------------------------
 //    1. Vzduchova strikacka PLNA (10 ml), ventily i strikacka osazene.
-//    2. Penicilinka do studny, naplnena na 10 ml.
+//    2. Penicilinka do studny.
 //    3. 't' = deklarace, ze je vzduchova strikacka plna.
 //    4. 'a' = autokalibrace CAPDAC (volitelne, dela se i v setup()).
 //    5. 'g' = spustit serii. Dal uz jen potvrzovani mezi cykly.
 //    6. 'x' kdykoliv = okamzite zastaveni.
 //
-//  Serial Monitor: 9600 Bd. Log si zachyt do souboru.
+//  Serial Monitor: 115200 Bd (tri kanaly se do 9600 Bd nevejdou).
+//  Log si zachyt do souboru.
 // ============================================================
 #include <Arduino.h>
 #include <Wire.h>
@@ -79,7 +88,8 @@
 #define RAW_PER_PF        524288.0f
 #define RAW_NEAR_FULL     7000000L
 
-#define N_CH              2   // CIN1 + CIN2
+#define N_CH              3   // CIN1 (spodni prstenec), CIN2 (svisla), CIN3 (horni prstenec)
+#define BAUD             115200UL
 
 // ---------- piny (shodne s config.h hlavniho firmware) ----------
 #define PIN_AIR_STEP      4
@@ -132,10 +142,12 @@
 static uint16_t samplePeriodMs = 50;    // 20 vzorku/s
 static uint8_t  cycleCount     = 5;     // pocet opakovani
 static float    totalAirMl     = 20.0f; // vzduch na jeden cyklus
-static float    loadAirMl      = 10.0f; // kolik se protlaci na jednu napln (cela
-                                        // strikacka - jedine doplneni pri 10 ml
-                                        // misto dvou pri 7 a 14 ml; pist pri kazde
-                                        // naplni dojizdi az na dno)
+static float    firstAirMl     = 5.0f;  // prvni davka cyklu - posouva doplneni tak,
+                                        // aby souvisly usek firstAirMl..+10 ml bez
+                                        // preruseni pokryl pruchod hladiny obema
+                                        // prstenci (viz README)
+static float    loadAirMl      = 10.0f; // dalsi davky (cela strikacka, pist dojizdi
+                                        // az na dno)
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 
 // ---------- uhly ventilu ----------
@@ -144,7 +156,7 @@ static uint8_t angAirSyrVial, angAirSyrFilt, angAirVialFilt;
 static uint8_t curPatAngle = 255, curAirAngle = 255;
 
 // ---------- stav ----------
-static uint8_t  capdac[N_CH] = { 0, 0 };
+static uint8_t  capdac[N_CH] = { 0, 0, 0 };
 static bool     tared        = false;
 static bool     running      = false;
 static char     line[20];
@@ -181,9 +193,9 @@ static uint16_t readReg(uint8_t reg) {
     return (hi << 8) | Wire.read();
 }
 
-// 400 S/s (RATE=11) misto 100 S/s - pri 20 vzorcich/s a dvou kanalech
-// tak kazdy vzorek pochazi z cerstve dokoncene konverze, ne z opakovane
-// precteneho stareho vysledku.
+// 400 S/s (RATE=11) misto 100 S/s - kanaly se prevadi postupne (~2,5 ms
+// kazdy), takze pri 20 vzorcich/s a trech kanalech pochazi kazdy vzorek
+// z cerstve dokoncene konverze, ne z opakovane precteneho stareho vysledku.
 static void applyConfig() {
     uint16_t measMask = 0;
     for (uint8_t i = 0; i < N_CH; i++) {
@@ -300,17 +312,20 @@ static bool abortRequested() {
 static void logSample(char phase) {
     float c1 = readPf(0);
     float c2 = readPf(1);
+    float c3 = readPf(2);
     Serial.print(cycleNo);
     Serial.print(';'); Serial.print(millis() - cycleT0);
     Serial.print(';'); Serial.print(phase);
     Serial.print(';'); Serial.print(pushedMl(), 3);
     Serial.print(';'); Serial.print(c1, 4);
-    Serial.print(';'); Serial.println(c2, 4);
+    Serial.print(';'); Serial.print(c2, 4);
+    Serial.print(';'); Serial.println(c3, 4);
 }
 
 static void printLogHeader() {
-    Serial.println(F("# cyklus;t_ms;faze;vytlaceno_ml;C1;C2"));
-    Serial.println(F("# t_ms je relativni k zacatku cyklu; C1/C2 v pF, BEZ filtrace"));
+    Serial.println(F("# cyklus;t_ms;faze;vytlaceno_ml;C1;C2;C3"));
+    Serial.println(F("# t_ms je relativni k zacatku cyklu; C1..C3 v pF, BEZ filtrace"));
+    Serial.println(F("# C1 = spodni prstenec, C2 = svisla, C3 = horni prstenec"));
 }
 
 // ============================================================
@@ -412,11 +427,25 @@ static bool refillAir() {
     return sampleFor(VALVE_SETTLE_MS, 'e');
 }
 
+// Doplneni strikacky na 10 ml na konci cyklu, az po mereni. Bez nej by
+// kazdy dalsi cyklus zacinal s tim, co zbylo, a doplnovalo by se navic
+// hned na zacatku i jinde nez v prvnim cyklu (prvni cyklus a ostatni by
+// nebyly srovnatelne). Pacient je uz izolovan; po nasati se vzduch vrati
+// do V<->F, aby se lahvicka dala znovu naplnit.
+static bool topUpAir() {
+    if (airMl() >= AIR_SYR_MAX_ML - 0.001f) return true;
+    Serial.println(F("# doplneni strikacky na 10 ml pro dalsi cyklus"));
+    if (!airValveTo(angAirSyrFilt)) return false;
+    if (!moveAir(AIR_SYR_MAX_ML - airMl(), false, 'a', AIR_FILL_SPEED_FACTOR)) return false;
+    return airValveTo(angAirVialFilt);
+}
+
 // ============================================================
 //  Potvrzeni obsluhou
 // ============================================================
-// Prijme libovolny znak (funguje pri kterekoli volbe zakonceni radku
-// v Serial Monitoru); 'x' znamena zruseni behu.
+// Prijme libovolny text (funguje pri kterekoli volbe zakonceni radku
+// v Serial Monitoru) a zapise ho do logu - obsluha tak muze rovnou
+// poslat treba naplneny objem. 'x' znamena zruseni behu.
 static bool waitConfirm(const __FlashStringHelper *prompt) {
     Serial.print(F(">>> "));
     Serial.print(prompt);
@@ -424,9 +453,14 @@ static bool waitConfirm(const __FlashStringHelper *prompt) {
     delay(200);                                     // dobehnuti zbytku predchoziho radku
     while (Serial.available() > 0) Serial.read();
     while (Serial.available() == 0) { /* cekani na obsluhu */ }
-    char c = (char)Serial.read();
-    delay(50);
-    while (Serial.available() > 0) Serial.read();
+    delay(50);                                      // dobehnuti celeho radku
+    char c = (char)Serial.peek();
+    Serial.print(F("# obsluha: "));
+    while (Serial.available() > 0) {
+        char ch = (char)Serial.read();
+        if (ch != '\n' && ch != '\r') Serial.print(ch);
+    }
+    Serial.println();
     if (c == 'x' || c == 'X') {
         Serial.println(F("# ABORT - beh zastaven obsluhou"));
         return false;
@@ -442,7 +476,7 @@ static bool runCycle(uint8_t n) {
     Serial.print(F("# ===== CYKLUS ")); Serial.print(n);
     Serial.print('/'); Serial.print(cycleCount); Serial.println(F(" ====="));
 
-    if (!waitConfirm(F("naplnit penicilinku na 10 ml a potvrdit"))) return false;
+    if (!waitConfirm(F("naplnit penicilinku NAD 10 ml, poslat objem v ml"))) return false;
 
     steppersEnable();
     pushedSteps = 0;
@@ -464,7 +498,8 @@ static bool runCycle(uint8_t n) {
 
     while (pushedMl() < totalAirMl - 0.001f) {
         float zbyva = totalAirMl - pushedMl();
-        float chunk = (zbyva < loadAirMl) ? zbyva : loadAirMl;
+        float davka = (pushedSteps == 0) ? firstAirMl : loadAirMl;
+        float chunk = (zbyva < davka) ? zbyva : davka;
         if (chunk > airMl()) {                      // ve strikacce uz neni dost
             if (!refillAir()) return false;
         }
@@ -483,6 +518,8 @@ static bool runCycle(uint8_t n) {
     if (!patientValveTo(angPatIsolate)) return false;
     if (!airValveTo(angAirVialFilt)) return false;
     if (!sampleFor(KLID_VENT_MS, 'o')) return false;
+
+    if (!topUpAir()) return false;
 
     Serial.print(F("# cyklus ")); Serial.print(n);
     Serial.print(F(" hotov, vytlaceno ")); Serial.print(pushedMl(), 2);
@@ -526,12 +563,14 @@ static void runSeries() {
 // ============================================================
 static void printInfo() {
     Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
-    Serial.print(F(" CAPDAC2=")); Serial.println(capdac[1]);
+    Serial.print(F(" CAPDAC2=")); Serial.print(capdac[1]);
+    Serial.print(F(" CAPDAC3=")); Serial.println(capdac[2]);
     Serial.print(F("# samplePeriodMs=")); Serial.print(samplePeriodMs);
     Serial.print(F(" (")); Serial.print(1000 / samplePeriodMs);
     Serial.println(F(" vzorku/s)"));
     Serial.print(F("# cykly=")); Serial.print(cycleCount);
     Serial.print(F(" vzduch/cyklus=")); Serial.print(totalAirMl, 1);
+    Serial.print(F(" ml  prvni davka=")); Serial.print(firstAirMl, 1);
     Serial.print(F(" ml  na naplnu=")); Serial.print(loadAirMl, 1);
     Serial.print(F(" ml  rychlost=1 ml/")); Serial.print(flowSecPerMl);
     Serial.println(F(" s"));
@@ -553,6 +592,7 @@ static void printHelp() {
     Serial.println(F("# u2=vzduch S-V u3=vzduch S-F u4=vzduch V-F"));
     Serial.println(F("# p<ms>=perioda vzorku  c<n>=pocet cyklu"));
     Serial.println(F("# v<ml>=vzduch na cyklus  l<ml>=vzduch na jednu naplnu"));
+    Serial.println(F("# f<ml>=prvni davka cyklu (posouva doplneni)"));
     Serial.println(F("# s<s>=sekund na 1 ml  #<text>=znacka do logu"));
 }
 
@@ -623,6 +663,11 @@ static void handleLine() {
             if (v > 0.0f && v <= AIR_SYR_MAX_ML) { loadAirMl = v; printInfo(); }
             break;
         }
+        case 'f': {
+            float v = atof(&line[1]);
+            if (v > 0.0f && v <= AIR_SYR_MAX_ML) { firstAirMl = v; printInfo(); }
+            break;
+        }
         case 's': {
             int v = atoi(&line[1]);
             if (v >= 1 && v <= 60) { flowSecPerMl = (uint8_t)v; printInfo(); }
@@ -656,12 +701,13 @@ static void pollSerial() {
 }
 
 void setup() {
-    Serial.begin(9600);
+    Serial.begin(BAUD);
     Wire.begin();
     Wire.setClock(100000UL);
     delay(100);
 
-    Serial.println(F("# TEST 1 - profil signalu pri vytlacovani VZDUCHEM"));
+    Serial.println(F("# TEST 1/3 - profil signalu pri vytlacovani VZDUCHEM"));
+    Serial.println(F("# kanaly: C1 spodni prstenec, C2 svisla, C3 horni prstenec"));
     Serial.println(F("# syrova data, zadna filtrace, zadna detekce"));
 
     pinMode(PIN_STEPPER_EN, OUTPUT);
@@ -691,7 +737,7 @@ void setup() {
 
     printInfo();
     printHelp();
-    Serial.println(F("# POSTUP: 1) vzduchova strikacka PLNA, penicilinka na 10 ml"));
+    Serial.println(F("# POSTUP: 1) vzduchova strikacka PLNA, penicilinka ve studni"));
     Serial.println(F("#         2) 't' vychozi stav, pak 'g' start"));
 }
 
