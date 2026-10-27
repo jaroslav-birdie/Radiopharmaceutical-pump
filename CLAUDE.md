@@ -116,11 +116,47 @@ adresa `0x50`) paralelně s OLED.
 
 | Vývod | Připojeno | Účel |
 |-------|-----------|------|
-| **CIN1** | kruhová elektroda, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
-| **CIN2** | svislá elektroda | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
+| **CIN1** | **spodní** kruhová elektroda (výška 2 mm), obepínající téměř celý obvod lahvičky | hlídání **spodní kritické hladiny** |
+| **CIN2** | svislá elektroda, končí **4 mm pod** spodní kruhovou elektrodou | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
+| **CIN3** | **horní** kruhová elektroda (výška 2 mm), stejného typu jako CIN1, **4 mm nad** ní | hlídání **horní kritické hladiny** |
 | **SHLD1** | opletení **všech** koaxiálních kabelů | aktivní stínění kabeláže |
-| **SHLD2** | plošné elektrody naproti sobě, **výš než CIN1** | **aktivní shield** snímacího prostoru |
-| CIN3, CIN4 | nepoužito | volné |
+| **SHLD2** | plošné elektrody naproti sobě, **nad oběma** kruhovými elektrodami | **aktivní shield** snímacího prostoru |
+| CIN4 | nepoužito | volné |
+
+### Geometrie elektrod (svisle, shora dolů)
+
+```
+SHLD2   plošné elektrody (aktivní shield)
+CIN3    horní prstenec      2 mm
+        mezera              4 mm
+CIN1    spodní prstenec     2 mm
+        mezera              4 mm
+CIN2    konec svislé elektrody
+```
+
+> **Proč dva prstence:** samotný CIN1 nedává při průchodu hladiny zlom, ale
+> pozvolnou rampu (viz `tools/air_push_profile/ANALYZA.md`) a jeho pokles je
+> zatížený tlakovým artefaktem. Dva prstence **stejného typu** těsně nad sebou
+> by měly mít korelované pomalé/tlakové artefakty, takže rozdílový signál
+> `C1 − C3` by měl ukázat ostrý příznak lokalizovaný do okna mezi prstenci –
+> bez kalibrace kapacita↔objem. Kombinace `C1 − k·C2` (různé typy elektrod)
+> naopak **nefunguje**: žádné stabilní `k` neexistuje, korelace rychlé složky
+> mění mezi cykly i znaménko. **Rozdílový signál zatím není ověřen měřením.**
+
+### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
+
+- Profil C1 proti vytlačenému vzduchu: 0–6 ml **stoupá** (tlak), 7–14 ml rampa
+  ≈ −0,045 pF/ml (nejopakovatelnější veličina, ±5 %), pak podlaha.
+- Celkový pokles C1 na podlahu je jen **9–14 %** – `CAP_CRITICAL_PERCENT 15`
+  v `config.h` se proto **nedosáhne**, prahová detekce je nepoužitelná.
+- Šum je 1/f a mechanický (ne od motorů) – průměrováním neklesá jako 1/√N.
+- **Doběh** (kapalina teče k pacientovi i po zastavení motoru) je řízen
+  zbytkovým přetlakem. Okamžité zavření pacientského ventilu ho eliminuje
+  (ověřeno testem 2); přetlak se pak projeví jen malým skokem hladiny
+  **nahoru** při dalším otevření – bezpečný směr. Produkční postup proto má
+  být: detekce → **ihned** `PATIENT_VALVE_ISOLATE` → teprve pak odtlakování
+  `AIR_VALVE_VIAL_TO_FILTER`. *(V `state_machine.cpp` zatím není – stále
+  čeká `FLUID_DRAIN_MS`.)*
 
 > **`SHLD1`/`SHLD2` se nekonfigurují.** Jsou to trvale buzené výstupy, které
 > kopírují potenciál snímací elektrody – v registrové mapě pro ně nic není.
