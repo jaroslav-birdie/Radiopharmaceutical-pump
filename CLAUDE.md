@@ -116,11 +116,12 @@ adresa `0x50`) paralelně s OLED.
 
 | Vývod | Připojeno | Účel |
 |-------|-----------|------|
-| **CIN1** | kruhová elektroda, obepínající téměř celý obvod lahvičky | hlídání **minimální (kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
+| **CIN1** | **spodní** kruhová elektroda, obepínající téměř celý obvod lahvičky | hlídání **dolní (minimální/kritické) hladiny** – prudký pokles signálu = hladina klesla na/pod kritickou mez |
 | **CIN2** | svislá elektroda | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
+| **CIN3** | **horní** kruhová elektroda, obepínající téměř celý obvod lahvičky | hlídání **horní kritické hladiny** |
 | **SHLD1** | opletení **všech** koaxiálních kabelů | aktivní stínění kabeláže |
 | **SHLD2** | plošné elektrody naproti sobě, **výš než CIN1** | **aktivní shield** snímacího prostoru |
-| CIN3, CIN4 | nepoužito | volné |
+| CIN4 | nepoužito | volné |
 
 > **`SHLD1`/`SHLD2` se nekonfigurují.** Jsou to trvale buzené výstupy, které
 > kopírují potenciál snímací elektrody – v registrové mapě pro ně nic není.
