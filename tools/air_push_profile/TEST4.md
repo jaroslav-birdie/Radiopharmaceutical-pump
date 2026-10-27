@@ -1,8 +1,8 @@
-# Test 4 – hladina mezi prstenci, zpětný ventil k pacientovi
+# Test 4 – hladina mezi prstenci, předtlakování před otevřením pacienta
 
 Stejný sketch (`air_push_profile.ino`), výchozí hodnoty jsou už nastavené
 pro test 4 (`v10`, `f10`). Kanály beze změny: C1 spodní prstenec, C2 svislá,
-C3 horní prstenec.
+C3 horní prstenec. **Bez zpětného ventilu.**
 
 ---
 
@@ -10,36 +10,48 @@ C3 horní prstenec.
 
 1. **Jak spolehlivě poznat, že je hladina právě mezi prstenci** (C3 odkrytý,
    C1 zakrytý)? Spodní hranu C1 zachytit cílem není.
-2. **Je artefakt pacientské cesty z testu 3 hydraulický, nebo elektrický?**
-   V testu 3 při tlačení stouply oba prstence o +2,5 až +4 pF. Při pohybu
-   pacientského ventilu skákaly o ±1 pF, a to jen tehdy, když byly zakryté.
-   - **Hydraulický:** neustálený tlak, kapalina se při změně tlaku vrací
-     od pacienta. Zpětný ventil a okamžité zavření ho mají odstranit.
-   - **Elektrický:** sloupec kapaliny v hadičce mění zpáteční cestu.
-     Zpětný ventil s ním nic neudělá, pomůže jen definovaná zem.
+2. **Zabrání předtlakování návratu kapaliny od pacienta?**
+3. **Je artefakt pacientské cesty z testu 3 hydraulický, nebo elektrický?**
+   V testu 3 při otevření pacienta stouply C1/C3 o +1,0 až +1,3 pF.
 
 ---
 
-## Změny proti testu 3
+## Předtlakování
 
-| | test 3 | test 4 |
+Po zavření pacientského ventilu a vyrovnání lahvičky s okolím může být
+v hadičce k pacientovi přetlak proti lahvičce. Příčinou je výška pacienta
+nad ventilem a žilní tlak. Otevření pacienta při atmosférickém tlaku
+v lahvičce by kapalinu vrátilo. Proto se před otevřením, s pacientem
+uzavřeným a lahvičkou na `S↔V`, vytlačí:
+
+**V_pre = V_plyn × ΔP / p_atm**
+
+| veličina | hodnota | poznámka |
 |---|---|---|
-| pacientská jehla | bez ventilu | **zpětný ventil** – kapalina se od pacienta nevrátí |
-| vzduch na cyklus | 20 ml s doplněním při 5 a 15 ml | **10 ml najednou**, bez doplnění |
-| náplň | nad 10 ml | **těsně nad horní hranou CIN3** (2–3 mm) |
-| po dojezdu | 15 s klid s otevřeným pacientem, pak zavřít a odvzdušnit | pacient **ihned** `ISOLATE`, klid pod tlakem, **teprve pak** `V↔F` |
-| kontrola artefaktu | — | fáze `u`: přepínání pacientského ventilu bez toku |
+| ΔP | 40 + 20 = 60 cm H₂O ≈ 5,9 kPa | pacient max. o délku hadičky výš + horní odhad žilního tlaku |
+| p_atm | 90 kPa | konzervativně nízký (~1000 m n. m.) |
+| V_plyn | 30 − náplň + vzduch ve stříkačce + 1 ml | lahvička po okraj 30 ml a mrtvý objem 1 ml jsou **odhady, neměřeno** |
 
-**Proč náplň těsně nad CIN3:** v testu 3 ležel přechod C3 na 7,9–10,2 ml
-vytlačeného vzduchu a C1 až na 13,6–15,2 ml. Při tamní náplni by 10 ml
-vzduchu do okna mezi prstenci ani nedošlo. Když hladina začne těsně nad
-C3, 10 ml by mělo projít oběma prstenci bez přerušení. Rozestup mezi
-přechody je ~5,3 ml.
+| náplň | V_pre |
+|---|---|
+| 10 ml | 2,0 ml |
+| 12 ml | 1,9 ml |
+| 20 ml | 1,4 ml |
 
-Zpětný ventil se otevírá až od určitého tlaku, takže na natlakování
-lahvičky padne víc vzduchu a přechody se posunou na vyšší objem. Pokud
-v prvním cyklu C1 neklesne, snížit náplň o ~1 ml. Pak ji držet stejnou
-ve všech cyklech.
+Sketch počítá V_pre z objemu, který obsluha pošle na začátku cyklu. Když
+objem nepošle, počítá s náplní 0 ml, tedy s největším předtlakem.
+`r<ml>` nastaví předtlak ručně, samotné `r` vrátí výpočet.
+
+**1. cyklus je vždy bez předtlakování.** Ukáže, jestli zpětný tok
+v tomhle uspořádání vůbec nastává.
+
+Předtlak se započítává do vytlačeného objemu: osa `vytlaceno_ml` začíná
+předtlakováním a celkem je to pořád 10 ml, bez doplnění.
+
+**Cena konzervativnosti:** přebytek předtlaku po otevření vyteče
+k pacientovi. Je to bezpečný směr, ale v přístroji to znamená, že
+**hlídání hladiny musí běžet od otevření pacientského ventilu**, ne až od
+rozjezdu motoru.
 
 ---
 
@@ -47,61 +59,67 @@ ve všech cyklech.
 
 | # | krok | fáze | doba |
 |---|---|---|---|
-| 1 | obsluha naplní lahvičku těsně nad CIN3 a pošle objem (např. `11.5`) | — | ruční |
-| 2 | vzduch `S↔V`, pacient `OPEN` | `v` | ~3,5 s |
-| 3 | klid při atmosférickém tlaku, plná lahvička (referenční „plno") | `k` | 5 s |
-| 4 | **přepínání pacienta 2× OPEN/ISOLATE**, plná lahvička | `u` | 20 s |
-| 5 | pacient `OPEN` | `v` | 2,5 s |
-| 6 | **tlačení 10 ml**, 1 ml / 5 s | `w` | 50 s |
+| 1 | obsluha naplní lahvičku **těsně nad horní hranu CIN3** (2–3 mm) a **pošle objem** (např. `11.5`) | — | ruční |
+| 2 | vzduch `S↔V` (lahvička uzavřená), pacient zůstává `ISOLATE` | `v` | ~2,5 s |
+| 3 | klid při atmosférickém tlaku (referenční „plno") | `k` | 5 s |
+| 4 | předtlakování V_pre, pacient uzavřen (**ne v 1. cyklu**) | `r` | ~10 s + 3 s |
+| 5 | **otevření pacienta**, klid | `p` | 5 s |
+| 6 | tlačení zbytku do 10 ml, 1 ml / 5 s | `w` | ~40–50 s |
 | 7 | motor stojí → **ihned** pacient `ISOLATE`, klid pod tlakem | `v`, `d` | 16 s |
 | 8 | teprve teď vzduch `V↔F`, klid při atmosférickém tlaku | `v`, `o` | 9 s |
-| 9 | **přepínání pacienta 2× OPEN/ISOLATE**, hladina po vytlačení | `u` | 20 s |
-| 10 | doplnění stříkačky na 10 ml | `v`, `a` | ~30 s |
-| 11 | obsluha pošle, kde je hladina, pokud je vidět (`nad C3` / `mezi` / `pod C1`) | — | ruční |
+| 9 | doplnění stříkačky na 10 ml | `v`, `a` | ~30 s |
+| 10 | obsluha pošle, kde je hladina, pokud je vidět (`nad C3` / `mezi` / `pod C1`) | — | ruční |
 
-Cyklus trvá ~2,5 min čistého měření. Na začátku dalšího cyklu obsluha
-dorovná lahvičku na stejnou náplň.
+**Proč náplň těsně nad CIN3:** v testu 3 ležel přechod C3 na 7,9–10,2 ml
+vytlačeného vzduchu a C1 na 13,6–15,2 ml. Při tamní náplni by 10 ml
+do okna mezi prstenci nedošlo. Pokud v 1. cyklu C1 vůbec neklesne,
+snížit náplň o ~1 ml a pak ji držet stejnou ve všech cyklech.
 
 ---
 
 ## Kritéria vyhodnocení (stanovená PŘEDEM)
 
-### A. Artefakt (otázka 2)
+### A. Zpětný tok a artefakt (otázky 2 a 3)
 
-1. **Skok při přepnutí ve fázi `u`** u plné lahvičky (krok 4).
-   - Skok ~1 pF jako v testu 3 → artefakt je **elektrický**.
-   - Skok < 0,1 pF → elektrická složka je zanedbatelná.
-2. **Nárůst během tlačení** (`w` proti `k`) musí být výrazně menší než
-   +2,5 až +4 pF z testu 3. Jinak zpětný ventil hydraulickou část
-   nevyřešil.
-3. **Tlakový offset** (konec `d` proti ustálenému `o`) při stojící
-   hladině. Je to čistý vliv přetlaku, bez toku.
+Hlavní veličina je **skok C1/C3 ve fázi `p` proti konci fáze `r`**
+(v 1. cyklu proti konci `k`).
+
+1. **Cyklus 1 (bez předtlaku):** skok nahoru při otevření, hladina se
+   zvedá, znamená zpětný tok. Je to referenční velikost problému.
+2. **Cykly 2–5 (s předtlakem):** hladina smí při otevření jen klesnout
+   (dopředný tok přebytku), nebo zůstat.
+   - Skok **dolů** nebo žádný → předtlak funguje.
+   - Skok **nahoru** i s předtlakem → buď je ΔP podhodnocené, nebo je
+     artefakt **elektrický**. Rozliší to velikost: hydraulický tok o
+     desetiny ml dá ~0,01–0,05 pF (rampa ~0,045 pF/ml), elektrický skok
+     z testu 3 ~1 pF.
+3. **Nárůst během tlačení** (`w` proti `k`) proti +2,5 až +4 pF z testu 3.
+4. **Tlakový offset** (konec `d` proti ustálenému `o`) při stojící hladině.
+   K tomu skok mezi `k` a koncem `r`: vliv předtlaku na signál bez toku.
 
 ### B. Hladina mezi prstenci (otázka 1)
 
-4. **Průběh při tlačení:** C3 klesne a ustálí se na své podlaze dřív, než
+5. **Průběh při tlačení:** C3 klesne a ustálí se na své podlaze dřív, než
    C1 začne klesat. Mezi koncem poklesu C3 a začátkem poklesu C1 musí být
    rozpoznatelný úsek. Jeho šířka v ml se změří a musí se opakovat.
-5. **C3 přestane reagovat.** Na podlaze C3 nereaguje na tlak ani na
+6. **C3 přestane reagovat.** Na podlaze C3 nereaguje na tlak ani na
    ventil (v testu 3 −0,05 pF proti −0,9 pF zakrytého). Ověřit ve fázích
-   `d`, `o` a `u` po vytlačení.
-6. **C3 jako měřítko pro C1.** Prstence jsou spárované (za plna
+   `d` a `o`.
+7. **C3 jako měřítko pro C1.** Prstence jsou spárované (za plna
    `C1 − C3` = +0,05 pF). Pokles C3 změřený za běhu (plno → podlaha) se
    porovná s tím, o kolik je C1 v daný okamžik pod svým „plno". Cíl je
    práh pro C1 odvozený z C3, bez hodnoty „prázdno" známé předem.
-7. **Rozestup přechodů** C3 → C1 (50% body) jako v testu 3: 5,3 ml,
-   sd 0,27 ml. Se zpětným ventilem a okamžitým zavřením by měl být
-   stejný nebo stabilnější.
+8. **Rozestup přechodů** C3 → C1 (50% body) proti testu 3: 5,3 ml,
+   sd 0,27 ml.
 
 ---
 
 ## Příprava
 
-- **Zpětný ventil** na pacientské jehle, propustný směrem k pacientovi.
-- **Hadičku za ventilem před sérií celou naplnit.** Vzduchová bublina
-  v ní by se chovala jako pružina a zkreslila by tlak i dobu toku.
-- Konec hadičky po celou sérii **na stejném místě**, do stejné nádoby,
-  ve stejné výšce.
+- Konec pacientské hadičky po celou sérii **na stejném místě**, do stejné
+  nádoby, ve stejné výšce. Výšku konce vůči lahvičce a to, jestli je
+  ponořený, zapsat při prvním potvrzení (např. `11.5 konec 10 cm pod, ponoren`;
+  objem musí být na začátku).
 - Platí všechno z [`TEST3.md`](TEST3.md) k nestíněné penicilince: nesahat,
   fixovat koaxy, zapisovat rušení.
 
@@ -113,8 +131,8 @@ dorovná lahvičku na stejnou náplň.
    ```
    tools/serial_log.py /dev/ttyUSB0 test4.csv --baud 115200
    ```
-4. `t`, `a`, zkontrolovat `i`: CAPDAC1–3 nízké a `vzduch/cyklus=10.0`,
-   `prvni davka=10.0`.
+4. `t`, `a`, zkontrolovat `i`: CAPDAC1–3 nízké, `vzduch/cyklus=10.0`,
+   `prvni davka=10.0`, `predtlak: vypocet`.
 5. `g` – start. Na výzvu naplnit, **poslat objem**. Po cyklu poslat
    polohu hladiny.
 

@@ -1,7 +1,7 @@
 // ============================================================
 //  TEST 1 (nova serie) – PROFIL SIGNALU PRI VYTLACOVANI VZDUCHEM
 //  TEST 3 – totez se DVEMA PRSTENCI (CIN1 spodni, CIN3 horni)
-//  TEST 4 – zpetny ventil na pacientske jehle, 10 ml bez doplneni,
+//  TEST 4 – 10 ml bez doplneni, PREDTLAKOVANI pred otevrenim pacienta,
 //           pacient se zavira IHNED po dojezdu (viz TEST4.md)
 //
 //  Otazka testu 1: existuje pri vytlacovani VZDUCHEM na CIN1
@@ -16,7 +16,9 @@
 //  Otazka testu 4: jak spolehlive poznat, ze je hladina PRAVE MEZI
 //  prstenci (C3 odkryty, C1 zakryty)? A je artefakt pacientske cesty
 //  hydraulicky (zpetny tok, neustaleny tlak), nebo elektricky
-//  (zpatecni cesta pres sloupec kapaliny)? To rozlisi faze 'u'.
+//  (zpatecni cesta pres sloupec kapaliny)? To rozlisi skok pri otevreni
+//  pacienta po predtlakovani (faze 'p'): hladina smi jen klesnout,
+//  skok nahoru je elektricky.
 //
 //  Tenhle sketch NIC NEDETEKUJE. Zadny klouzavy prumer, zadny prah,
 //  zadna ochrana proti ruseni, zadne rozhodovani. Jen syrova data.
@@ -144,8 +146,24 @@
 #define KLID_VENT_MS     8000UL   // klid po odvzdusneni - zmeri tlakovy offset
 #define VALVE_SETTLE_MS  1500UL   // po prejezdu ventilu, nez se pokracuje
 #define JOG_ML             0.5f
-#define TOGGLE_HOLD_MS   5000UL   // faze 'u': drzeni kazde polohy pacientskeho ventilu
-#define TOGGLE_COUNT          2   // faze 'u': pocet dvojic OPEN/ISOLATE
+#define KLID_PRECOMP_MS  3000UL   // klid po predtlakovani, pacient jeste uzavren
+#define KLID_OPEN_MS     5000UL   // klid po otevreni pacienta, pred tlacenim
+
+// ---------- predtlakovani (konzervativni odhad, NEMERENO) ----------
+// V hadicce k pacientovi muze byt po uzavreni pacientskeho ventilu
+// pretlak proti lahvicce (pacient vys, zilni tlak). Kdyby se pacient
+// otevrel pri atmosferickem tlaku v lahvicce, kapalina by se vratila.
+// Proto se s pacientem uzavrenym a lahvickou na S<->V nejdriv vytlaci
+//     V_pre = V_plyn * dP / p_atm
+// dP = nejhorsi tlak v hadicce, V_plyn odhadnut spis nahoru (lahvicka
+// po okraj - kapalina + strikacka + mrtvy objem). Prebytek vytece
+// k pacientovi, coz je bezpecny smer.
+#define VIAL_BRIM_ML          30.0f   // objem lahvicky po okraj (odhad)
+#define AIR_DEAD_ML            1.0f   // mrtvy objem vzduchove cesty (odhad)
+#define BACKPRESS_PATIENT_CM  40.0f   // pacient max. o delku hadicky vys
+#define BACKPRESS_VENOUS_CM   20.0f   // horni odhad periferniho zilniho tlaku
+#define KPA_PER_CMH2O          0.0981f
+#define P_ATM_MIN_KPA         90.0f   // konzervativne nizky tlak okoli (~1000 m n. m.)
 
 // ---------- parametry behu (menitelne pres Serial) ----------
 static uint16_t samplePeriodMs = 50;    // 20 vzorku/s
@@ -157,6 +175,7 @@ static float    firstAirMl     = 10.0f; // prvni davka cyklu - posouva doplneni
 static float    loadAirMl      = 10.0f; // dalsi davky (cela strikacka, pist dojizdi
                                         // az na dno)
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
+static float    precompManualMl = -1.0f; // <0 = vypocet z naplne, jinak rucne (r<ml>)
 
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
@@ -168,6 +187,7 @@ static uint8_t  capdac[N_CH] = { 0, 0, 0 };
 static bool     tared        = false;
 static bool     running      = false;
 static char     line[20];
+static char     opText[12];          // posledni odpoved obsluhy (naplneny objem)
 static uint8_t  lineLen      = 0;
 static int32_t  airSteps     = 0;   // obsah vzduchove strikacky v krocich
 static int32_t  pushedSteps  = 0;   // kumulativne vytlaceno v tomto cyklu
@@ -318,7 +338,7 @@ static bool abortRequested() {
 //       a=nasavani vzduchu do strikacky  e=ustaleni po prepnuti
 //       d=klid po dojezdu (pacient uz uzavren, lahvicka jeste pod tlakem)
 //       o=klid po odvzdusneni (atm. tlak)
-//       u=prepinani pacientskeho ventilu bez toku (kontrola artefaktu)
+//       r=predtlakovani (pacient uzavren)  p=otevreni pacienta + klid
 static void logSample(char phase) {
     float c1 = readPf(0);
     float c2 = readPf(1);
@@ -437,21 +457,34 @@ static bool refillAir() {
     return sampleFor(VALVE_SETTLE_MS, 'e');
 }
 
-// Kontrola artefaktu pacientske cesty: pacientsky ventil se nekolikrat
-// prepne OPEN/ISOLATE, kdyz kapalina tect NEMUZE - lahvicka je pri
-// atmosferickem tlaku a zpetny ventil brani navratu od pacienta. Skok
-// C1/C3 pri prepnuti je pak ciste elektricky (zmena zpatecni cesty pres
-// sloupec kapaliny v hadicce), ne hydraulicky. Vse vcetne prejezdu
-// serva se loguje jako 'u', at se to pri vyhodnoceni neplete s 'v'.
-static bool togglePatientValve() {
-    Serial.println(F("# prepinani pacientskeho ventilu bez toku (u)"));
-    for (uint8_t i = 0; i < TOGGLE_COUNT; i++) {
-        curPatAngle = angPatOpen;    OCR1A = angleTicks(angPatOpen);
-        if (!sampleFor(TOGGLE_HOLD_MS, 'u')) return false;
-        curPatAngle = angPatIsolate; OCR1A = angleTicks(angPatIsolate);
-        if (!sampleFor(TOGGLE_HOLD_MS, 'u')) return false;
-    }
-    return true;
+// Predtlakovaci objem pro aktualni stav: plyn v lahvicce (po okraj minus
+// zadana napln) + vzduch ve strikacce + mrtvy objem, krat pomer nejhorsiho
+// tlaku v hadicce k (nizkemu) tlaku okoli. Nezadana napln = 0 ml, tj.
+// nejvic plynu - konzervativni smer.
+static float precompMl(float fillMl) {
+    if (precompManualMl >= 0.0f) return precompManualMl;
+    if (fillMl < 0.0f || fillMl > VIAL_BRIM_ML) fillMl = 0.0f;
+    float gasMl = VIAL_BRIM_ML - fillMl + airMl() + AIR_DEAD_ML;
+    float dpKpa = (BACKPRESS_PATIENT_CM + BACKPRESS_VENOUS_CM) * KPA_PER_CMH2O;
+    return gasMl * dpKpa / P_ATM_MIN_KPA;
+}
+
+// Pacient uzavren, lahvicka na S<->V: vytlacit V_pre a nechat ustalit.
+// Zapocitava se do vytlaceneho objemu (osa 'vytlaceno_ml' zacina tady).
+static bool precompress(float ml) {
+    Serial.print(F("# predtlakovani ")); Serial.print(ml, 2);
+    Serial.println(F(" ml (pacient uzavren)"));
+    if (!moveAir(ml, true, 'r', 1)) return false;
+    return sampleFor(KLID_PRECOMP_MS, 'r');
+}
+
+// Otevreni pacienta a klid pred tlacenim. Vse vcetne prejezdu serva se
+// loguje jako 'p' - skok hladiny pri otevreni je hlavni veliciny testu.
+static bool openPatientAndHold() {
+    Serial.println(F("# otevreni pacienta, klid (p)"));
+    curPatAngle = angPatOpen;
+    OCR1A = angleTicks(angPatOpen);
+    return sampleFor(KLID_OPEN_MS, 'p');
 }
 
 // Doplneni strikacky na 10 ml na konci cyklu, az po mereni. Bez nej by
@@ -483,10 +516,14 @@ static bool waitConfirm(const __FlashStringHelper *prompt) {
     delay(50);                                      // dobehnuti celeho radku
     char c = (char)Serial.peek();
     Serial.print(F("# obsluha: "));
+    uint8_t len = 0;
     while (Serial.available() > 0) {
         char ch = (char)Serial.read();
-        if (ch != '\n' && ch != '\r') Serial.print(ch);
+        if (ch == '\n' || ch == '\r') continue;
+        Serial.print(ch);
+        if (len < sizeof(opText) - 1) opText[len++] = ch;
     }
+    opText[len] = '\0';
     Serial.println();
     if (c == 'x' || c == 'X') {
         Serial.println(F("# ABORT - beh zastaven obsluhou"));
@@ -504,26 +541,28 @@ static bool runCycle(uint8_t n) {
     Serial.print('/'); Serial.print(cycleCount); Serial.println(F(" ====="));
 
     if (!waitConfirm(F("naplnit tesne NAD horni hranu CIN3, poslat objem v ml"))) return false;
+    float fillMl = (opText[0] != '\0') ? (float)atof(opText) : -1.0f;
 
     steppersEnable();
     pushedSteps = 0;
     cycleT0 = millis();
 
-    // Ventily do polohy pro vytlacovani. Pacientsky ventil se pak jeste
-    // zavira a otevira pri kazdem doplneni vzduchu (viz refillAir()) -
-    // mimo tato doplneni zustava OPEN az do zaverecneho klidu 'd'.
+    // Lahvicka se uzavre (S<->V), pacient zustava ISOLATE. Klid 'k' je
+    // tak referencni bod pri atm. tlaku BEZ spojeni s hadickou.
     if (!airValveTo(angAirSyrVial)) return false;
-    if (!patientValveTo(angPatOpen)) return false;
     if (!sampleFor(VALVE_SETTLE_MS, 'v')) return false;
 
     Serial.println(F("# klid pred tlacenim (referencni bod, atm. tlak)"));
     if (!sampleFor(KLID_PRE_MS, 'k')) return false;
 
-    // Prepinani pri plne lahvicce (oba prstence zakryte) - tady byl
-    // v testu 3 skok nejvetsi. Konci v ISOLATE, proto znovu OPEN.
-    if (!togglePatientValve()) return false;
-    if (!patientValveTo(angPatOpen)) return false;
-    if (!sampleFor(VALVE_SETTLE_MS, 'v')) return false;
+    // 1. cyklus bez predtlakovani (ukaze, jestli zpetny tok v tomhle
+    // usporadani vubec nastava), dalsi s nim.
+    if (n == 1) {
+        Serial.println(F("# 1. cyklus: BEZ predtlakovani"));
+    } else if (!precompress(precompMl(fillMl))) {
+        return false;
+    }
+    if (!openPatientAndHold()) return false;
 
     Serial.print(F("# tlaceni ")); Serial.print(totalAirMl, 1);
     Serial.print(F(" ml vzduchu, 1 ml / ")); Serial.print(flowSecPerMl);
@@ -553,10 +592,6 @@ static bool runCycle(uint8_t n) {
     Serial.println(F("# odvzdusneni + klid (mereni tlakoveho offsetu)"));
     if (!airValveTo(angAirVialFilt)) return false;
     if (!sampleFor(KLID_VENT_MS, 'o')) return false;
-
-    // Prepinani pri hladine po vytlaceni (idealne mezi prstenci nebo pod
-    // nimi) - je skok jen na zakrytem prstenci?
-    if (!togglePatientValve()) return false;
 
     if (!topUpAir()) return false;
 
@@ -613,6 +648,13 @@ static void printInfo() {
     Serial.print(F(" ml  na naplnu=")); Serial.print(loadAirMl, 1);
     Serial.print(F(" ml  rychlost=1 ml/")); Serial.print(flowSecPerMl);
     Serial.println(F(" s"));
+    Serial.print(F("# predtlak: "));
+    if (precompManualMl >= 0.0f) {
+        Serial.print(F("rucne ")); Serial.print(precompManualMl, 2);
+    } else {
+        Serial.print(F("vypocet, napr. napln 10 ml -> ")); Serial.print(precompMl(10.0f), 2);
+    }
+    Serial.println(F(" ml (1. cyklus vzdy bez)"));
     Serial.print(F("# uhly: pacient OPEN=")); Serial.print(angPatOpen);
     Serial.print(F(" ISOLATE=")); Serial.print(angPatIsolate);
     Serial.print(F(" | vzduch S-V=")); Serial.print(angAirSyrVial);
@@ -632,6 +674,7 @@ static void printHelp() {
     Serial.println(F("# p<ms>=perioda vzorku  c<n>=pocet cyklu"));
     Serial.println(F("# v<ml>=vzduch na cyklus  l<ml>=vzduch na jednu naplnu"));
     Serial.println(F("# f<ml>=prvni davka cyklu (posouva doplneni)"));
+    Serial.println(F("# r<ml>=predtlak rucne  r=predtlak vypoctem"));
     Serial.println(F("# s<s>=sekund na 1 ml  #<text>=znacka do logu"));
 }
 
@@ -705,6 +748,12 @@ static void handleLine() {
         case 'f': {
             float v = atof(&line[1]);
             if (v > 0.0f && v <= AIR_SYR_MAX_ML) { firstAirMl = v; printInfo(); }
+            break;
+        }
+        case 'r': {
+            if (line[1] == '\0') { precompManualMl = -1.0f; printInfo(); break; }
+            float v = atof(&line[1]);
+            if (v >= 0.0f && v < AIR_SYR_MAX_ML) { precompManualMl = v; printInfo(); }
             break;
         }
         case 's': {
