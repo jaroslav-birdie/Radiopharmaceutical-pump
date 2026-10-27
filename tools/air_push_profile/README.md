@@ -1,5 +1,11 @@
 # Test 1 – profil signálu při vytlačování vzduchem
 
+> **Aktuálně: test 4** – zpětný ventil na pacientské jehle, 10 ml vzduchu
+> bez doplnění, pacient se zavírá ihned po dojezdu, nová fáze `u`
+> (přepínání pacientského ventilu bez toku). Výchozí `v10`, `f10`.
+> Protokol a kritéria viz [`TEST4.md`](TEST4.md). Pro opakování testu 3
+> nastavit `v20`, `f5` (pořadí po dojezdu je ale už nové).
+
 > **Sketch je nyní tříkanálový (test 3 – dva prstence).** Protokol a předem
 > stanovená kritéria vyhodnocení viz [`TEST3.md`](TEST3.md). Popis níže
 > platí dál, změny: log má sloupec `C3`, sériová linka běží na **115200 Bd**,
@@ -180,5 +186,5 @@ arduino-cli compile --fqbn arduino:avr:uno tools/air_push_profile
 
 Poslední ověřený překlad (`avr-g++`, `arduino-cli` v tomto prostředí není
 dostupné — čísla proto nejsou přímo srovnatelná s dřívějším překladem, který
-neprováděl stejné odstranění nepoužitých sekcí): **Flash 16 512 B (50,4 %),
+neprováděl stejné odstranění nepoužitých sekcí): **Flash 16 730 B (51,1 %),
 SRAM 495 B (24,2 %)**, bez varování.
