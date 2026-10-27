@@ -141,8 +141,14 @@ CIN2    konec svislé elektrody
 > `C1 − C3` by měl ukázat ostrý příznak lokalizovaný do okna mezi prstenci –
 > bez kalibrace kapacita↔objem. Kombinace `C1 − k·C2` (různé typy elektrod)
 > naopak **nefunguje**: žádné stabilní `k` neexistuje, korelace rychlé složky
-> mění mezi cykly i znaménko. **Rozdílový signál zatím není ověřen měřením.**
-> Ověřovací měření a předem stanovená kritéria: `tools/air_push_profile/TEST3.md`.
+> mění mezi cykly i znaménko.
+>
+> **Výsledek testu 3** (`tools/air_push_profile/ANALYZA_TEST3.md`): ostřejší
+> hranu rozdíl nedává, ale přechod C3 předchází přechodu C1 o stálých
+> 5,3 ± 0,3 ml vytlačeného vzduchu (vnitřní měřítko bez kalibrace). Dominantní
+> problém je **multiplikativní artefakt vázaný na kapalinovou cestu
+> k pacientovi** (+2,5 až +4 pF při tlačení, skok ±1 pF při pohybu
+> pacientského ventilu) – 5× větší než signál hladiny v klidu (~0,5 pF).
 
 ### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
 
