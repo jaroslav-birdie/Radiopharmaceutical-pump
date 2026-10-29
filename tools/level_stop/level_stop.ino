@@ -113,7 +113,8 @@
 #define DET_MED_N           10
 #define DET_HIST_STEP_ML     0.25f  // krok historie C3 pro strmost
 #define DET_HIST_LEN         5      // 5 bodu = strmost pres 1 ml
-#define DET_FALL_SIGMA      30.0f   // ucenie: pokles C3 od maxima > 30 sum. odchylek z 'k'
+#define DET_RISE_SIGMA       5.0f   // vzestup prstence nad klid 'k' > 5 sum. odchylek
+#define DET_FALL_FRAC        0.5f   // uceni: pokles C3 od maxima > 0,5 x jeho vzestupu
 #define DET_PLATEAU_FRAC     0.3f   // ucenie: konec poklesu = strmost < 0,3 x max. strmost
 #define DET_DENOM_FRAC       0.3f   // delta se pocita, az C1 - F3 > 0,3 x D1
 #define DET_GUARD_FRAC       0.5f   // pojistka: C1 - zaklad < 0,5 x (max C1 - zaklad)
@@ -125,6 +126,7 @@
 #define FROZEN_LIMIT        10
 #define FDC_CHECK_SAMPLES   20
 #define FDC_CHECK_PERIOD_MS 10
+#define MONITOR_PERIOD_MS  500       // prikaz 'm': vypis C1..C3 kazdych 0,5 s
 
 // ---------- parametry behu (menitelne pres Serial) ----------
 static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to naladen)
@@ -544,6 +546,7 @@ static float   c1Base;                 // zaklad pojistky: C1 z 'k' (uceni), F3 
 static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // statistika klidu 'k'
 static float   learnedF3 = 0.0f, learnedD1 = 0.0f;
 static bool    learned = false;
+static bool    c3Fell = false;         // uceni: C3 uz vystoupalo a spadlo (odkryto)
 static float   hitM1, hitM3, hitDelta;
 
 static bool detectHit() { return detHitKind != HIT_NONE; }
@@ -570,6 +573,7 @@ static void detectStart(uint8_t mode) {
     detectResetBuffers();
     c1Peak = -1e9f; c3Peak = -1e9f; slopeMax = 0.0f;
     c1Base = (mode == DET_LEARN) ? c1Rest : learnedF3;
+    c3Fell = false;
     detHitKind = HIT_NONE;
     detMode = (DetMode)mode;
 }
@@ -584,18 +588,30 @@ static void detectFire(uint8_t kind, float m1, float m3, float delta) {
     hitM1 = m1; hitM3 = m3; hitDelta = delta;
 }
 
-// Pojistka: C1 uz bylo v tomto cyklu vysoko a spadlo pod polovinu.
-// V uceni musi byt vzestup C1 nad sumem, pozdeji nad polovinou D1.
+// Pojistka C1, dve nezavisle podminky:
+//  1) posledni zachrana (vzdy aktivni): C1 kleslo pod svuj klid 'k'
+//     o vic nez 5 sumovych odchylek - mezi prstenci i nad nimi je C1
+//     vzdy nad klidem, pod nim je jen po odkryti
+//  2) C1 uz bylo v cyklu vysoko a spadlo pod polovinu vzestupu. V uceni
+//     az po odkryti C3 (hladina muze projit C1 jen po C3) a se vzestupem
+//     nad sumem, pozdeji se vzestupem nad polovinou D1.
 static bool guardTripped(float m1) {
+    if (m1 < c1Rest - DET_RISE_SIGMA * c1Sigma) return true;
     float rise = c1Peak - c1Base;
-    float minRise = (detMode == DET_LEARN) ? DET_FALL_SIGMA * c1Sigma
-                                           : 0.5f * learnedD1;
-    return rise >= minRise && (m1 - c1Base) < DET_GUARD_FRAC * rise;
+    if (detMode == DET_LEARN) {
+        if (!c3Fell || rise < DET_RISE_SIGMA * c1Sigma) return false;
+    } else if (rise < 0.5f * learnedD1) {
+        return false;
+    }
+    return (m1 - c1Base) < DET_GUARD_FRAC * rise;
 }
 
 // Uceni: strmost poklesu C3 pres posledni 1 ml; konec poklesu, kdyz C3
-// spadlo od maxima o vic nez 30 sumovych odchylek a strmost klesla pod
-// 0,3 x nejvetsi strmost tohoto poklesu.
+// nejdriv vystoupalo nad klid (> 5 sumovych odchylek), pak spadlo od
+// maxima o vic nez polovinu tohoto vzestupu a strmost klesla pod 0,3 x
+// nejvetsi strmost tohoto poklesu. Pokles se meri vzestupem, ne sumem -
+// pri vyssim sumu (test 5, 1. beh: sd 0,14 pF) by 30 sigma bylo vic nez
+// cely signal.
 static bool learnPlateau(float m3) {
     float ml = pushedMl();
     if (ml < histNextMl) return false;
@@ -606,8 +622,10 @@ static bool learnPlateau(float m3) {
     float slope = (hist3[0] - hist3[DET_HIST_LEN - 1])
                 / (DET_HIST_STEP_ML * (DET_HIST_LEN - 1));
     if (slope > slopeMax) slopeMax = slope;
-    bool fell = (c3Peak - m3) > DET_FALL_SIGMA * c3Sigma;
-    return fell && slope < DET_PLATEAU_FRAC * slopeMax;
+    float rise = c3Peak - c3Rest;
+    c3Fell = rise > DET_RISE_SIGMA * c3Sigma
+          && (c3Peak - m3) > DET_FALL_FRAC * rise;
+    return c3Fell && slope < DET_PLATEAU_FRAC * slopeMax;
 }
 
 static void detectFeed(float c1, float c3) {
@@ -811,7 +829,7 @@ static void printInfo() {
 }
 
 static void printHelp() {
-    Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004"));
+    Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004 m=monitor"));
     Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
     Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
@@ -847,12 +865,34 @@ static void setValveCmd(char which) {
     Serial.print(F("# ventil -> ")); Serial.println(ang);
 }
 
+// Prubezny vypis C1..C3 (median 10 vzorku) do stisku libovolne klavesy.
+// Slouzi k identifikaci elektrod: pri pomalem plneni prazdne lahvicky
+// musi zareagovat nejdriv C1 (spodni), pak C3 (horni).
+static void monitor() {
+    Serial.println(F("# monitor C1;C2;C3 [pF], libovolny znak = konec"));
+    delay(200);
+    while (Serial.available() > 0) Serial.read();
+    while (Serial.available() == 0) {
+        float v[N_CH][DET_MED_N];
+        for (uint8_t k = 0; k < DET_MED_N; k++) {
+            for (uint8_t i = 0; i < N_CH; i++) v[i][k] = readPf(i);
+            delay(MONITOR_PERIOD_MS / DET_MED_N);
+        }
+        Serial.print(F("m;"));
+        Serial.print(median(v[0]), 3); Serial.print(';');
+        Serial.print(median(v[1]), 3); Serial.print(';');
+        Serial.println(median(v[2]), 3);
+    }
+    while (Serial.available() > 0) Serial.read();
+}
+
 static void handleLine() {
     if (lineLen == 0) return;
     switch (line[0]) {
         case 'h': printHelp(); break;
         case 'i': printInfo(); break;
         case 'f': checkFdc(); break;
+        case 'm': monitor(); break;
         case 'a':
             for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
             printInfo();
