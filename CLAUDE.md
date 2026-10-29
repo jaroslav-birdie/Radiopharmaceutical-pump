@@ -170,6 +170,11 @@ CIN2    konec svislé elektrody
 > ~1,0–1,15) a **pojistka C1** ještě nezasáhla. Práh 0,7 zastavuje ve
 > středu horního prstence (příliš brzy); δ = 0,95 nechává 4,0 ± 0,2 ml
 > rezervu do pojistky.
+>
+> ⚠️ δ v testu 5 používá F3 naučené v 1. cyklu – **v aplikaci učení mezi
+> cykly nebude.** Bez učení (každý běh zvlášť) dává obě hranice okna podíl
+> **C3/C1**: v mezeře plató ≈ 0,40, pod **0,45** na horním okraji mezery
+> (+0,08 ± 0,22 ml), nad **0,50** při vstupu do spodního prstence.
 
 ### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
 
