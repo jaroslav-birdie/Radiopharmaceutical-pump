@@ -163,6 +163,13 @@ CIN2    konec svislé elektrody
 > Mezi prstenci je `C1 − C3` = +3,4 až +4,8 pF, jinde ≤ +1 pF.
 > Relativní detekce `δ = (C1 − C3)/(C1 − F3)` se testuje v
 > `tools/level_stop/TEST5.md` (cíl: zastavit hladinu vždy mezi prstenci).
+>
+> **Profily testu 5** (`tools/level_stop/ANALYZA_TEST5.md`, 5 cyklů, různá
+> náplň): průběh se mezi cykly kryje, rozestup přechodů 6,05 ± 0,11 ml
+> vzduchu (≈ 1 ml/mm). Hladina je mezi prstenci, když **δ ≥ 0,95** (plató
+> ~1,0–1,15) a **pojistka C1** ještě nezasáhla. Práh 0,7 zastavuje ve
+> středu horního prstence (příliš brzy); δ = 0,95 nechává 4,0 ± 0,2 ml
+> rezervu do pojistky.
 
 ### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
 
