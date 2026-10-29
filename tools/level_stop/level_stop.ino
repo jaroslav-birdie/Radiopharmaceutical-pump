@@ -119,6 +119,13 @@
 #define DET_GUARD_FRAC       0.5f   // pojistka: C1 - zaklad < 0,5 x (max C1 - zaklad)
 #define MAX_REFILLS          3      // max. doplneni vzduchu v jednom cyklu
 
+// ---------- hlidani senzoru ----------
+// Ve skutecnych datech se stejna hodnota opakuje nejvys 2x za sebou (sum
+// ~2000 LSB). 10x po sobe bitove stejna hodnota = FDC1004 nemeri.
+#define FROZEN_LIMIT        10
+#define FDC_CHECK_SAMPLES   20
+#define FDC_CHECK_PERIOD_MS 10
+
 // ---------- parametry behu (menitelne pres Serial) ----------
 static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to naladen)
 static uint8_t  cycleCount     = 10;    // pocet cyklu (1 uceni + 9 iteraci)
@@ -151,6 +158,7 @@ static uint32_t cycleT0      = 0;   // zacatek cyklu (t_ms je relativni)
 static uint8_t  cycleNo      = 0;
 
 static bool detectHit();
+static bool checkFdc();
 
 static float airMl()    { return (float)airSteps / AIR_STEPS_PER_ML; }
 static float pushedMl() { return (float)pushedSteps / AIR_STEPS_PER_ML; }
@@ -280,8 +288,10 @@ static void stepPulse() {
 // POZOR: musi ODEBRAT i znaky, ktere 'x' nejsou. Pouhy peek() by se zaseknul
 // na prvnim cizim znaku v bufferu a nouzove zastaveni by bylo mrtve - typicky
 // na '\n', ktery zbyde, kdyz Serial Monitor posila "Both NL & CR".
+static bool sensorFrozen = false;   // nastavi logSample(), ukonci beh
+
 static bool abortRequested() {
-    bool abort = false;
+    bool abort = sensorFrozen;
     while (Serial.available() > 0) {
         char c = (char)Serial.read();
         if (c == 'x' || c == 'X') abort = true;
@@ -299,12 +309,31 @@ static bool abortRequested() {
 //       r=predtlakovani (pacient uzavren)  p=otevreni pacienta + klid
 //       s=zastaveno detekci (pacient uz uzavren, prejezd serva)
 static void detectFeed(float c1, float c3);
+
+// Hlidani zamrzleho senzoru: bitove stejna hodnota FROZEN_LIMIT x po sobe
+// na kteremkoli kanalu ukonci beh (pres abortRequested()).
+static void watchFrozen(float c1, float c2, float c3) {
+    static float prev[N_CH];
+    static uint8_t same[N_CH];
+    float v[N_CH] = { c1, c2, c3 };
+    for (uint8_t i = 0; i < N_CH; i++) {
+        same[i] = (v[i] == prev[i]) ? same[i] + 1 : 0;
+        prev[i] = v[i];
+        if (same[i] >= FROZEN_LIMIT && !sensorFrozen) {
+            sensorFrozen = true;
+            Serial.print(F("# *** CHYBA: FDC1004 nemeri - kanal C"));
+            Serial.print(i + 1);
+            Serial.println(F(" se nemeni, beh zastaven ***"));
+        }
+    }
+}
 static float lastC1, lastC3;            // posledni zalogovany vzorek
 
 static void logSample(char phase) {
     float c1 = readPf(0);
     float c2 = readPf(1);
     float c3 = readPf(2);
+    watchFrozen(c1, c2, c3);
     lastC1 = c1; lastC3 = c3;
     detectFeed(c1, c3);
     Serial.print(cycleNo);
@@ -782,7 +811,7 @@ static void printInfo() {
 }
 
 static void printHelp() {
-    Serial.println(F("# h=napoveda i=info a=autoCAPDAC"));
+    Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004"));
     Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
     Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
@@ -823,6 +852,7 @@ static void handleLine() {
     switch (line[0]) {
         case 'h': printHelp(); break;
         case 'i': printInfo(); break;
+        case 'f': checkFdc(); break;
         case 'a':
             for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
             printInfo();
@@ -864,6 +894,7 @@ static void handleLine() {
         case 'g':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
             if (!tared) { Serial.println(F("# CHYBA: neprovedeno 't'")); break; }
+            if (!checkFdc()) break;
             runSeries();
             break;
         case '#': break;
@@ -886,6 +917,34 @@ static void pollSerial() {
             line[lineLen++] = c;
         }
     }
+}
+
+// Kontrola FDC1004: vypis konfigurace (zpetne cteni, vc. DONE bitu 3:0)
+// a zda se vysledky vsech kanalu meni. Vraci false, pokud senzor nemeri.
+static bool checkFdc() {
+    delay(FDC_CHECK_PERIOD_MS);       // DONE bity se ctenim vysledku nuluji
+    uint16_t conf = readReg(REG_FDC_CONF);
+    Serial.print(F("# FDC_CONF=0x")); Serial.print(conf, HEX);
+    for (uint8_t i = 0; i < N_CH; i++) {
+        Serial.print(F(" CONF_MEAS")); Serial.print(i + 1);
+        Serial.print(F("=0x")); Serial.print(readReg(REG_CONF_MEAS1 + i), HEX);
+    }
+    Serial.println();
+    int32_t first[N_CH];
+    bool changed[N_CH] = { false, false, false };
+    for (uint8_t i = 0; i < N_CH; i++) first[i] = readRaw(i);
+    for (uint8_t k = 0; k < FDC_CHECK_SAMPLES; k++) {
+        delay(FDC_CHECK_PERIOD_MS);
+        for (uint8_t i = 0; i < N_CH; i++) {
+            if (readRaw(i) != first[i]) changed[i] = true;
+        }
+    }
+    bool ok = true;
+    for (uint8_t i = 0; i < N_CH; i++) ok = ok && changed[i];
+    Serial.println(ok ? F("# FDC1004 meri OK")
+                      : F("# *** CHYBA: FDC1004 nemeri (vypnout a zapnout napajeni) ***"));
+    sensorFrozen = !ok;
+    return ok;
 }
 
 void setup() {
@@ -921,6 +980,7 @@ void setup() {
 
     applyConfig();
     for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
+    checkFdc();
 
     printInfo();
     printHelp();

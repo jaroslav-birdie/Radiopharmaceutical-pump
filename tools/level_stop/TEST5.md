@@ -139,6 +139,11 @@ Skutečný objem není potřeba.
    tools/serial_log.py /dev/ttyUSB0 test5.csv --baud 115200
    ```
 4. `t`, `a`, zkontrolovat `i`: CAPDAC1–3 nízké, `cykly=10`, `delta stop=0.70`.
+   Po startu i před každým `g` proběhne **kontrola FDC1004**
+   (`# FDC1004 meri OK`, ručně příkazem `f`). Pokud se hodnoty kanálů
+   nemění, série se nespustí – vypnout a zapnout napájení celé sestavy.
+   Za běhu ukončí sérii 10 bitově stejných vzorků po sobě na kterémkoli
+   kanálu (`# *** CHYBA: FDC1004 nemeri`).
 5. `g` – start, dál jen potvrzování.
 
 `x` kdykoli = zastavení. Log poslat jako **soubor**.
@@ -152,4 +157,4 @@ Skutečný objem není potřeba.
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `r<ml>` / `r` | předtlak ručně / výpočtem |
 
-Překlad (`avr-g++`): flash 19 270 B (58,8 %), SRAM 659 B (32,2 %), bez varování.
+Překlad (`avr-g++`): flash 20 190 B (61,6 %), SRAM 675 B (33,0 %), bez varování.
