@@ -98,11 +98,11 @@ Kód detektoru byl přeložený na PC a přehraný přes data:
 
 ---
 
-## Režim PROFIL (výchozí, `v30`) – úplné průběhy
+## Režim PROFIL (výchozí, `v20`) – úplné průběhy
 
 Cíl této sady: v každém cyklu **spolehlivě vytlačit veškerou kapalinu** a
 zaznamenat celý průběh signálů. Detekce běží jen „na stínu":
-- vytlačí se pevně `v` ml vzduchu (výchozí 30 ml, s doplňováním),
+- vytlačí se pevně `v` ml vzduchu (výchozí 20 ml, s jedním doplněním),
 - pacient se zavře hned po dojezdu, pak klid `d`, odvzdušnění a klid `o`,
 - detekce **nic nezastaví**, jen zapíše řádek `# STIN STOP @ …` (kde by
   zastavila) a `# STIN POJISTKA C1 @ …` (kde by zasáhla pojistka),
@@ -110,8 +110,10 @@ zaznamenat celý průběh signálů. Detekce běží jen „na stínu":
 - první `STIN STOP` v učení uloží F3 a D1 (`# NAUCENO …`), takže další
   cykly zapisují i místo, kde by δ dosáhla 0,7.
 
-Obsluha plní lahvičku **od oka, pokaždé jinak**. Po cyklu potvrdí, že je
-lahvička prázdná (`ano`, nebo `zbytek` – pak příště zvýšit `v`).
+Cyklus končí doplněním vzduchové stříkačky na 10 ml. Na začátku dalšího
+cyklu je **jediná výzva**: obsluha doplní kapalinu **od oka, pokaždé jinak**,
+a potvrdí. Poznámka k potvrzení jde do logu – pokud po minulém cyklu
+v lahvičce zůstala kapalina, napsat `zbytek` (a zvážit vyšší `v`).
 
 Z každého cyklu tak je vidět celý průběh i to, kde by detekce zastavila,
 a kolik vzduchu zbývalo do průchodu hladiny spodním prstencem.
@@ -205,10 +207,10 @@ Skutečný objem není potřeba.
 | příkaz | význam |
 |---|---|
 | `c<n>` | počet cyklů (výchozí 10) |
-| `v<ml>` / `v0` | režim PROFIL s daným objemem vzduchu (výchozí 30) / zastavení detekcí |
+| `v<ml>` / `v0` | režim PROFIL s daným objemem vzduchu (výchozí 20) / zastavení detekcí |
 | `d<x>` | práh δ (výchozí 0,7) |
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `r<ml>` / `r` | předtlak ručně / výpočtem |
 | `m` | průběžný výpis C1;C2;C3 podle mapy kanálů (medián, 2× za s), libovolný znak = konec |
 
-Překlad (`avr-g++`): flash 22 154 B (67,6 %), SRAM 686 B (33,5 %), bez varování.
+Překlad (`avr-g++`): flash 22 102 B (67,4 %), SRAM 686 B (33,5 %), bez varování.

@@ -146,7 +146,7 @@ static uint8_t  cycleCount     = 10;    // pocet cyklu (1 uceni + 9 iteraci)
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = -1.0f; // <0 = vypocet, jinak rucne (r<ml>)
 static float    deltaStop      = 0.7f;  // prah delta pro zastaveni (d<x>)
-static float    profileAirMl   = 30.0f; // >0 = PROFIL: vytlacit tolik vzduchu, detekce
+static float    profileAirMl   = 20.0f; // >0 = PROFIL: vytlacit tolik vzduchu, detekce
                                         // jen zapisuje (stin); 0 = zastaveni detekci (v<ml>)
 
 // ---------- typy detekce ----------
@@ -789,7 +789,9 @@ static bool runCycle(uint8_t n) {
     bool learnCycle = !learned;
     bool profile = profileAirMl > 0.0f;
     if (profile) {
-        if (!waitConfirm(F("PROFIL: naplnit lahvicku OD OKA (pokazde jinak), potvrdit"))) return false;
+        // Jedina vyzva cyklu: strikacka je po minulem cyklu uz doplnena,
+        // obsluha jen doplni kapalinu (poznamka, napr. 'zbytek', jde do logu).
+        if (!waitConfirm(F("PROFIL: doplnit kapalinu OD OKA (pokazde jinak), potvrdit"))) return false;
     } else if (learnCycle) {
         if (!waitConfirm(F("naplnit lahvicku (napr. 10 ml), potvrdit"))) return false;
     } else {
@@ -836,8 +838,7 @@ static bool runCycle(uint8_t n) {
     Serial.print(F(" hotov, vytlaceno ")); Serial.print(pushedMl(), 2);
     Serial.println(F(" ml vzduchu"));
 
-    if (!waitConfirm(profile ? F("je lahvicka prazdna? (ano / zbytek), poslat")
-                             : F("kde je hladina? (nad C3 / mezi / pod C1), poslat"))) return false;
+    if (!profile && !waitConfirm(F("kde je hladina? (nad C3 / mezi / pod C1), poslat"))) return false;
     if (guard) {
         Serial.println(F("# serie ukoncena pojistkou C1"));
         return false;
