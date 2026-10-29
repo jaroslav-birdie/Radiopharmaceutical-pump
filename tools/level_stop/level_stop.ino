@@ -146,6 +146,8 @@ static uint8_t  cycleCount     = 10;    // pocet cyklu (1 uceni + 9 iteraci)
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = -1.0f; // <0 = vypocet, jinak rucne (r<ml>)
 static float    deltaStop      = 0.7f;  // prah delta pro zastaveni (d<x>)
+static float    profileAirMl   = 30.0f; // >0 = PROFIL: vytlacit tolik vzduchu, detekce
+                                        // jen zapisuje (stin); 0 = zastaveni detekci (v<ml>)
 
 // ---------- typy detekce ----------
 // Pred prvni funkci a v parametrech funkci jen jako uint8_t: Arduino IDE
@@ -573,6 +575,7 @@ static float   learnedF3 = 0.0f, learnedD1 = 0.0f;
 static bool    learned = false;
 static bool    c3Fell = false;         // uceni: C3 uz vystoupalo a spadlo (odkryto)
 static float   hitM1, hitM3, hitDelta;
+static bool    shadowStopDone, shadowGuardDone;   // profil: udalost uz zapsana
 
 static bool detectHit() { return detHitKind != HIT_NONE; }
 
@@ -599,18 +602,45 @@ static void detectStart(uint8_t mode) {
     c1Peak = -1e9f; c3Peak = -1e9f; slopeMax = 0.0f;
     c1Base = (mode == DET_LEARN) ? c1Rest : learnedF3;
     c3Fell = false;
+    shadowStopDone = false; shadowGuardDone = false;
     detHitKind = HIT_NONE;
     detMode = (DetMode)mode;
 }
 
 // Okamzita reakce: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
 // protoze moveAir()/sampleFor() se po detectHit() hned vrati.
+static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
+    Serial.print(prefix);
+    Serial.print(kind == HIT_GUARD ? F("POJISTKA C1") : F("STOP"));
+    Serial.print(F(" @ ")); Serial.print(pushedMl(), 2);
+    Serial.print(F(" ml  C1=")); Serial.print(hitM1, 3);
+    Serial.print(F(" C3=")); Serial.print(hitM3, 3);
+    Serial.print(F(" delta=")); Serial.println(hitDelta, 3);
+}
+
+// Profil: udalost se jen zapise (kazdy druh jednou za cyklus), nic se
+// nezastavi. Uceni se presto ulozi, aby dalsi cykly mohly zapisovat delta.
+static void shadowFire(uint8_t kind) {
+    bool &done = (kind == HIT_GUARD) ? shadowGuardDone : shadowStopDone;
+    if (done) return;
+    done = true;
+    printEvent(F("# STIN "), kind);
+    if (kind == HIT_STOP && detMode == DET_LEARN && !learned) {
+        learnedF3 = hitM3;
+        learnedD1 = hitM1 - hitM3;
+        learned = true;
+        Serial.print(F("# NAUCENO F3=")); Serial.print(learnedF3, 3);
+        Serial.print(F(" D1=")); Serial.println(learnedD1, 3);
+    }
+}
+
 static void detectFire(uint8_t kind, float m1, float m3, float delta) {
+    hitM1 = m1; hitM3 = m3; hitDelta = delta;
+    if (profileAirMl > 0.0f) { shadowFire(kind); return; }
     curPatAngle = angPatIsolate;
     OCR1A = angleTicks(angPatIsolate);
     detHitKind = (DetHit)kind;
     detMode = DET_OFF;
-    hitM1 = m1; hitM3 = m3; hitDelta = delta;
 }
 
 // Pojistka C1, dve nezavisle podminky:
@@ -727,11 +757,25 @@ static bool pushUntilDetect() {
 }
 
 static void printHit() {
-    Serial.print(detHitKind == HIT_GUARD ? F("# *** POJISTKA C1") : F("# STOP"));
-    Serial.print(F(" @ ")); Serial.print(pushedMl(), 2);
-    Serial.print(F(" ml  C1=")); Serial.print(hitM1, 3);
-    Serial.print(F(" C3=")); Serial.print(hitM3, 3);
-    Serial.print(F(" delta=")); Serial.println(hitDelta, 3);
+    printEvent(detHitKind == HIT_GUARD ? F("# *** ") : F("# "), detHitKind);
+}
+
+// Profil: vytlaci se profileAirMl (s doplnovanim), detekce bezi jen jako
+// stin. Pacient se zavira hned po dojezdu, stejne jako pri detekci.
+static bool pushProfile() {
+    if (!openPatientAndHold()) return false;
+    while (pushedMl() < profileAirMl - 0.001f) {
+        if (airMl() < 0.01f) {
+            DetMode m = detMode;
+            detMode = DET_OFF;                 // skoky ventilu do detekce nepatri
+            if (!refillAir()) return false;
+            detectResetBuffers();
+            detMode = m;
+        }
+        float rest = profileAirMl - pushedMl();
+        if (!moveAir(rest < airMl() ? rest : airMl(), true, 'w', 1)) return false;
+    }
+    return patientValveTo(angPatIsolate);
 }
 
 // ============================================================
@@ -743,7 +787,10 @@ static bool runCycle(uint8_t n) {
     Serial.print('/'); Serial.print(cycleCount); Serial.println(F(" ====="));
 
     bool learnCycle = !learned;
-    if (learnCycle) {
+    bool profile = profileAirMl > 0.0f;
+    if (profile) {
+        if (!waitConfirm(F("PROFIL: naplnit lahvicku OD OKA (pokazde jinak), potvrdit"))) return false;
+    } else if (learnCycle) {
         if (!waitConfirm(F("naplnit lahvicku (napr. 10 ml), potvrdit"))) return false;
     } else {
         if (!waitConfirm(F("pridat roztok OD OKA (pokazde jinak), potvrdit"))) return false;
@@ -760,15 +807,18 @@ static bool runCycle(uint8_t n) {
     if (!precompress(precompMl())) return false;
 
     detectStart(learnCycle ? DET_LEARN : DET_STOP);
-    bool ok = pushUntilDetect();
+    bool ok = profile ? pushProfile() : pushUntilDetect();
     detMode = DET_OFF;
     if (!ok) return false;
-    printHit();
-    if (!sampleFor(SERVO_SETTLE_MS, 's')) return false;   // pacient uz zavren
-    bool guard = (detHitKind == HIT_GUARD);
+    bool guard = false;
+    if (!profile) {
+        printHit();
+        if (!sampleFor(SERVO_SETTLE_MS, 's')) return false;   // pacient uz zavren
+        guard = (detHitKind == HIT_GUARD);
+    }
     detHitKind = HIT_NONE;
 
-    if (learnCycle && !guard) {
+    if (!profile && learnCycle && !guard) {
         learnedF3 = hitM3;
         learnedD1 = hitM1 - hitM3;
         learned = true;
@@ -786,7 +836,8 @@ static bool runCycle(uint8_t n) {
     Serial.print(F(" hotov, vytlaceno ")); Serial.print(pushedMl(), 2);
     Serial.println(F(" ml vzduchu"));
 
-    if (!waitConfirm(F("kde je hladina? (nad C3 / mezi / pod C1), poslat"))) return false;
+    if (!waitConfirm(profile ? F("je lahvicka prazdna? (ano / zbytek), poslat")
+                             : F("kde je hladina? (nad C3 / mezi / pod C1), poslat"))) return false;
     if (guard) {
         Serial.println(F("# serie ukoncena pojistkou C1"));
         return false;
@@ -834,6 +885,12 @@ static void printInfo() {
     Serial.print(F("# cykly=")); Serial.print(cycleCount);
     Serial.print(F("  rychlost=1 ml/")); Serial.print(flowSecPerMl);
     Serial.print(F(" s  delta stop=")); Serial.println(deltaStop, 2);
+    if (profileAirMl > 0.0f) {
+        Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
+        Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
+    } else {
+        Serial.println(F("# REZIM: zastaveni detekci"));
+    }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
         Serial.print(F("rucne ")); Serial.print(precompManualMl, 2);
@@ -861,6 +918,7 @@ static void printHelp() {
     Serial.println(F("# u0=pacient IZOLACE u1=pacient OTEVRENO"));
     Serial.println(F("# u2=vzduch S-V u3=vzduch S-F u4=vzduch V-F"));
     Serial.println(F("# c<n>=pocet cyklu  s<s>=sekund na 1 ml  d<x>=prah delta"));
+    Serial.println(F("# v<ml>=PROFIL (vytlacit ml, detekce jen zapisuje)  v0=zastaveni"));
     Serial.println(F("# r<ml>=predtlak rucne  r=predtlak vypoctem  #<text>=znacka"));
 }
 
@@ -943,6 +1001,12 @@ static void handleLine() {
         case 's': {
             int v = atoi(&line[1]);
             if (v >= 1 && v <= 60) { flowSecPerMl = (uint8_t)v; printInfo(); }
+            break;
+        }
+        case 'v': {
+            float v = atof(&line[1]);
+            if (v == 0.0f || (v >= 5.0f && v <= 60.0f)) { profileAirMl = v; printInfo(); }
+            else Serial.println(F("# CHYBA: v0 (zastaveni) nebo v5..v60 (profil)"));
             break;
         }
         case 'd': {

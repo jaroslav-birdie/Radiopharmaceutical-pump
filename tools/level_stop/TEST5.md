@@ -98,6 +98,36 @@ Kód detektoru byl přeložený na PC a přehraný přes data:
 
 ---
 
+## Režim PROFIL (výchozí, `v30`) – úplné průběhy
+
+Cíl této sady: v každém cyklu **spolehlivě vytlačit veškerou kapalinu** a
+zaznamenat celý průběh signálů. Detekce běží jen „na stínu":
+- vytlačí se pevně `v` ml vzduchu (výchozí 30 ml, s doplňováním),
+- pacient se zavře hned po dojezdu, pak klid `d`, odvzdušnění a klid `o`,
+- detekce **nic nezastaví**, jen zapíše řádek `# STIN STOP @ …` (kde by
+  zastavila) a `# STIN POJISTKA C1 @ …` (kde by zasáhla pojistka),
+  každý druh jednou za cyklus,
+- první `STIN STOP` v učení uloží F3 a D1 (`# NAUCENO …`), takže další
+  cykly zapisují i místo, kde by δ dosáhla 0,7.
+
+Obsluha plní lahvičku **od oka, pokaždé jinak**. Po cyklu potvrdí, že je
+lahvička prázdná (`ano`, nebo `zbytek` – pak příště zvýšit `v`).
+
+Z každého cyklu tak je vidět celý průběh i to, kde by detekce zastavila,
+a kolik vzduchu zbývalo do průchodu hladiny spodním prstencem.
+
+`v0` přepne zpět na zastavování detekcí (původní test 5 naslepo).
+
+> Po vyprázdnění jde zbytek vzduchu do pacientské hadičky – jen pro
+> zkušební sestavu s hadičkou do nádoby.
+
+### 1. běh s mapou kanálů (režim zastavení)
+
+Učení zastavilo při 13,6 ml: C1 6,46 pF (spodní zakrytý), C3 2,72 pF
+(horní odkrytý), δ = 1. Obsluha: hladina **na horní hraně C1**, tedy na
+spodním okraji okna mezi prstenci. Přehrání stejných dat přes kód
+detektoru na PC dává totéž (13,60 ml, 6,456 / 2,716 pF).
+
 ## Průběh
 
 | # | krok | fáze |
@@ -175,9 +205,10 @@ Skutečný objem není potřeba.
 | příkaz | význam |
 |---|---|
 | `c<n>` | počet cyklů (výchozí 10) |
+| `v<ml>` / `v0` | režim PROFIL s daným objemem vzduchu (výchozí 30) / zastavení detekcí |
 | `d<x>` | práh δ (výchozí 0,7) |
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `r<ml>` / `r` | předtlak ručně / výpočtem |
 | `m` | průběžný výpis C1;C2;C3 podle mapy kanálů (medián, 2× za s), libovolný znak = konec |
 
-Překlad (`avr-g++`): flash 21 024 B (64,2 %), SRAM 680 B (33,2 %), bez varování.
+Překlad (`avr-g++`): flash 22 154 B (67,6 %), SRAM 686 B (33,5 %), bez varování.
