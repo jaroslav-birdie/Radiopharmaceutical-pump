@@ -33,7 +33,7 @@ okolí) je násobí stejně. Podíl ho vykrátí:
 ### Cyklus 1 – učení
 
 Tlačí se, dokud C3 nepřestane klesat:
-- C3 nejdřív vystoupalo nad klid `k` o víc než **5 ×** jeho šum,
+- C3 nejdřív vystoupalo nad klid `k` o víc než **10 %** klidové hodnoty,
 - pak spadlo od maxima o víc než **polovinu** tohoto vzestupu,
 - strmost poklesu (přes poslední 1 ml) je menší než **0,3 ×** největší
   strmost téhož poklesu.
@@ -48,10 +48,10 @@ Zastaví se, jakmile **δ ≥ 0,7**. δ se vyhodnocuje, až když C1 − F3 > 0,
 ### Pojistka C1 (ve všech cyklech)
 
 Pacient se okamžitě zavře a série končí, když platí jedna ze dvou podmínek:
-1. **Poslední záchrana (vždy aktivní):** C1 kleslo pod svůj klid `k`
-   o víc než 5 × šum. Nad prstenci i mezi nimi je C1 vždy nad klidem.
+1. **Poslední záchrana (vždy aktivní):** C1 kleslo o víc než **10 %**
+   pod svůj klid `k`. Nad prstenci i mezi nimi je C1 vždy nad klidem.
 2. C1 v cyklu vystoupalo a pak spadlo pod **polovinu** svého vzestupu.
-   - V učení se vzestup počítá proti C1 z `k`, musí být větší než 5 × šum
+   - V učení se vzestup počítá proti C1 z `k`, musí být větší než 10 % klidu
      a podmínka platí až po odkrytí C3. Hladina může projít C1 až po C3.
    - Později se vzestup počítá proti F3 a musí být větší než D1 / 2.
 
@@ -61,13 +61,15 @@ Pacientský ventil se zavírá **okamžitě, uvnitř vzorkování**: motor stoj�
 protože se smyčka tlačení hned ukončí. Teprve po 15 s klidu pod tlakem se
 lahvička odvzdušní.
 
-Všechny prahy jsou poměry: 5 × šum, 0,5 × vzestup, 0,3 × strmost, 0,7,
-0,3 × D1, 0,5.
+Všechny prahy jsou poměry k hodnotám z téhož běhu: 10 % klidu,
+0,5 × vzestup, 0,3 × strmost, 0,7, 0,3 × D1, 0,5. **Na šumu nezávisí
+nic** – šum se mění s okolím (v testu 5 od 0,03 do 0,14 pF).
 
 > **Proč ne 30 × šum (první verze):** v 1. běhu testu 5 byl šum v klidu
 > 0,14 pF místo 0,03 pF. 30 × šum = 4 pF, víc než celý signál. Učení
 > nezabralo a pojistka C1 se vůbec neaktivovala. Teď se pokles měří
-> vzestupem samotného signálu a šum slouží jen jako minimální práh.
+> vzestupem samotného signálu a jako minimální práh slouží 10 % klidové
+> hodnoty prstence.
 Žádné pF ani ml.
 
 ### Zpětné ověření na datech testů 3 a 4
@@ -168,4 +170,4 @@ Skutečný objem není potřeba.
 | `r<ml>` / `r` | předtlak ručně / výpočtem |
 | `m` | průběžný výpis C1;C2;C3 (medián, 2× za s), libovolný znak = konec |
 
-Překlad (`avr-g++`): flash 20 828 B (63,6 %), SRAM 676 B (33,0 %), bez varování.
+Překlad (`avr-g++`): flash 20 834 B (63,6 %), SRAM 676 B (33,0 %), bez varování.

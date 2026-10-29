@@ -113,7 +113,7 @@
 #define DET_MED_N           10
 #define DET_HIST_STEP_ML     0.25f  // krok historie C3 pro strmost
 #define DET_HIST_LEN         5      // 5 bodu = strmost pres 1 ml
-#define DET_RISE_SIGMA       5.0f   // vzestup prstence nad klid 'k' > 5 sum. odchylek
+#define DET_RISE_FRAC        0.1f   // vyznamna zmena prstence = 10 % jeho klidu 'k'
 #define DET_FALL_FRAC        0.5f   // uceni: pokles C3 od maxima > 0,5 x jeho vzestupu
 #define DET_PLATEAU_FRAC     0.3f   // ucenie: konec poklesu = strmost < 0,3 x max. strmost
 #define DET_DENOM_FRAC       0.3f   // delta se pocita, az C1 - F3 > 0,3 x D1
@@ -543,7 +543,7 @@ static uint8_t histCount = 0;
 static float   histNextMl = 0.0f;
 static float   c1Peak, c3Peak, slopeMax;
 static float   c1Base;                 // zaklad pojistky: C1 z 'k' (uceni), F3 (dale)
-static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // statistika klidu 'k'
+static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // klid 'k' (sd jen do logu)
 static float   learnedF3 = 0.0f, learnedD1 = 0.0f;
 static bool    learned = false;
 static bool    c3Fell = false;         // uceni: C3 uz vystoupalo a spadlo (odkryto)
@@ -589,17 +589,17 @@ static void detectFire(uint8_t kind, float m1, float m3, float delta) {
 }
 
 // Pojistka C1, dve nezavisle podminky:
-//  1) posledni zachrana (vzdy aktivni): C1 kleslo pod svuj klid 'k'
-//     o vic nez 5 sumovych odchylek - mezi prstenci i nad nimi je C1
-//     vzdy nad klidem, pod nim je jen po odkryti
+//  1) posledni zachrana (vzdy aktivni): C1 kleslo o vic nez 10 % pod
+//     svuj klid 'k' - mezi prstenci i nad nimi je C1 vzdy nad klidem,
+//     pod nim je jen po odkryti
 //  2) C1 uz bylo v cyklu vysoko a spadlo pod polovinu vzestupu. V uceni
 //     az po odkryti C3 (hladina muze projit C1 jen po C3) a se vzestupem
-//     nad sumem, pozdeji se vzestupem nad polovinou D1.
+//     nad 10 % klidu, pozdeji se vzestupem nad polovinou D1.
 static bool guardTripped(float m1) {
-    if (m1 < c1Rest - DET_RISE_SIGMA * c1Sigma) return true;
+    if (m1 < c1Rest * (1.0f - DET_RISE_FRAC)) return true;
     float rise = c1Peak - c1Base;
     if (detMode == DET_LEARN) {
-        if (!c3Fell || rise < DET_RISE_SIGMA * c1Sigma) return false;
+        if (!c3Fell || rise < DET_RISE_FRAC * c1Rest) return false;
     } else if (rise < 0.5f * learnedD1) {
         return false;
     }
@@ -607,11 +607,10 @@ static bool guardTripped(float m1) {
 }
 
 // Uceni: strmost poklesu C3 pres posledni 1 ml; konec poklesu, kdyz C3
-// nejdriv vystoupalo nad klid (> 5 sumovych odchylek), pak spadlo od
+// nejdriv vystoupalo nad klid (o vic nez 10 % klidu), pak spadlo od
 // maxima o vic nez polovinu tohoto vzestupu a strmost klesla pod 0,3 x
-// nejvetsi strmost tohoto poklesu. Pokles se meri vzestupem, ne sumem -
-// pri vyssim sumu (test 5, 1. beh: sd 0,14 pF) by 30 sigma bylo vic nez
-// cely signal.
+// nejvetsi strmost tohoto poklesu. Zadny prah nezavisi na sumu - ten se
+// meni s okolim (test 5: sd 0,03 az 0,14 pF).
 static bool learnPlateau(float m3) {
     float ml = pushedMl();
     if (ml < histNextMl) return false;
@@ -623,7 +622,7 @@ static bool learnPlateau(float m3) {
                 / (DET_HIST_STEP_ML * (DET_HIST_LEN - 1));
     if (slope > slopeMax) slopeMax = slope;
     float rise = c3Peak - c3Rest;
-    c3Fell = rise > DET_RISE_SIGMA * c3Sigma
+    c3Fell = rise > DET_RISE_FRAC * c3Rest
           && (c3Peak - m3) > DET_FALL_FRAC * rise;
     return c3Fell && slope < DET_PLATEAU_FRAC * slopeMax;
 }
