@@ -126,6 +126,13 @@ static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = -1.0f; // <0 = vypocet, jinak rucne (r<ml>)
 static float    deltaStop      = 0.7f;  // prah delta pro zastaveni (d<x>)
 
+// ---------- typy detekce ----------
+// Pred prvni funkci a v parametrech funkci jen jako uint8_t: Arduino IDE
+// vklada automaticky generovane prototypy pred prvni funkci a vyctovy typ
+// v nich by jeste nemusel byt znamy.
+enum DetMode : uint8_t { DET_OFF, DET_LEARN, DET_STOP };
+enum DetHit  : uint8_t { HIT_NONE, HIT_STOP, HIT_GUARD };
+
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
 static uint8_t angAirSyrVial, angAirSyrFilt, angAirVialFilt;
@@ -495,8 +502,6 @@ static bool waitConfirm(const __FlashStringHelper *prompt) {
 // ============================================================
 //  Detekce
 // ============================================================
-enum DetMode : uint8_t { DET_OFF, DET_LEARN, DET_STOP };
-enum DetHit  : uint8_t { HIT_NONE, HIT_STOP, HIT_GUARD };
 
 static DetMode detMode = DET_OFF;
 static DetHit  detHitKind = HIT_NONE;
@@ -532,20 +537,20 @@ static void detectResetBuffers() {
     histNextMl = pushedMl();
 }
 
-static void detectStart(DetMode mode) {
+static void detectStart(uint8_t mode) {
     detectResetBuffers();
     c1Peak = -1e9f; c3Peak = -1e9f; slopeMax = 0.0f;
     c1Base = (mode == DET_LEARN) ? c1Rest : learnedF3;
     detHitKind = HIT_NONE;
-    detMode = mode;
+    detMode = (DetMode)mode;
 }
 
 // Okamzita reakce: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
 // protoze moveAir()/sampleFor() se po detectHit() hned vrati.
-static void detectFire(DetHit kind, float m1, float m3, float delta) {
+static void detectFire(uint8_t kind, float m1, float m3, float delta) {
     curPatAngle = angPatIsolate;
     OCR1A = angleTicks(angPatIsolate);
-    detHitKind = kind;
+    detHitKind = (DetHit)kind;
     detMode = DET_OFF;
     hitM1 = m1; hitM3 = m3; hitDelta = delta;
 }
