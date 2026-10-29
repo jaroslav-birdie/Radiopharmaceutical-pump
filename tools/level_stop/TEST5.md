@@ -1,8 +1,18 @@
 # Test 5 – zastavení hladiny mezi prstenci (naslepo)
 
-Sketch `level_stop.ino`. Kanály jako v testech 3–4: C1 spodní prstenec,
+Sketch `level_stop.ino`. Sloupce jako v testech 3–4: C1 spodní prstenec,
 C2 svislá, C3 horní prstenec. Ovladače (FDC1004, serva, motor) jsou
 převzaté z `tools/air_push_profile/`.
+
+> **Mapa kanálů.** Od testu 5 čte čip elektrody jinak, než odpovídá
+> popiskům zapojení: dotykový test (příkaz `m`, prst na elektrodě = kanál
+> na 16 pF, opakováno 2×) dal **spodní prstenec → CIN2, svislá → CIN3,
+> horní prstenec → CIN1**. Shodně to ukázaly i průběhy obou běhů testu 5.
+> Příčina nalezena není (fyzické zapojení vizuálně odpovídá CIN1/CIN2/CIN3).
+> Sketch proto čte elektrody přes mapu `CH_LOWER_CIN`, `CH_VERT_CIN`,
+> `CH_UPPER_CIN`; sloupce C1/C2/C3 znamenají vždy spodní/svislou/horní
+> elektrodu a mapa se vypisuje na začátek logu. **Před každou sérií ověřit
+> `m`:** prst na spodním prstenci musí přebít C1, na svislé C2, na horním C3.
 
 ## Otázka
 
@@ -168,6 +178,6 @@ Skutečný objem není potřeba.
 | `d<x>` | práh δ (výchozí 0,7) |
 | `s<s>` | sekund na 1 ml (výchozí 5) |
 | `r<ml>` / `r` | předtlak ručně / výpočtem |
-| `m` | průběžný výpis C1;C2;C3 (medián, 2× za s), libovolný znak = konec |
+| `m` | průběžný výpis C1;C2;C3 podle mapy kanálů (medián, 2× za s), libovolný znak = konec |
 
-Překlad (`avr-g++`): flash 20 834 B (63,6 %), SRAM 676 B (33,0 %), bez varování.
+Překlad (`avr-g++`): flash 21 024 B (64,2 %), SRAM 680 B (33,2 %), bez varování.

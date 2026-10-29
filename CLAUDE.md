@@ -123,6 +123,13 @@ adresa `0x50`) paralelně s OLED.
 | **SHLD2** | plošné elektrody naproti sobě, **nad oběma** kruhovými elektrodami | **aktivní shield** snímacího prostoru |
 | CIN4 | nepoužito | volné |
 
+> ⚠️ **Elektrické přiřazení se od testu 5 liší od popisků:** dotykový test
+> (prst na elektrodě přebije kanál na 16 pF) opakovaně ukazuje spodní
+> prstenec → CIN2, svislá → CIN3, horní prstenec → CIN1, přestože vizuálně
+> je zapojení podle tabulky výše. Příčina zatím nenalezena. Testovací
+> sketch `tools/level_stop/` to řeší mapou kanálů; produkční firmware musí
+> mít stejnou mapu a ověřovat ji dotykovým testem, ne popisky.
+
 ### Geometrie elektrod (svisle, shora dolů)
 
 ```

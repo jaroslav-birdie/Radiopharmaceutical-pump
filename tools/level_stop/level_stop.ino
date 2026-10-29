@@ -39,7 +39,19 @@
 #define RAW_PER_PF        524288.0f
 #define RAW_NEAR_FULL     7000000L
 
-#define N_CH              3   // CIN1 (spodni prstenec), CIN2 (svisla), CIN3 (horni prstenec)
+#define N_CH              3   // pocet merenych vstupu FDC1004 (CIN1..CIN3)
+
+// ---------- mapa kanalu ----------
+// Ktery vstup FDC1004 (CIN1..CIN3) cte kterou elektrodu. Urceno DOTYKOVYM
+// TESTEM (prikaz 'm', prst na elektrode = kanal na 16 pF), ne popisky:
+// spodni prstenec -> CIN2, svisla -> CIN3, horni prstenec -> CIN1.
+// Sloupce C1/C2/C3 v logu i detekce znamenaji vzdy spodni/svislou/horni
+// elektrodu. Po zmene zapojeni upravit jen tyto tri radky a overit 'm'.
+#define CH_LOWER_CIN      2   // spodni prstenec
+#define CH_VERT_CIN       3   // svisla elektroda
+#define CH_UPPER_CIN      1   // horni prstenec
+static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) == 0x0E,
+              "mapa kanalu musi byt permutace CIN1..CIN3");
 #define BAUD             115200UL
 
 // ---------- piny (shodne s config.h hlavniho firmware) ----------
@@ -209,6 +221,12 @@ static int32_t readRaw(uint8_t ch) {
     return ((int32_t)msb << 8) | (lsb >> 8);
 }
 
+// Cteni podle elektrody: 0 = spodni, 1 = svisla, 2 = horni (viz mapa kanalu).
+static const uint8_t chMap[N_CH] = { CH_LOWER_CIN - 1, CH_VERT_CIN - 1, CH_UPPER_CIN - 1 };
+
+static float readPf(uint8_t ch);
+static float readElectrode(uint8_t e) { return readPf(chMap[e]); }
+
 static float readPf(uint8_t ch) {
     return readRaw(ch) / RAW_PER_PF + capdac[ch] * CAPDAC_STEP_PF;
 }
@@ -332,9 +350,9 @@ static void watchFrozen(float c1, float c2, float c3) {
 static float lastC1, lastC3;            // posledni zalogovany vzorek
 
 static void logSample(char phase) {
-    float c1 = readPf(0);
-    float c2 = readPf(1);
-    float c3 = readPf(2);
+    float c1 = readElectrode(0);
+    float c2 = readElectrode(1);
+    float c3 = readElectrode(2);
     watchFrozen(c1, c2, c3);
     lastC1 = c1; lastC3 = c3;
     detectFeed(c1, c3);
@@ -347,10 +365,17 @@ static void logSample(char phase) {
     Serial.print(';'); Serial.println(c3, 4);
 }
 
+static void printChannelMap() {
+    Serial.print(F("# C1 = spodni prstenec (CIN")); Serial.print(CH_LOWER_CIN);
+    Serial.print(F("), C2 = svisla (CIN")); Serial.print(CH_VERT_CIN);
+    Serial.print(F("), C3 = horni prstenec (CIN")); Serial.print(CH_UPPER_CIN);
+    Serial.println(F(")"));
+}
+
 static void printLogHeader() {
     Serial.println(F("# cyklus;t_ms;faze;vytlaceno_ml;C1;C2;C3"));
     Serial.println(F("# t_ms je relativni k zacatku cyklu; C1..C3 v pF, BEZ filtrace"));
-    Serial.println(F("# C1 = spodni prstenec, C2 = svisla, C3 = horni prstenec"));
+    printChannelMap();
 }
 
 // ============================================================
@@ -802,9 +827,10 @@ static void runSeries() {
 //  Diagnostika a prikazy
 // ============================================================
 static void printInfo() {
-    Serial.print(F("# CAPDAC1=")); Serial.print(capdac[0]);
-    Serial.print(F(" CAPDAC2=")); Serial.print(capdac[1]);
-    Serial.print(F(" CAPDAC3=")); Serial.println(capdac[2]);
+    Serial.print(F("# CAPDAC CIN1=")); Serial.print(capdac[0]);
+    Serial.print(F(" CIN2=")); Serial.print(capdac[1]);
+    Serial.print(F(" CIN3=")); Serial.println(capdac[2]);
+    printChannelMap();
     Serial.print(F("# cykly=")); Serial.print(cycleCount);
     Serial.print(F("  rychlost=1 ml/")); Serial.print(flowSecPerMl);
     Serial.print(F(" s  delta stop=")); Serial.println(deltaStop, 2);
@@ -864,17 +890,18 @@ static void setValveCmd(char which) {
     Serial.print(F("# ventil -> ")); Serial.println(ang);
 }
 
-// Prubezny vypis C1..C3 (median 10 vzorku) do stisku libovolne klavesy.
-// Slouzi k identifikaci elektrod: pri pomalem plneni prazdne lahvicky
-// musi zareagovat nejdriv C1 (spodni), pak C3 (horni).
+// Prubezny vypis C1..C3 (median 10 vzorku, uz podle mapy kanalu) do
+// stisku libovolne klavesy. Kontrola mapy: prst na spodnim prstenci musi
+// prebit C1, na svisle elektrode C2, na hornim prstenci C3 (16 pF).
 static void monitor() {
     Serial.println(F("# monitor C1;C2;C3 [pF], libovolny znak = konec"));
+    printChannelMap();
     delay(200);
     while (Serial.available() > 0) Serial.read();
     while (Serial.available() == 0) {
         float v[N_CH][DET_MED_N];
         for (uint8_t k = 0; k < DET_MED_N; k++) {
-            for (uint8_t i = 0; i < N_CH; i++) v[i][k] = readPf(i);
+            for (uint8_t i = 0; i < N_CH; i++) v[i][k] = readElectrode(i);
             delay(MONITOR_PERIOD_MS / DET_MED_N);
         }
         Serial.print(F("m;"));
@@ -993,7 +1020,7 @@ void setup() {
     delay(100);
 
     Serial.println(F("# TEST 5 - zastaveni hladiny mezi prstenci (naslepo)"));
-    Serial.println(F("# kanaly: C1 spodni prstenec, C2 svisla, C3 horni prstenec"));
+    printChannelMap();
 
     pinMode(PIN_STEPPER_EN, OUTPUT);
     digitalWrite(PIN_STEPPER_EN, STEPPER_DISABLED_LEVEL);
