@@ -1,5 +1,12 @@
 # Test 3 – vyhodnocení (dva prstence, nestíněná penicilinka)
 
+> **Oprava po testu 4:** závěr o „artefaktu vázaném na kapalinovou cestu
+> k pacientovi" níže neplatí. Nárůst prstenců zůstává i v klidu s uzavřeným
+> pacientem a odvzdušněnou lahvičkou – je to stav hladiny pod spodní hranou
+> `SHLD2` (viz `CLAUDE.md`, „Výsledek testu 3"). Stejná data ukazují
+> `C1 − C3` = +4,4 až +4,8 pF mezi prstenci ve všech pěti cyklech; na tom
+> stojí detekce v `tools/level_stop/`.
+
 Data: 5 cyklů, 22 112 řádků, 20 Hz, `f5`, `l10`, 20 ml vzduchu, CAPDAC1–3 = 0.
 Náplněný objem do logu nezapsán (potvrzení prázdná) – absolutní polohy
 přechodů proto nejde vztáhnout k objemu, jen mezi sebou.

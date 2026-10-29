@@ -145,10 +145,17 @@ CIN2    konec svislé elektrody
 >
 > **Výsledek testu 3** (`tools/air_push_profile/ANALYZA_TEST3.md`): ostřejší
 > hranu rozdíl nedává, ale přechod C3 předchází přechodu C1 o stálých
-> 5,3 ± 0,3 ml vytlačeného vzduchu (vnitřní měřítko bez kalibrace). Dominantní
-> problém je **multiplikativní artefakt vázaný na kapalinovou cestu
-> k pacientovi** (+2,5 až +4 pF při tlačení, skok ±1 pF při pohybu
-> pacientského ventilu) – 5× větší než signál hladiny v klidu (~0,5 pF).
+> 5,3 ± 0,3 ml vytlačeného vzduchu (vnitřní měřítko bez kalibrace).
+>
+> **Oprava po testu 4:** nárůst o +2,5 až +4 pF **není** artefakt pacientské
+> cesty ani tlaku – zůstává i v klidu s uzavřeným pacientem a odvzdušněnou
+> lahvičkou. Je to **stav hladiny**: dokud hladina sahá k `SHLD2`, kapalina
+> je buzená stíněním a prstence ji téměř nevidí (C ≈ 3,0 pF); pod spodní
+> hranou `SHLD2` zakrytý prstenec vystoupá (~5,5–7 pF), odkrytý spadne na
+> podlahu (~2,0–2,4 pF). Pacientský ventil to mění jen o ~0,6 pF.
+> Mezi prstenci je `C1 − C3` = +3,4 až +4,8 pF, jinde ≤ +1 pF.
+> Relativní detekce `δ = (C1 − C3)/(C1 − F3)` se testuje v
+> `tools/level_stop/TEST5.md` (cíl: zastavit hladinu vždy mezi prstenci).
 
 ### Poznatky z měření (test 1 a 2, `tools/air_push_profile/`)
 
