@@ -35,6 +35,13 @@ běhu dává **obě** hranice okna. Podrobnosti viz [Bez učení](#bez-učení--
    pokaždé jiná. Rozestup přechodů horního a spodního prstence je
    **6,05 ± 0,11 ml vzduchu**. Středy prstenců jsou 6 mm od sebe, takže
    **1 ml vzduchu ≈ 1 mm hladiny**.
+
+   > ⚠️ **Osa je vytlačený vzduch, ne roztok.** Mezera 4 mm odpovídá ~4 ml
+   > vzduchu, ale podle pozorování hladiny obsluhou jen **~2 ml roztoku**
+   > (≈ 0,5 ml/mm). Na 1 ml vytlačeného roztoku tu připadají ~2 ml vzduchu,
+   > zbytek jde na stlačení plynu v lahvičce. Objem roztoku se proto
+   > z objemu vzduchu odvozovat nedá. Všechny „ml" v této zprávě jsou ml
+   > vzduchu, pokud není výslovně uvedeno jinak.
 3. **Hladina je mezi prstenci, právě když δ leží na plató ≈ 1,0–1,15**
    a pojistka C1 ještě nezasáhla. Tyto dvě podmínky jsou signálové hranice
    okna (obr. 2).
@@ -113,7 +120,7 @@ Rezerva od zastavení k pojistce pro různé prahy (cykly 2–5):
 | **0,95** | **4,02 ± 0,21** |
 
 Rozptyl polohy zastavení vůči pojistce je ~0,2 ml vzduchu, tedy ~0,2 mm
-hladiny, při mezeře 4 mm.
+hladiny (~0,1 ml roztoku), při mezeře 4 mm (~2 ml roztoku).
 
 ---
 
@@ -127,7 +134,7 @@ jako reference pro vyhodnocení.
 ![bez uceni](img/obr4_bez_uceni.png)
 
 Poloha překročení vůči **hornímu okraji mezery** (ml vzduchu, průměr ± sd
-přes 5 cyklů; mezera je 4 ml):
+přes 5 cyklů; mezera je ~4 ml vzduchu ≈ 4 mm ≈ 2 ml roztoku):
 
 | kritérium (jen z vlastního běhu) | poloha [ml] | komentář |
 |---|---|---|
@@ -150,10 +157,11 @@ vracel i uvnitř mezery.
 - **Vstup do mezery** spolehlivě ukazují dvě kritéria bez učení:
   C3/C1 ≤ 0,45 a pokles C3 o 50 % od maxima v daném běhu.
 - **Spodní hranici** hlídá vzestup C3/C1 nad 0,50 nebo pojistka C1.
-- **Okno pro zastavení** je tak celá mezera, ~4 ml vzduchu. Zastavit na
-  vstupu znamená stát u horního okraje mezery. Do středu mezery by se
-  dalo dojet jen dalším pevným objemem vzduchu (~2 ml); vodítko pro střed
-  přímo v signálu není, poměr je v mezeře plochý.
+- **Okno pro zastavení** je tak celá mezera: 4 mm, ~2 ml roztoku
+  (~4 ml vzduchu). Zastavit na vstupu znamená stát u horního okraje
+  mezery. Do středu mezery by se dalo dojet jen dalším pevným objemem
+  vzduchu (~2 ml vzduchu ≈ 1 ml roztoku); vodítko pro střed přímo
+  v signálu není, poměr je v mezeře plochý.
 - **Pozor:** C3/C1 obsahuje i suché kapacity elektrod a kabelů (~2,3 pF),
   hodnota plató tedy závisí na sestavě. Pokles C3 o 50 % od vlastního
   maxima předpokládá, že C3 v běhu nejdřív vystoupí (start nad `SHLD2`).
@@ -183,7 +191,7 @@ vracel i uvnitř mezery.
    pojistka C1. Obojí jen z vlastního běhu.
 3. **Ověřit** tento postup v režimu zastavení naslepo a vizuálně
    zkontrolovat, že hladina stojí těsně pod horním prstencem. Převod
-   1 ml ≈ 1 mm je odvozený z rozestupu přechodů, ne změřený. Sketch zatím
-   tato kritéria nemá.
-3. **Svislou elektrodu C2** pro detekci nepoužívat. Může sloužit nanejvýš
+   1 ml vzduchu ≈ 1 mm je odvozený z rozestupu přechodů; šířka mezery
+   ~2 ml roztoku je z pozorování obsluhy. Sketch zatím tato kritéria nemá.
+4. **Svislou elektrodu C2** pro detekci nepoužívat. Může sloužit nanejvýš
    jako kontrola pohybu hladiny.

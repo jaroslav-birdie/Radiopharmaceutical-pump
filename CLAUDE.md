@@ -166,7 +166,9 @@ CIN2    konec svislé elektrody
 >
 > **Profily testu 5** (`tools/level_stop/ANALYZA_TEST5.md`, 5 cyklů, různá
 > náplň): průběh se mezi cykly kryje, rozestup přechodů 6,05 ± 0,11 ml
-> vzduchu (≈ 1 ml/mm). Hladina je mezi prstenci, když **δ ≥ 0,95** (plató
+> vzduchu (≈ 1 ml **vzduchu**/mm). Mezera 4 mm je podle pozorování jen
+> **~2 ml roztoku** – vzduch : roztok ≈ 2 : 1 (stlačení plynu), objem
+> roztoku se z osy vzduchu odvozovat nedá. Hladina je mezi prstenci, když **δ ≥ 0,95** (plató
 > ~1,0–1,15) a **pojistka C1** ještě nezasáhla. Práh 0,7 zastavuje ve
 > středu horního prstence (příliš brzy); δ = 0,95 nechává 4,0 ± 0,2 ml
 > rezervu do pojistky.
