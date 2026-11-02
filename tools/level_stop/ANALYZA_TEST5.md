@@ -40,8 +40,8 @@ běhu dává **obě** hranice okna. Podrobnosti viz [Bez učení](#bez-učení--
    > vzduchu, ale podle pozorování hladiny obsluhou jen **~2 ml roztoku**
    > (≈ 0,5 ml/mm). *Doplněno:* podle pozdějšího měření výšky hladiny
    > (0,67 ml/mm, tabulka v `CLAUDE.md`) je to **~2,7 ml roztoku** a poměr
-   > vzduch : roztok ≈ 1,5 : 1. Na 1 ml vytlačeného roztoku tu připadají ~2 ml vzduchu,
-   > zbytek jde na stlačení plynu v lahvičce. Objem roztoku se proto
+   > vzduch : roztok ≈ 1,5 : 1. Vzduch navíc oproti roztoku jde na
+   > stlačení plynu v lahvičce. Objem roztoku se proto
    > z objemu vzduchu odvozovat nedá. Všechny „ml" v této zprávě jsou ml
    > vzduchu, pokud není výslovně uvedeno jinak.
 3. **Hladina je mezi prstenci, právě když δ leží na plató ≈ 1,0–1,15**
