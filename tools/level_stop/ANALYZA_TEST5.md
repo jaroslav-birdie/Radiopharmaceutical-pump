@@ -38,7 +38,9 @@ běhu dává **obě** hranice okna. Podrobnosti viz [Bez učení](#bez-učení--
 
    > ⚠️ **Osa je vytlačený vzduch, ne roztok.** Mezera 4 mm odpovídá ~4 ml
    > vzduchu, ale podle pozorování hladiny obsluhou jen **~2 ml roztoku**
-   > (≈ 0,5 ml/mm). Na 1 ml vytlačeného roztoku tu připadají ~2 ml vzduchu,
+   > (≈ 0,5 ml/mm). *Doplněno:* podle pozdějšího měření výšky hladiny
+   > (0,67 ml/mm, tabulka v `CLAUDE.md`) je to **~2,7 ml roztoku** a poměr
+   > vzduch : roztok ≈ 1,5 : 1. Na 1 ml vytlačeného roztoku tu připadají ~2 ml vzduchu,
    > zbytek jde na stlačení plynu v lahvičce. Objem roztoku se proto
    > z objemu vzduchu odvozovat nedá. Všechny „ml" v této zprávě jsou ml
    > vzduchu, pokud není výslovně uvedeno jinak.

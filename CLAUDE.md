@@ -91,6 +91,23 @@ Výchozí stav musí být vždy fyzicky zajištěn obsluhou před stiskem START.
 množstvím náplně, ne geometrií. Poloha snímací elektrody (kritická hladina) i kalibrační
 postup jsou tedy pro obě varianty identické.
 
+### Výška hladiny v penicilince (změřeno)
+
+Výška hladiny nade dnem lahvičky v závislosti na objemu kapaliny:
+
+| Objem [ml] | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Výška [mm] | 3,5 | 5,5 | 7,0 | 8,5 | 10,0 | 11,5 | 13,0 | 14,5 | 16,0 | 17,5 |
+
+- Od 2 ml **lineární**: `h [mm] = 2,5 + 1,5 · V [ml]`, tedy
+  `V [ml] = (h − 2,5) / 1,5` → **1,5 mm/ml ≈ 0,67 ml/mm**
+  (vnitřní průřez ≈ 6,7 cm², vnitřní průměr ≈ 29 mm).
+- Pod 2 ml přechází do tvaru dna (1. ml = 3,5 mm místo 4,0 mm podle přímky).
+- Nad 10 ml neměřeno; pro 20 ml náplň by přímka dávala ~32,5 mm (ověřit).
+- **Zbytkový objem po zastavení** (hladina na spodní hraně horního prstence,
+  viz kritérium C3/C1) = `(h_spodní hrana CIN3 − 2,5) / 1,5` ml.
+- **Mezera mezi prstenci 4 mm ≈ 2,7 ml** roztoku, prstenec 2 mm ≈ 1,3 ml.
+
 ---
 
 ## Krokové motory – drivery (DRV8825)
@@ -166,9 +183,10 @@ CIN2    konec svislé elektrody
 >
 > **Profily testu 5** (`tools/level_stop/ANALYZA_TEST5.md`, 5 cyklů, různá
 > náplň): průběh se mezi cykly kryje, rozestup přechodů 6,05 ± 0,11 ml
-> vzduchu (≈ 1 ml **vzduchu**/mm). Mezera 4 mm je podle pozorování jen
-> **~2 ml roztoku** – vzduch : roztok ≈ 2 : 1 (stlačení plynu), objem
-> roztoku se z osy vzduchu odvozovat nedá. Hladina je mezi prstenci, když **δ ≥ 0,95** (plató
+> vzduchu (≈ 1 ml **vzduchu**/mm). Mezera 4 mm je **~2,7 ml roztoku**
+> (podle změřené výšky hladiny 0,67 ml/mm; odhad pozorováním ~2 ml) –
+> vzduch : roztok ≈ 1,5 : 1 (stlačení plynu), objem roztoku se z osy
+> vzduchu odvozovat nedá. Hladina je mezi prstenci, když **δ ≥ 0,95** (plató
 > ~1,0–1,15) a **pojistka C1** ještě nezasáhla. Práh 0,7 zastavuje ve
 > středu horního prstence (příliš brzy); δ = 0,95 nechává 4,0 ± 0,2 ml
 > rezervu do pojistky.
