@@ -93,7 +93,8 @@ postup jsou tedy pro obě varianty identické.
 
 ### Výška hladiny v penicilince (změřeno)
 
-Výška hladiny nade dnem lahvičky v závislosti na objemu kapaliny:
+Výška hladiny měřená od **vnějšího dna** lahvičky (= dosedací plocha ve
+studni) v závislosti na objemu kapaliny. Lahvička je přísně válcová.
 
 | Objem [ml] | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -103,7 +104,9 @@ Výška hladiny nade dnem lahvičky v závislosti na objemu kapaliny:
   `V [ml] = (h − 2,5) / 1,5` → **1,5 mm/ml ≈ 0,67 ml/mm**
   (vnitřní průřez ≈ 6,7 cm², vnitřní průměr ≈ 29 mm).
 - Pod 2 ml přechází do tvaru dna (1. ml = 3,5 mm místo 4,0 mm podle přímky).
-- Nad 10 ml neměřeno; pro 20 ml náplň by přímka dávala ~32,5 mm (ověřit).
+- Stejná přímka platí i pro **10–20 ml** (válcová lahvička): 20 ml ≈ 32,5 mm.
+- Výšky elektrod ve studni se proto počítají přímo od dosedací plochy dna,
+  bez korekce na tloušťku skla (ta je v přímce už obsažená).
 - **Zbytkový objem po zastavení** (hladina na spodní hraně horního prstence,
   viz kritérium C3/C1) = `(h_spodní hrana CIN3 − 2,5) / 1,5` ml.
 - **Mezera mezi prstenci 4 mm ≈ 2,7 ml** roztoku, prstenec 2 mm ≈ 1,3 ml.
