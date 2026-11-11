@@ -131,6 +131,13 @@ dosedací plochy dna (= vnější dno lahvičky):
 - **Suché kapacity** se v přístroji dají měřit jen **bez lahvičky** (při
   kalibraci, lahvička se vkládá až potom). Test 6 měří i prázdnou lahvičku,
   aby se ukázal příspěvek skla a opakovatelnost usazení.
+- **Výsledek testu 6** (`tools/level_stop/ANALYZA_TEST6.md`): ostrý **skok**
+  všech kanálů naráz (pravděpodobně hladina u hrotu jehly) je stálý
+  referenční bod. `C3/C1 ≤ 0,7` padá 6,27 ± 0,19 ml vzduchu před skok
+  (= střed horního prstence); plató C3/C1 ve studni ≈ 0,55 (test 5: 0,40);
+  přechody široké (~5,6 ml vzduchu 10–90 %). Horní prstenec suchý stabilní
+  (sklo +0,08 pF), **CIN1 a CIN2 driftují** (−0,5 / −1 pF za minutu) –
+  podezření na kontakt/kabel.
 
 ---
 
