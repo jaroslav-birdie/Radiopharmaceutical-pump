@@ -922,7 +922,7 @@ static void printInfo() {
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004 m=monitor"));
-    Serial.println(F("# n<s><v><h>=mapa kanalu (napr. n123)  D=suche elektrody  I=test I2C"));
+    Serial.println(F("# n<s><v><h>=mapa kanalu  D=suche elektrody  I=test I2C  S=jednorazova mereni"));
     Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
     Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
@@ -1020,6 +1020,38 @@ static void i2cIdTest() {
                                  : F("# sbernice OK"));
 }
 
+// Prikaz 'S': jednorazova mereni kazdeho vstupu zvlast (bez REPEAT),
+// cekani na DONE. Kdyz v REPEAT jedno mereni nedobehne (zkrat nebo
+// pretizeni vstupu ci stineni, slabe napajeni), zablokuje i ostatni.
+// CIN4 neni zapojeny - srovnani: dobehne-li CIN4 a CIN1..3 ne, je
+// problem v pripojenych elektrodach/stineni, ne v cipu.
+#define SHOT_TIMEOUT_MS  100
+#define SHOT_REPEATS       5
+
+static void singleShotTest() {
+    writeReg(REG_CONF_MEAS1 + 3, (3 << 13) | (0x4 << 10));     // MEAS4 = CIN4
+    for (uint8_t ch = 0; ch < 4; ch++) {
+        Serial.print(F("# CIN")); Serial.print(ch + 1); Serial.print(':');
+        for (uint8_t k = 0; k < SHOT_REPEATS; k++) {
+            writeReg(REG_FDC_CONF, (3 << 10) | (1 << (7 - ch)));
+            uint32_t t0 = millis();
+            bool done = false;
+            while (!done && millis() - t0 < SHOT_TIMEOUT_MS) {
+                done = readReg(REG_FDC_CONF) & (1 << (3 - ch));
+            }
+            if (done) {
+                Serial.print(' '); Serial.print(millis() - t0);
+                Serial.print(F("ms/")); Serial.print(readRaw(ch));
+            } else {
+                Serial.print(F(" TIMEOUT"));
+            }
+        }
+        Serial.println();
+    }
+    applyConfig();
+    Serial.println(F("# (OK = cca 3 ms a ruzne hodnoty; TIMEOUT = mereni nedobehne)"));
+}
+
 // Nastaveni mapy kanalu: n<spodni><svisla><horni>, cislice 1..3, kazda
 // jednou (napr. n123, n213). Overit dotykovym testem 'm'.
 static void setChannelMap(const char *arg) {
@@ -1093,6 +1125,7 @@ static void handleLine() {
         case 'm': monitor(); break;
         case 'n': setChannelMap(&line[1]); break;
         case 'I': i2cScan(); i2cIdTest(); break;
+        case 'S': singleShotTest(); break;
         case 'D':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
             dryMeasure();
