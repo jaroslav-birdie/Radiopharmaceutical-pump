@@ -929,17 +929,30 @@ static void printInfo() {
     Serial.print(F(" ml  tared=")); Serial.println(tared ? F("ano") : F("ne"));
 }
 
+// Napoveda: postup testu 6 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004 m=monitor"));
-    Serial.println(F("# n<s><v><h>=mapa kanalu  D=suche elektrody  I=test I2C  S=jednorazova mereni"));
-    Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
-    Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
-    Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
-    Serial.println(F("# u0=pacient IZOLACE u1=pacient OTEVRENO"));
-    Serial.println(F("# u2=vzduch S-V u3=vzduch S-F u4=vzduch V-F"));
-    Serial.println(F("# c<n>=pocet cyklu  s<s>=sekund na 1 ml  d<x>=prah delta"));
-    Serial.println(F("# v<ml>=PROFIL (vytlacit ml, detekce jen zapisuje)  v0=zastaveni"));
-    Serial.println(F("# r<ml>=predtlak rucne  r=predtlak vypoctem  #<text>=znacka"));
+    Serial.println(F("# ================ POSTUP TESTU 6 ================"));
+    Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
+    Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
+    Serial.println(F("# 2) MAPA: 'm', prst postupne na spodni / svislou / horni"));
+    Serial.println(F("#    elektrodu -> 16 pF musi ukazat C1 / C2 / C3."));
+    Serial.println(F("#    Jinak 'n<s><v><h>' (napr. n213) a znovu 'm'."));
+    Serial.println(F("#    'm' se ukonci libovolnym znakem."));
+    Serial.println(F("# 3) SUCHE ELEKTRODY: 'D', dal podle vyzev (bez lahvicky,"));
+    Serial.println(F("#    3x prazdna SUCHA lahvicka, znovu bez lahvicky)"));
+    Serial.println(F("# 4) 't' = vzduchova strikacka je plna"));
+    Serial.println(F("# 5) 'i' = kontrola: REZIM PROFIL 20 ml, cykly=5, FDC OK"));
+    Serial.println(F("# 6) 'g' = 5 cyklu. Na vyzvu naplnit lahvicku OD OKA"));
+    Serial.println(F("#    9-12 ml (hladina nad hornim prstencem), vlozit, Enter."));
+    Serial.println(F("#    Zbyla-li po cyklu kapalina, napsat 'zbytek'."));
+    Serial.println(F("# 7) log poslat jako soubor"));
+    Serial.println(F("# ------------------- prikazy -------------------"));
+    Serial.println(F("# h napoveda  i info  f kontrola FDC  a CAPDAC  x STOP"));
+    Serial.println(F("# m monitor  n<s><v><h> mapa  D suche  t plna  g start"));
+    Serial.println(F("# j/k jog vzduch +-0.5 ml  u0/u1 pacient ISOL/OTEV"));
+    Serial.println(F("# u2/u3/u4 vzduch S-V/S-F/V-F  #<text> znacka do logu"));
+    Serial.println(F("# v<ml> profil (v0=zastaveni)  c<n> cykly  s<s> s/ml"));
+    Serial.println(F("# d<x> prah delta  r<ml>/r predtlak rucne/vypoctem"));
 }
 
 static void jogAir(bool push) {
@@ -988,77 +1001,6 @@ static void monitor() {
         Serial.println(median(v[2]), 3);
     }
     while (Serial.available() > 0) Serial.read();
-}
-
-// Prikaz 'I': diagnostika I2C sbernice, kterou sdili i jine periferie.
-// 1) sken adres - kdo na sbernici odpovida,
-// 2) opakovane cteni ID FDC1004 - kolikrat se cteni nepovedlo nebo vratilo
-//    jinou hodnotu. Spolehliva sbernice ma 0 chyb.
-// FDC1004 ma pevnou adresu 0x50; tu maji ve vychozim stavu i EEPROM 24Cxx
-// (0x50-0x57, casto na modulech RTC/displeju). Dve zarizeni na 0x50 se
-// pri cteni slijou (otevreny kolektor = AND) a hodnoty pak vypadaji
-// konstantne nebo nesmyslne - skenem se to nepozna, jen testem ID.
-#define I2C_ID_READS   200
-
-static void i2cScan() {
-    Serial.print(F("# I2C sken:"));
-    uint8_t found = 0;
-    for (uint8_t a = 1; a < 127; a++) {
-        Wire.beginTransmission(a);
-        if (Wire.endTransmission() == 0) {
-            Serial.print(F(" 0x")); Serial.print(a, HEX);
-            found++;
-        }
-    }
-    Serial.print(F("  (")); Serial.print(found); Serial.println(F(" zarizeni)"));
-    Serial.println(F("# znama: 0x50 FDC1004 (i EEPROM 24Cxx 0x50-0x57!), 0x3C OLED"));
-}
-
-static void i2cIdTest() {
-    uint16_t bad = 0, zero = 0;
-    for (uint16_t i = 0; i < I2C_ID_READS; i++) {
-        uint16_t m = readReg(REG_MANUF_ID);
-        uint16_t d = readReg(REG_DEVICE_ID);
-        if (m == 0 || d == 0) zero++;
-        else if (m != MANUF_ID_VAL || d != DEVICE_ID_VAL) bad++;
-    }
-    Serial.print(F("# test ID FDC1004: ")); Serial.print(I2C_ID_READS);
-    Serial.print(F(" cteni, chybna hodnota ")); Serial.print(bad);
-    Serial.print(F(", bez odpovedi ")); Serial.println(zero);
-    Serial.println((bad || zero) ? F("# *** SBERNICE NESPOLEHLIVA (kolize adres, pull-upy, delka) ***")
-                                 : F("# sbernice OK"));
-}
-
-// Prikaz 'S': jednorazova mereni kazdeho vstupu zvlast (bez REPEAT),
-// cekani na DONE. Kdyz v REPEAT jedno mereni nedobehne (zkrat nebo
-// pretizeni vstupu ci stineni, slabe napajeni), zablokuje i ostatni.
-// CIN4 neni zapojeny - srovnani: dobehne-li CIN4 a CIN1..3 ne, je
-// problem v pripojenych elektrodach/stineni, ne v cipu.
-#define SHOT_TIMEOUT_MS  100
-#define SHOT_REPEATS       5
-
-static void singleShotTest() {
-    writeReg(REG_CONF_MEAS1 + 3, (3 << 13) | (0x4 << 10));     // MEAS4 = CIN4
-    for (uint8_t ch = 0; ch < 4; ch++) {
-        Serial.print(F("# CIN")); Serial.print(ch + 1); Serial.print(':');
-        for (uint8_t k = 0; k < SHOT_REPEATS; k++) {
-            writeReg(REG_FDC_CONF, (3 << 10) | (1 << (7 - ch)));
-            uint32_t t0 = millis();
-            bool done = false;
-            while (!done && millis() - t0 < SHOT_TIMEOUT_MS) {
-                done = readReg(REG_FDC_CONF) & (1 << (3 - ch));
-            }
-            if (done) {
-                Serial.print(' '); Serial.print(millis() - t0);
-                Serial.print(F("ms/")); Serial.print(readRaw(ch));
-            } else {
-                Serial.print(F(" TIMEOUT"));
-            }
-        }
-        Serial.println();
-    }
-    applyConfig();
-    Serial.println(F("# (OK = cca 3 ms a ruzne hodnoty; TIMEOUT = mereni nedobehne)"));
 }
 
 // Nastaveni mapy kanalu: n<spodni><svisla><horni>, cislice 1..3, kazda
@@ -1133,8 +1075,6 @@ static void handleLine() {
         case 'f': fdcEnsure(); break;
         case 'm': monitor(); break;
         case 'n': setChannelMap(&line[1]); break;
-        case 'I': i2cScan(); i2cIdTest(); break;
-        case 'S': singleShotTest(); break;
         case 'D':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
             dryMeasure();
@@ -1361,8 +1301,6 @@ void setup() {
 
     printInfo();
     printHelp();
-    Serial.println(F("# POSTUP: vzduchova strikacka PLNA, penicilinka ve studni,"));
-    Serial.println(F("#         't' vychozi stav, pak 'g' start"));
 }
 
 void loop() {

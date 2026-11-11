@@ -129,17 +129,17 @@ Log poslat jako **soubor**.
 
 ## Příkazy
 
+Postup testu krok za krokem vypíše sketch po startu a na příkaz `h`.
+
 | příkaz | význam |
 |---|---|
 | `m` | průběžný výpis C1;C2;C3 (dotykový test), libovolný znak = konec |
 | `n<s><v><h>` | mapa kanálů, např. `n123`, `n213` |
 | `D` | měření suchých elektrod (bez lahvičky / prázdná lahvička) |
-| `S` | jednorázová měření CIN1–CIN4 zvlášť (čas do DONE, hodnota) – kdo blokuje převodník |
-| `I` | test I2C: sken adres + 200× čtení ID FDC1004 (sběrnici sdílí i jiné periferie) |
 | `f` | kontrola FDC1004 po vstupech (saturace / I2C / zamrznutí); při chybě až 3× uvolnění sběrnice a reinicializace čipu |
 | `t` | vzduchová stříkačka plná |
 | `g` | start 5 cyklů |
 | `v<ml>` / `c<n>` | objem vzduchu na cyklus / počet cyklů |
 | `x` | zastavení |
 
-Překlad (`avr-g++`): flash 25 684 B (78,4 %), SRAM 690 B (33,7 %), bez varování. Flash je blízko limitu 80 %.
+Překlad (`avr-g++`): flash 25 336 B (77,3 %), SRAM 690 B (33,7 %), bez varování.
