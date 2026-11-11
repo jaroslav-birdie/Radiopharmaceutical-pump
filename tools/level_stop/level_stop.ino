@@ -806,6 +806,7 @@ static bool runCycle(uint8_t n) {
     } else {
         if (!waitConfirm(F("pridat roztok OD OKA (pokazde jinak), potvrdit"))) return false;
     }
+    if (!fdcEnsure()) return false;      // senzor mohl mezi cykly zamrznout
 
     steppersEnable();
     pushedSteps = 0;
@@ -1343,6 +1344,10 @@ void setup() {
         Serial.println(F("# CHYBA: cip neodpovida (ocekavano 0x5449 / 0x1004)"));
     }
 
+    // FDC1004 az po dojezdu serv: rozjezd obou serv do vychozich poloh
+    // bere velky proud a pokles napajeni FDC1004 zasekne (konfigurace
+    // zustane, prevod stoji, DONE=0) - test 6, prvni nastaveni po startu.
+    delay(SERVO_SETTLE_MS);
     fdcInit();
     fdcEnsure();
 
