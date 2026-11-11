@@ -208,6 +208,16 @@ P3 = 2,00 pF (suché hodnoty bez lahvičky, opakované měření).
   plató velkou rezervu). Polohu ale neurčí přesněji než C3/C1 a horní
   prahy (≥ 0,68) chytají šum v počáteční fázi. Potřebuje suché hodnoty.
 
+**Zarovnání od začátku cyklu** (obr. 6): stejné křivky na ose
+vytlačeného vzduchu od začátku. Cykly 1 a 5 jsou posunuté o ~3 ml, protože
+měly víc náplně (plnilo se od oka). Od začátku padá `C3/C1 ≤ 0,72` na
+10,9 ± 1,6 ml a skok na 17,5 ± 1,4 ml – rozptyl je daný náplní, ne
+detekcí. Vzdálenost mezi nimi je 6,6 ± 0,3 ml. Detekce sama běží vždy
+od začátku a vidí jen minulé vzorky; skok slouží jen při vyhodnocení jako
+pravítko, které náplň vyruší.
+
+![od zacatku](img6/obr6_kombinace_od_zacatku.png)
+
 **Pojistka (spodní hranice) z rozdílu:** od okamžiku C3/C1 ≤ 0,72 sledovat
 max. C1 − C3 (medián 2 s). Když klesne pod **75 % vlastního maxima**,
 hladina vstupuje do spodního prstence: **2,13 ± 0,27 ml před skokem**.
