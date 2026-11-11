@@ -258,11 +258,12 @@ CIN2    konec svislé elektrody
 > nemění; po každé reinicializaci jen jeden převod. Nastalo v testu 5 i 6,
 > vyřešil pohyb koncovkami elektrod na modulu (test 6). Jedno měření, které
 > nedoběhne (zkrat/přerušení vstupu nebo stínění), zablokuje v REPEAT
-> i ostatní kanály. **Druhá, častější příčina (test 6): pokles napájení
-> při rozjezdu serv po startu** – první nastavení FDC1004 hned po
-> `servoAttach()` zamrzlo, reinicializace po dojezdu serv prošla.
-> FDC1004 nastavovat až po ustálení serv; serva napájet z vlastního zdroje
-> (společná GND), FDC1004 s blokovacím kondenzátorem u modulu. Diagnostika v `tools/level_stop/`: `f` (po vstupech),
+> i ostatní kanály. **Další podezřelá příčina (test 6): přepis `CONF_MEASx`
+> za běžícího REPEAT** – reinicializace náhodně procházely/selhávaly i po
+> dojezdu serv. Konfiguraci proto zapisovat jen se zastaveným měřením
+> (`FDC_CONF = 0`, počkat na doběh převodu, zapsat `CONF_MEASx`, spustit
+> REPEAT). Zatím neověřeno na HW. Serva přesto napájet z vlastního zdroje
+> (společná GND) a FDC1004 mít s blokovacím kondenzátorem u modulu. Diagnostika v `tools/level_stop/`: `f` (po vstupech),
 > `S` (jednorázová měření CIN1–4). **Konektory elektrod zajistit proti
 > pohybu**; v produkci kontrolu `DONE`/měnících se hodnot dělat při každém
 > startu i za běhu.

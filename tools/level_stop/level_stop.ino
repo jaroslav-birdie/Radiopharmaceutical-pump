@@ -141,6 +141,7 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define FDC_CHECK_SAMPLES   20
 #define FDC_REINIT_TRIES     3       // pokusy o reinicializaci, kdyz kontrola selze
 #define FDC_RESET_MS        10       // po softwarovem resetu FDC1004
+#define FDC_STOP_MS          5       // po zastaveni mereni, nez se prepise konfigurace
 #define FDC_CONF_RST    0x8000       // FDC_CONF bit 15 = reset
 #define FDC_CONF_CHECK  0x0DF0       // RATE, REPEAT a MEAS_1..4 pro zpetnou kontrolu
 #define FDC_CHECK_PERIOD_MS 10
@@ -215,7 +216,14 @@ static uint16_t readReg(uint8_t reg) {
 // 400 S/s (RATE=11) misto 100 S/s - kanaly se prevadi postupne (~2,5 ms
 // kazdy), takze pri 20 vzorcich/s a trech kanalech pochazi kazdy vzorek
 // z cerstve dokoncene konverze, ne z opakovane precteneho stareho vysledku.
+//
+// Pred zapisem CONF_MEASx se mereni ZASTAVI (FDC_CONF = 0) a pocka se na
+// dobeh rozjeteho prevodu. Prepis konfigurace behem bezici REPEAT sekvence
+// obcas prevodnik zasekne (konfigurace sedi, DONE=0, hodnoty stoji) -
+// test 6: nahodne uspesne/neuspesne reinicializace.
 static void applyConfig() {
+    writeReg(REG_FDC_CONF, 0);
+    delay(FDC_STOP_MS);
     uint16_t measMask = 0;
     for (uint8_t i = 0; i < N_CH; i++) {
         writeReg(REG_CONF_MEAS1 + i,
