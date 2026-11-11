@@ -917,7 +917,7 @@ static void printInfo() {
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004 m=monitor"));
-    Serial.println(F("# n<s><v><h>=mapa kanalu (napr. n123)  D=suche elektrody"));
+    Serial.println(F("# n<s><v><h>=mapa kanalu (napr. n123)  D=suche elektrody  I=test I2C"));
     Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
     Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
@@ -974,6 +974,45 @@ static void monitor() {
         Serial.println(median(v[2]), 3);
     }
     while (Serial.available() > 0) Serial.read();
+}
+
+// Prikaz 'I': diagnostika I2C sbernice, kterou sdili i jine periferie.
+// 1) sken adres - kdo na sbernici odpovida,
+// 2) opakovane cteni ID FDC1004 - kolikrat se cteni nepovedlo nebo vratilo
+//    jinou hodnotu. Spolehliva sbernice ma 0 chyb.
+// FDC1004 ma pevnou adresu 0x50; tu maji ve vychozim stavu i EEPROM 24Cxx
+// (0x50-0x57, casto na modulech RTC/displeju). Dve zarizeni na 0x50 se
+// pri cteni slijou (otevreny kolektor = AND) a hodnoty pak vypadaji
+// konstantne nebo nesmyslne - skenem se to nepozna, jen testem ID.
+#define I2C_ID_READS   200
+
+static void i2cScan() {
+    Serial.print(F("# I2C sken:"));
+    uint8_t found = 0;
+    for (uint8_t a = 1; a < 127; a++) {
+        Wire.beginTransmission(a);
+        if (Wire.endTransmission() == 0) {
+            Serial.print(F(" 0x")); Serial.print(a, HEX);
+            found++;
+        }
+    }
+    Serial.print(F("  (")); Serial.print(found); Serial.println(F(" zarizeni)"));
+    Serial.println(F("# znama: 0x50 FDC1004 (i EEPROM 24Cxx 0x50-0x57!), 0x3C OLED"));
+}
+
+static void i2cIdTest() {
+    uint16_t bad = 0, zero = 0;
+    for (uint16_t i = 0; i < I2C_ID_READS; i++) {
+        uint16_t m = readReg(REG_MANUF_ID);
+        uint16_t d = readReg(REG_DEVICE_ID);
+        if (m == 0 || d == 0) zero++;
+        else if (m != MANUF_ID_VAL || d != DEVICE_ID_VAL) bad++;
+    }
+    Serial.print(F("# test ID FDC1004: ")); Serial.print(I2C_ID_READS);
+    Serial.print(F(" cteni, chybna hodnota ")); Serial.print(bad);
+    Serial.print(F(", bez odpovedi ")); Serial.println(zero);
+    Serial.println((bad || zero) ? F("# *** SBERNICE NESPOLEHLIVA (kolize adres, pull-upy, delka) ***")
+                                 : F("# sbernice OK"));
 }
 
 // Nastaveni mapy kanalu: n<spodni><svisla><horni>, cislice 1..3, kazda
@@ -1048,6 +1087,7 @@ static void handleLine() {
         case 'f': checkFdc(); break;
         case 'm': monitor(); break;
         case 'n': setChannelMap(&line[1]); break;
+        case 'I': i2cScan(); i2cIdTest(); break;
         case 'D':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
             dryMeasure();

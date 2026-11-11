@@ -134,9 +134,11 @@ Log poslat jako **soubor**.
 | `m` | průběžný výpis C1;C2;C3 (dotykový test), libovolný znak = konec |
 | `n<s><v><h>` | mapa kanálů, např. `n123`, `n213` |
 | `D` | měření suchých elektrod (bez lahvičky / prázdná lahvička) |
+| `I` | test I2C: sken adres + 200× čtení ID FDC1004 (sběrnici sdílí i jiné periferie) |
+| `f` | kontrola FDC1004 po vstupech (saturace / I2C / zamrznutí) |
 | `t` | vzduchová stříkačka plná |
 | `g` | start 5 cyklů |
 | `v<ml>` / `c<n>` | objem vzduchu na cyklus / počet cyklů |
 | `x` | zastavení |
 
-Překlad (`avr-g++`): flash 24 080 B (73,5 %), SRAM 690 B (33,7 %), bez varování.
+Překlad (`avr-g++`): flash 24 650 B (75,2 %), SRAM 690 B (33,7 %), bez varování.
