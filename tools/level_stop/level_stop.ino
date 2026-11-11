@@ -42,14 +42,16 @@
 #define N_CH              3   // pocet merenych vstupu FDC1004 (CIN1..CIN3)
 
 // ---------- mapa kanalu ----------
-// Ktery vstup FDC1004 (CIN1..CIN3) cte kterou elektrodu. Urceno DOTYKOVYM
-// TESTEM (prikaz 'm', prst na elektrode = kanal na 16 pF), ne popisky:
-// spodni prstenec -> CIN2, svisla -> CIN3, horni prstenec -> CIN1.
+// Ktery vstup FDC1004 (CIN1..CIN3) cte kterou elektrodu. Overuje se
+// DOTYKOVYM TESTEM (prikaz 'm', prst na elektrode = kanal na 16 pF), ne
+// popisky. Tady jsou vychozi hodnoty po startu (studna z testu 6 podle
+// popisku); za behu se meni prikazem n<spodni><svisla><horni>, napr. n213
+// pro zkusebni lahvicku z testu 5 (spodni CIN2, svisla CIN3, horni CIN1).
 // Sloupce C1/C2/C3 v logu i detekce znamenaji vzdy spodni/svislou/horni
-// elektrodu. Po zmene zapojeni upravit jen tyto tri radky a overit 'm'.
-#define CH_LOWER_CIN      2   // spodni prstenec
-#define CH_VERT_CIN       3   // svisla elektroda
-#define CH_UPPER_CIN      1   // horni prstenec
+// elektrodu.
+#define CH_LOWER_CIN      1   // spodni prstenec
+#define CH_VERT_CIN       2   // svisla elektroda
+#define CH_UPPER_CIN      3   // horni prstenec
 static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) == 0x0E,
               "mapa kanalu musi byt permutace CIN1..CIN3");
 #define BAUD             115200UL
@@ -139,10 +141,12 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define FDC_CHECK_SAMPLES   20
 #define FDC_CHECK_PERIOD_MS 10
 #define MONITOR_PERIOD_MS  500       // prikaz 'm': vypis C1..C3 kazdych 0,5 s
+#define DRY_MEASURE_MS   10000UL     // prikaz 'D': delka jednoho mereni suchych elektrod
+#define DRY_REINSERTS        3       // prikaz 'D': pocet vlozeni prazdne lahvicky
 
 // ---------- parametry behu (menitelne pres Serial) ----------
 static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to naladen)
-static uint8_t  cycleCount     = 10;    // pocet cyklu (1 uceni + 9 iteraci)
+static uint8_t  cycleCount     = 5;     // pocet cyklu
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = -1.0f; // <0 = vypocet, jinak rucne (r<ml>)
 static float    deltaStop      = 0.7f;  // prah delta pro zastaveni (d<x>)
@@ -224,7 +228,7 @@ static int32_t readRaw(uint8_t ch) {
 }
 
 // Cteni podle elektrody: 0 = spodni, 1 = svisla, 2 = horni (viz mapa kanalu).
-static const uint8_t chMap[N_CH] = { CH_LOWER_CIN - 1, CH_VERT_CIN - 1, CH_UPPER_CIN - 1 };
+static uint8_t chMap[N_CH] = { CH_LOWER_CIN - 1, CH_VERT_CIN - 1, CH_UPPER_CIN - 1 };
 
 static float readPf(uint8_t ch);
 static float readElectrode(uint8_t e) { return readPf(chMap[e]); }
@@ -349,14 +353,14 @@ static void watchFrozen(float c1, float c2, float c3) {
         }
     }
 }
-static float lastC1, lastC3;            // posledni zalogovany vzorek
+static float lastC1, lastC2, lastC3;    // posledni zalogovany vzorek
 
 static void logSample(char phase) {
     float c1 = readElectrode(0);
     float c2 = readElectrode(1);
     float c3 = readElectrode(2);
     watchFrozen(c1, c2, c3);
-    lastC1 = c1; lastC3 = c3;
+    lastC1 = c1; lastC2 = c2; lastC3 = c3;
     detectFeed(c1, c3);
     Serial.print(cycleNo);
     Serial.print(';'); Serial.print(millis() - cycleT0);
@@ -368,9 +372,9 @@ static void logSample(char phase) {
 }
 
 static void printChannelMap() {
-    Serial.print(F("# C1 = spodni prstenec (CIN")); Serial.print(CH_LOWER_CIN);
-    Serial.print(F("), C2 = svisla (CIN")); Serial.print(CH_VERT_CIN);
-    Serial.print(F("), C3 = horni prstenec (CIN")); Serial.print(CH_UPPER_CIN);
+    Serial.print(F("# C1 = spodni prstenec (CIN")); Serial.print(chMap[0] + 1);
+    Serial.print(F("), C2 = svisla (CIN")); Serial.print(chMap[1] + 1);
+    Serial.print(F("), C3 = horni prstenec (CIN")); Serial.print(chMap[2] + 1);
     Serial.println(F(")"));
 }
 
@@ -913,6 +917,7 @@ static void printInfo() {
 
 static void printHelp() {
     Serial.println(F("# h=napoveda i=info a=autoCAPDAC f=kontrola FDC1004 m=monitor"));
+    Serial.println(F("# n<s><v><h>=mapa kanalu (napr. n123)  D=suche elektrody"));
     Serial.println(F("# t=deklarace plne vzduchove strikacky (10 ml)"));
     Serial.println(F("# g=spustit serii   x=NOUZOVE ZASTAVENI"));
     Serial.println(F("# j/k=jog vzduch +-0.5 ml (odvzdusneni hadicky)"));
@@ -971,6 +976,70 @@ static void monitor() {
     while (Serial.available() > 0) Serial.read();
 }
 
+// Nastaveni mapy kanalu: n<spodni><svisla><horni>, cislice 1..3, kazda
+// jednou (napr. n123, n213). Overit dotykovym testem 'm'.
+static void setChannelMap(const char *arg) {
+    uint8_t seen = 0, v[N_CH];
+    for (uint8_t i = 0; i < N_CH; i++) {
+        v[i] = (uint8_t)(arg[i] - '1');
+        if (v[i] >= N_CH || (seen & (1 << v[i]))) {
+            Serial.println(F("# CHYBA: n<spodni><svisla><horni>, napr. n123"));
+            return;
+        }
+        seen |= 1 << v[i];
+    }
+    for (uint8_t i = 0; i < N_CH; i++) chMap[i] = v[i];
+    printChannelMap();
+}
+
+// Jedno mereni suchych elektrod: loguje se jako cyklus 0 s danou fazi,
+// na konci prumer a smerodatna odchylka kazde elektrody.
+static bool dryStep(const __FlashStringHelper *prompt, char phase) {
+    if (!waitConfirm(prompt)) return false;
+    float s[N_CH] = { 0, 0, 0 }, q[N_CH] = { 0, 0, 0 };
+    uint16_t n = 0;
+    uint32_t startMs = millis();
+    uint32_t lastMs = millis() - samplePeriodMs;
+    while (millis() - startMs < DRY_MEASURE_MS) {
+        if (abortRequested()) return false;
+        if (millis() - lastMs < samplePeriodMs) continue;
+        lastMs = millis();
+        logSample(phase);
+        float v[N_CH] = { lastC1, lastC2, lastC3 };
+        for (uint8_t i = 0; i < N_CH; i++) { s[i] += v[i]; q[i] += v[i] * v[i]; }
+        n++;
+    }
+    Serial.print(F("# suche ")); Serial.print(phase); Serial.print(':');
+    for (uint8_t i = 0; i < N_CH; i++) {
+        float m = s[i] / n;
+        Serial.print(F(" C")); Serial.print(i + 1); Serial.print('=');
+        Serial.print(m, 3); Serial.print(F(" sd="));
+        Serial.print(sqrt(max(q[i] / n - m * m, 0.0f)), 3);
+    }
+    Serial.println();
+    return true;
+}
+
+// Prikaz 'D': suche elektrody. b = studna bez lahvicky (jediny stav
+// dostupny v pristroji - lahvicka se vklada az po kalibraci), l = prazdna
+// SUCHA lahvicka (prispevek skla), vlozena opakovane (opakovatelnost
+// usazeni), na konci znovu b (drift).
+static void dryMeasure() {
+    if (!checkFdc()) return;
+    cycleNo = 0;
+    cycleT0 = millis();
+    printLogHeader();
+    Serial.println(F("# === SUCHE ELEKTRODY (b = bez lahvicky, l = prazdna lahvicka) ==="));
+    if (!dryStep(F("studna BEZ lahvicky, potvrdit"), 'b')) return;
+    for (uint8_t i = 1; i <= DRY_REINSERTS; i++) {
+        Serial.print(F("# vlozeni ")); Serial.print(i); Serial.print('/');
+        Serial.println(DRY_REINSERTS);
+        if (!dryStep(F("vlozit PRAZDNOU SUCHOU lahvicku (predtim vyndat), potvrdit"), 'l')) return;
+    }
+    if (!dryStep(F("lahvicku vyndat, studna BEZ lahvicky, potvrdit"), 'b')) return;
+    Serial.println(F("# === SUCHE ELEKTRODY HOTOVO ==="));
+}
+
 static void handleLine() {
     if (lineLen == 0) return;
     switch (line[0]) {
@@ -978,6 +1047,11 @@ static void handleLine() {
         case 'i': printInfo(); break;
         case 'f': checkFdc(); break;
         case 'm': monitor(); break;
+        case 'n': setChannelMap(&line[1]); break;
+        case 'D':
+            if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
+            dryMeasure();
+            break;
         case 'a':
             for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
             printInfo();
@@ -1084,7 +1158,7 @@ void setup() {
     Wire.setClock(100000UL);
     delay(100);
 
-    Serial.println(F("# TEST 5 - zastaveni hladiny mezi prstenci (naslepo)"));
+    Serial.println(F("# TEST 5/6 - zastaveni hladiny mezi prstenci / profily ve studni"));
     printChannelMap();
 
     pinMode(PIN_STEPPER_EN, OUTPUT);

@@ -111,6 +111,27 @@ studni) v závislosti na objemu kapaliny. Lahvička je přísně válcová.
   viz kritérium C3/C1) = `(h_spodní hrana CIN3 − 2,5) / 1,5` ml.
 - **Mezera mezi prstenci 4 mm ≈ 2,7 ml** roztoku, prstenec 2 mm ≈ 1,3 ml.
 
+### Měřicí studna (test 6)
+
+Elektrody už nejsou nalepené na lahvičce, ale ve **studni**. Výšky od
+dosedací plochy dna (= vnější dno lahvičky):
+
+| Prvek | Výška | Objem v lahvičce |
+|---|---|---|
+| spodní prstenec (CIN1) | 5,5 – 8,5 mm | 2,0 – 4,0 ml |
+| mezera | 8,5 – 11,5 mm | 4,0 – 6,0 ml (2,0 ml) |
+| horní prstenec (CIN3) | 11,5 – 14,5 mm | 6,0 – 8,0 ml |
+| **zastavení** (spodní hrana horního prstence) | **11,5 mm** | **R = 6,0 ml** |
+
+- Při zdvojování (přidat R v každém cyklu) to je 6 ml roztoku na cyklus,
+  54 ml za 9 iterací – `VOL_SAL_TOTAL_ML` / `VOL_SAL_ITER_ML` v `config.h`
+  bude potřeba upravit.
+- Výsledky testu 5 (nalepené elektrody 2 / 4 / 2 mm) pro studnu (3 / 3 / 3 mm)
+  neplatí v absolutních hodnotách; protokol `tools/level_stop/TEST6.md`.
+- **Suché kapacity** se v přístroji dají měřit jen **bez lahvičky** (při
+  kalibraci, lahvička se vkládá až potom). Test 6 měří i prázdnou lahvičku,
+  aby se ukázal příspěvek skla a opakovatelnost usazení.
+
 ---
 
 ## Krokové motory – drivery (DRV8825)
