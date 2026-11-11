@@ -94,6 +94,32 @@ hladina startovala níž.
   s koncovkami. **Podezření na kontakt nebo kabel CIN1 a CIN2.** Dokud se
   to nevyřeší, korekce na suché kapacity u spodního prstence nemá smysl.
 
+### Opakované měření suchých elektrod (po kontrole konektorů)
+
+| krok | C1 spodní | C2 svislá | C3 horní |
+|---|---|---|---|
+| bez lahvičky | 1,889 ± 0,002 | 2,475 ± 0,006 | 2,031 ± 0,004 |
+| prázdná lahvička 1 | 1,988 ± 0,002 | 2,506 ± 0,002 | 2,093 ± 0,003 |
+| prázdná lahvička 2 | 1,982 ± 0,003 | 2,452 ± 0,010 | 2,049 ± 0,011 |
+| prázdná lahvička 3 | 1,976 ± 0,002 | 2,397 ± 0,005 | 2,000 ± 0,006 |
+| bez lahvičky (konec) | 1,966 ± 0,003 | 2,392 ± 0,004 | 1,970 ± 0,003 |
+
+- **Šum klesl 5–50×** (sd 0,002–0,011 pF proti až 0,17 pF v prvním
+  měření). Velký drift spodního prstence a svislé elektrody zmizel.
+- **Příspěvek skla:** C1 +0,10 pF, C3 +0,06 pF, C2 +0,03 pF – vůči signálu
+  kapaliny (~3 pF) 2–3 %.
+- **Opakovatelnost vložení:** C1 ±0,006 pF (výborná). C3 a C2 se
+  s každým vložením posunou o −0,05 pF, protože obě pomalu driftují.
+  Drift je nejsilnější hned po vložení lahvičky (C3 −0,04 pF za 10 s
+  u 2. vložení) a pak se ustálí. Pravděpodobně jde o dotek rukou
+  (teplo, vlhkost na skle).
+- **Bez lahvičky na začátku a na konci** se liší o +0,08 (C1), −0,06 (C3)
+  a −0,08 pF (C2) za ~73 s. Suchá hodnota je stálá na ~0,1 pF, tedy na
+  ~3 % signálu.
+- **Pro provoz:** měření bez lahvičky jako suchá hodnota stačí. Případně
+  ho lze opravit o pevný příspěvek skla (+0,10 / +0,06 pF). Měřit těsně
+  před vložením lahvičky, ne na začátku dlouho předem.
+
 ## Obr. 4 – polohy příznaků
 
 ![polohy](img6/obr4_polohy.png)

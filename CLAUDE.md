@@ -136,8 +136,11 @@ dosedací plochy dna (= vnější dno lahvičky):
   referenční bod. `C3/C1 ≤ 0,7` padá 6,27 ± 0,19 ml vzduchu před skok
   (= střed horního prstence); plató C3/C1 ve studni ≈ 0,55 (test 5: 0,40);
   přechody široké (~5,6 ml vzduchu 10–90 %). Horní prstenec suchý stabilní
-  (sklo +0,08 pF), **CIN1 a CIN2 driftují** (−0,5 / −1 pF za minutu) –
-  podezření na kontakt/kabel.
+  (sklo +0,08 pF), v 1. měření CIN1 a CIN2 driftovaly (−0,5 / −1 pF za
+  minutu). **Opakované měření** (po kontrole konektorů): šum 0,002–0,01 pF,
+  sklo +0,10 / +0,03 / +0,06 pF (C1/C2/C3), opakovatelnost vložení C1
+  ±0,006 pF, drift všech kanálů ≤ 0,08 pF/min → **suchá hodnota bez
+  lahvičky v provozu stačí** (~3 % signálu).
 
 ---
 
