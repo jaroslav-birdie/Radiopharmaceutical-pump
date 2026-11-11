@@ -252,6 +252,16 @@ CIN2    konec svislé elektrody
 > **Rychlá kontrola správnosti zapojení:** po autokalibraci CAPDAC musí
 > vyjít **nízké** hodnoty (jednotky). CAPDAC 25–31 znamená navázanou
 > parazitní kapacitu, tedy nejspíš stínění na zemi.
+>
+> ⚠️ **„Zamrzlý" FDC1004 = vadný kontakt elektrod, ne čip.** Příznak:
+> `FDC_CONF` správně (REPEAT=1, MEAS zapnuté), ale `DONE=0` a hodnoty se
+> nemění; po každé reinicializaci jen jeden převod. Nastalo v testu 5 i 6,
+> vyřešil pohyb koncovkami elektrod na modulu (test 6). Jedno měření, které
+> nedoběhne (zkrat/přerušení vstupu nebo stínění), zablokuje v REPEAT
+> i ostatní kanály. Diagnostika v `tools/level_stop/`: `f` (po vstupech),
+> `S` (jednorázová měření CIN1–4). **Konektory elektrod zajistit proti
+> pohybu**; v produkci kontrolu `DONE`/měnících se hodnot dělat při každém
+> startu i za běhu.
 
 ### Guard vs. screen – dvě různé funkce, dvě různá zapojení
 
