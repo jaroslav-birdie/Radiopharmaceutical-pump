@@ -139,6 +139,10 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 // ~2000 LSB). 10x po sobe bitove stejna hodnota = FDC1004 nemeri.
 #define FROZEN_LIMIT        10
 #define FDC_CHECK_SAMPLES   20
+#define FDC_REINIT_TRIES     3       // pokusy o reinicializaci, kdyz kontrola selze
+#define FDC_RESET_MS        10       // po softwarovem resetu FDC1004
+#define FDC_CONF_RST    0x8000       // FDC_CONF bit 15 = reset
+#define FDC_CONF_CHECK  0x0DF0       // RATE, REPEAT a MEAS_1..4 pro zpetnou kontrolu
 #define FDC_CHECK_PERIOD_MS 10
 #define MONITOR_PERIOD_MS  500       // prikaz 'm': vypis C1..C3 kazdych 0,5 s
 #define DRY_MEASURE_MS   10000UL     // prikaz 'D': delka jednoho mereni suchych elektrod
@@ -179,6 +183,7 @@ static uint8_t  cycleNo      = 0;
 
 static bool detectHit();
 static bool checkFdc();
+static bool fdcEnsure();
 
 static float airMl()    { return (float)airSteps / AIR_STEPS_PER_ML; }
 static float pushedMl() { return (float)pushedSteps / AIR_STEPS_PER_ML; }
@@ -1064,7 +1069,7 @@ static bool dryStep(const __FlashStringHelper *prompt, char phase) {
 // SUCHA lahvicka (prispevek skla), vlozena opakovane (opakovatelnost
 // usazeni), na konci znovu b (drift).
 static void dryMeasure() {
-    if (!checkFdc()) return;
+    if (!fdcEnsure()) return;
     cycleNo = 0;
     cycleT0 = millis();
     printLogHeader();
@@ -1084,7 +1089,7 @@ static void handleLine() {
     switch (line[0]) {
         case 'h': printHelp(); break;
         case 'i': printInfo(); break;
-        case 'f': checkFdc(); break;
+        case 'f': fdcEnsure(); break;
         case 'm': monitor(); break;
         case 'n': setChannelMap(&line[1]); break;
         case 'I': i2cScan(); i2cIdTest(); break;
@@ -1139,7 +1144,7 @@ static void handleLine() {
         case 'g':
             if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
             if (!tared) { Serial.println(F("# CHYBA: neprovedeno 't'")); break; }
-            if (!checkFdc()) break;
+            if (!fdcEnsure()) break;
             runSeries();
             break;
         case '#': break;
@@ -1216,10 +1221,68 @@ static bool checkFdc() {
     return ok;
 }
 
-void setup() {
-    Serial.begin(BAUD);
+// Uvolneni zaseknute I2C sbernice. Kdyz Arduino resetuje uprostred cteni
+// (napr. otevrenim Serial Monitoru), FDC1004 zustane v pulce bajtu a drzi
+// SDA dole. Az 9 hodinovych pulzu ho dovede na konec bajtu, START+STOP
+// pak sbernici uvolni. Vola se pred Wire.begin().
+static void i2cBusRecover() {
+    pinMode(SDA, INPUT_PULLUP);
+    pinMode(SCL, INPUT_PULLUP);
+    delayMicroseconds(10);
+    for (uint8_t i = 0; i < 9 && digitalRead(SDA) == LOW; i++) {
+        pinMode(SCL, OUTPUT); digitalWrite(SCL, LOW);
+        delayMicroseconds(5);
+        pinMode(SCL, INPUT_PULLUP);
+        delayMicroseconds(5);
+    }
+    pinMode(SDA, OUTPUT); digitalWrite(SDA, LOW);   // START
+    delayMicroseconds(5);
+    pinMode(SDA, INPUT_PULLUP);                     // STOP
+    delayMicroseconds(5);
+}
+
+static void i2cStart() {
+    i2cBusRecover();
     Wire.begin();
     Wire.setClock(100000UL);
+}
+
+// Softwarovy reset FDC1004, konfigurace, CAPDAC a zpetna kontrola, ze cip
+// konfiguraci prijal. FDC1004 si nastaveni drzi jen dokud ma napajeni;
+// nepovedeny zapis pri startu = cip nemeri, dokud se znovu nenastavi.
+static bool fdcInit() {
+    writeReg(REG_FDC_CONF, FDC_CONF_RST);
+    delay(FDC_RESET_MS);
+    for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);   // kazdy vola applyConfig()
+    uint16_t expect = (3 << 10) | (1 << 8);
+    for (uint8_t i = 0; i < N_CH; i++) expect |= (uint16_t)1 << (7 - i);
+    uint16_t conf = readReg(REG_FDC_CONF);
+    bool ok = (conf & FDC_CONF_CHECK) == expect;
+    if (!ok) {
+        Serial.print(F("# *** FDC_CONF neprijat: 0x")); Serial.print(conf, HEX);
+        Serial.print(F(" (ocekavano 0x")); Serial.print(expect, HEX); Serial.println(F(")"));
+    }
+    return ok;
+}
+
+// Kontrola FDC1004; kdyz selze, uvolneni sbernice + reinicializace a znovu.
+static bool fdcEnsure() {
+    for (uint8_t t = 0; t <= FDC_REINIT_TRIES; t++) {
+        if (t > 0) {
+            Serial.print(F("# reinicializace FDC1004, pokus ")); Serial.println(t);
+            Wire.end();
+            i2cStart();
+            fdcInit();
+        }
+        if (checkFdc()) return true;
+    }
+    Serial.println(F("# *** FDC1004 se nepodarilo rozbehnout - vypnout napajeni, pak 'f'"));
+    return false;
+}
+
+void setup() {
+    Serial.begin(BAUD);
+    i2cStart();
     delay(100);
 
     Serial.println(F("# TEST 5/6 - zastaveni hladiny mezi prstenci / profily ve studni"));
@@ -1247,9 +1310,8 @@ void setup() {
         Serial.println(F("# CHYBA: cip neodpovida (ocekavano 0x5449 / 0x1004)"));
     }
 
-    applyConfig();
-    for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
-    checkFdc();
+    fdcInit();
+    fdcEnsure();
 
     printInfo();
     printHelp();
