@@ -351,11 +351,16 @@ static void detectFeed(float c1, float c3);
 
 // Hlidani zamrzleho senzoru: bitove stejna hodnota FROZEN_LIMIT x po sobe
 // na kteremkoli kanalu ukonci beh (pres abortRequested()).
+// Svisla elektroda (C2) se jen meri a loguje, nehlida se - zastaveni
+// ani kontrola senzoru na ni nezavisi.
+#define VERT_ELECTRODE  1
+
 static void watchFrozen(float c1, float c2, float c3) {
     static float prev[N_CH];
     static uint8_t same[N_CH];
     float v[N_CH] = { c1, c2, c3 };
     for (uint8_t i = 0; i < N_CH; i++) {
+        if (i == VERT_ELECTRODE) continue;
         same[i] = (v[i] == prev[i]) ? same[i] + 1 : 0;
         prev[i] = v[i];
         if (same[i] >= FROZEN_LIMIT && !sensorFrozen) {
@@ -1196,7 +1201,11 @@ static bool checkFdc() {
     }
     Serial.println();
     bool ok = true;
-    for (uint8_t i = 0; i < N_CH; i++) ok = checkFdcChannel(i) && ok;
+    for (uint8_t i = 0; i < N_CH; i++) {
+        bool chOk = checkFdcChannel(i);
+        if (i == chMap[VERT_ELECTRODE]) continue;    // svisla: jen informace
+        ok = chOk && ok;
+    }
     Serial.println(ok ? F("# FDC1004 meri OK")
                       : F("# *** CHYBA: nektery vstup FDC1004 nemeri, viz radky vyse ***"));
     sensorFrozen = !ok;

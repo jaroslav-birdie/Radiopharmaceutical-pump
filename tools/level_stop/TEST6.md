@@ -127,6 +127,10 @@ Log poslat jako **soubor**.
 
 ---
 
+> **Svislá elektroda (C2) se jen měří a loguje.** Kontrola FDC1004 (`f`,
+> start, `g`, `D`) ani hlídání zamrznutí za běhu ji nevyhodnocují –
+> nehybná hodnota na C2 test nezastaví.
+
 ## Příkazy
 
 Postup testu krok za krokem vypíše sketch po startu a na příkaz `h`.
@@ -142,4 +146,4 @@ Postup testu krok za krokem vypíše sketch po startu a na příkaz `h`.
 | `v<ml>` / `c<n>` | objem vzduchu na cyklus / počet cyklů |
 | `x` | zastavení |
 
-Překlad (`avr-g++`): flash 25 336 B (77,3 %), SRAM 690 B (33,7 %), bez varování.
+Překlad (`avr-g++`): flash 25 392 B (77,5 %), SRAM 690 B (33,7 %), bez varování.
