@@ -139,4 +139,4 @@ Log poslat jako **soubor**.
 | `v<ml>` / `c<n>` | objem vzduchu na cyklus / počet cyklů |
 | `x` | zastavení |
 
-Překlad (`avr-g++`): flash 23 694 B (72,3 %), SRAM 690 B (33,7 %), bez varování.
+Překlad (`avr-g++`): flash 24 080 B (73,5 %), SRAM 690 B (33,7 %), bez varování.

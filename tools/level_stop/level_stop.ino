@@ -1125,29 +1125,53 @@ static void pollSerial() {
 }
 
 // Kontrola FDC1004: vypis konfigurace (zpetne cteni, vc. DONE bitu 3:0)
-// a zda se vysledky vsech kanalu meni. Vraci false, pokud senzor nemeri.
+// a pro kazdy vstup CIN1..CIN3, zda se vysledek meni. Konstantni hodnota
+// ma tri mozne priciny, ktere se tu rozlisi:
+//   SATURACE  - kapacita mimo rozsah i s CAPDAC 31 (> ~113 pF, typicky
+//               vstup navazany na zem, napr. stineni na GND tesne u elektrody)
+//   I2C       - cteni vraci 0 (chyba komunikace)
+//   ZAMRZLY   - hodnota uprostred rozsahu, cip neprevadi (vypnout napajeni)
+// Vraci false, pokud kterykoli vstup nemeri.
+#define RAW_SAT_LIMIT  8388000L   // |raw| nad timto = plny rozsah (2^23 - 1)
+
+static bool checkFdcChannel(uint8_t ch) {
+    int32_t first = readRaw(ch), lo = first, hi = first;
+    for (uint8_t k = 0; k < FDC_CHECK_SAMPLES; k++) {
+        delay(FDC_CHECK_PERIOD_MS);
+        int32_t v = readRaw(ch);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    Serial.print(F("#   CIN")); Serial.print(ch + 1);
+    Serial.print(F(" CAPDAC=")); Serial.print(capdac[ch]);
+    Serial.print(F(" C=")); Serial.print(readPf(ch), 3);
+    Serial.print(F(" pF raw ")); Serial.print(lo); Serial.print(F(" .. ")); Serial.print(hi);
+    bool ok = (hi != lo);
+    if (ok)                                    Serial.println(F("  OK"));
+    else if (lo >= RAW_SAT_LIMIT)              Serial.println(F("  *** SATURACE + (kapacita nad rozsahem)"));
+    else if (lo <= -RAW_SAT_LIMIT)             Serial.println(F("  *** SATURACE - (kapacita pod CAPDAC)"));
+    else if (lo == 0)                          Serial.println(F("  *** cte 0 - chyba I2C?"));
+    else                                       Serial.println(F("  *** ZAMRZLY (cip neprevadi)"));
+    return ok;
+}
+
 static bool checkFdc() {
     delay(FDC_CHECK_PERIOD_MS);       // DONE bity se ctenim vysledku nuluji
     uint16_t conf = readReg(REG_FDC_CONF);
     Serial.print(F("# FDC_CONF=0x")); Serial.print(conf, HEX);
+    Serial.print(F(" (REPEAT=")); Serial.print((conf >> 8) & 1);
+    Serial.print(F(" MEAS1-3=")); Serial.print((conf >> 5) & 7, BIN);
+    Serial.print(F(" DONE=")); Serial.print(conf & 0x0F, BIN);
+    Serial.print(')');
     for (uint8_t i = 0; i < N_CH; i++) {
         Serial.print(F(" CONF_MEAS")); Serial.print(i + 1);
         Serial.print(F("=0x")); Serial.print(readReg(REG_CONF_MEAS1 + i), HEX);
     }
     Serial.println();
-    int32_t first[N_CH];
-    bool changed[N_CH] = { false, false, false };
-    for (uint8_t i = 0; i < N_CH; i++) first[i] = readRaw(i);
-    for (uint8_t k = 0; k < FDC_CHECK_SAMPLES; k++) {
-        delay(FDC_CHECK_PERIOD_MS);
-        for (uint8_t i = 0; i < N_CH; i++) {
-            if (readRaw(i) != first[i]) changed[i] = true;
-        }
-    }
     bool ok = true;
-    for (uint8_t i = 0; i < N_CH; i++) ok = ok && changed[i];
+    for (uint8_t i = 0; i < N_CH; i++) ok = checkFdcChannel(i) && ok;
     Serial.println(ok ? F("# FDC1004 meri OK")
-                      : F("# *** CHYBA: FDC1004 nemeri (vypnout a zapnout napajeni) ***"));
+                      : F("# *** CHYBA: nektery vstup FDC1004 nemeri, viz radky vyse ***"));
     sensorFrozen = !ok;
     return ok;
 }
