@@ -182,6 +182,47 @@ studnu je potřeba odvodit z těchto dat.
 
 ---
 
+## Kombinace prstenců – srovnání
+
+![kombinace](img6/obr5_kombinace.png)
+
+Cykly 2–5 a 1 zarovnané na skok; šedě odhad mezery. P1 = 1,93 pF,
+P3 = 2,00 pF (suché hodnoty bez lahvičky, opakované měření).
+
+| kombinace | nad prstenci | v mezeře | kontrast / šum | poloha překročení (před skokem), prahy přes střed přechodu | průměrný rozptyl |
+|---|---|---|---|---|---|
+| **C3/C1** | 0,94 | 0,57 | 13 | 0,80→7,3 · 0,74→6,8 · 0,71→6,5 · 0,68→6,1 ml, ±0,10–0,38 | **0,29 ml** |
+| (C3−P3)/(C1−P1) | 0,88 | 0,27 | **20** | 0,61→6,9 · 0,54→6,5 · 0,47→6,1 ml, ±0,22–0,27; vyšší prahy ±1,2–1,5 | 0,65 ml |
+| C1 − C3 | 0,28 pF | 2,17 pF | 8 | 1,2→7,0 · 1,5→6,6 · 1,8→6,1 ml, ±0,27–0,31 | 0,52 ml |
+| C1 + C3 | 9,35 pF | 7,86 pF | 5 | jen pozvolna klesá, bez zlomu | – |
+
+- **C1 + C3 (součet)** – nepoužitelné: klesá plynule po celou dobu, nemá
+  žádný příznak mezery.
+- **C1 − C3 (rozdíl)** – má v mezeře „hrb": vystoupá na ~2,2 pF a před
+  vstupem do spodního prstence zase klesá. Dává tedy **obě hranice**.
+  Absolutní pF ale závisí na sestavě a okolí. Použitelný je relativně
+  k vlastnímu maximu v běhu.
+- **C3/C1 (poměr)** – nejrobustnější pro **zastavení**: nezávisí na
+  měřítku, žádný práh v pásmu 0,68–0,80 neselže, rozptyl ±0,10–0,38 ml.
+- **(C3−P3)/(C1−P1)** – nejvyšší kontrast (plató 0,27, práh 0,54 má od
+  plató velkou rezervu). Polohu ale neurčí přesněji než C3/C1 a horní
+  prahy (≥ 0,68) chytají šum v počáteční fázi. Potřebuje suché hodnoty.
+
+**Pojistka (spodní hranice) z rozdílu:** od okamžiku C3/C1 ≤ 0,72 sledovat
+max. C1 − C3 (medián 2 s). Když klesne pod **75 % vlastního maxima**,
+hladina vstupuje do spodního prstence: **2,13 ± 0,27 ml před skokem**.
+Ověřeno na všech 5 cyklech.
+
+**Návrh kombinace (každý běh zvlášť, bez učení):**
+1. **Zastavit:** C3/C1 ≤ 0,72 (medián 0,5 s) → 6,5 ± 0,26 ml před skokem.
+   Volitelně ještě pevně ~1,5–2 ml vzduchu, aby hladina došla k horní
+   hraně mezery.
+2. **Pojistka:** C1 − C3 < 75 % svého maxima od bodu 1 (medián 2 s) →
+   2,1 ± 0,3 ml před skokem.
+3. **Poslední záchrana:** skok (všechny kanály naráz).
+
+Mezi zastavením a pojistkou zbývá ~4,4 ml vzduchu.
+
 ## Otázky a další kroky
 
 1. **Kde je hrot jehly k pacientovi** (výška od vnějšího dna)? Pokud
