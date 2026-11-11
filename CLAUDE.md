@@ -141,6 +141,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   sklo +0,10 / +0,03 / +0,06 pF (C1/C2/C3), opakovatelnost vložení C1
   ±0,006 pF, drift všech kanálů ≤ 0,08 pF/min → **suchá hodnota bez
   lahvičky v provozu stačí** (~3 % signálu).
+- **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
+  Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
+  se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
+  vložení prázdné lahvičky C1 ±0,006 pF. **Svislá elektroda** (úzký proužek)
+  může být samolepkou zakrytá celá nebo vůbec → její **absolutní hodnota
+  se nesmí používat**; jen relativní změny v rámci běhu (např. skok).
 
 ---
 
