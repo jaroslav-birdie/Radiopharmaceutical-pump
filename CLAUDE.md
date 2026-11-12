@@ -144,6 +144,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   sklo +0,10 / +0,03 / +0,06 pF (C1/C2/C3), opakovatelnost vložení C1
   ±0,006 pF, drift všech kanálů ≤ 0,08 pF/min → **suchá hodnota bez
   lahvičky v provozu stačí** (~3 % signálu).
+- **Test 7 – zastavení na vrcholu `C1 − C3`** (`tools/level_stop/TEST7.md`,
+  zvolená varianta): detektor na **ose vytlačeného vzduchu** (koše 0,125 ml
+  jen při tlačení, okno 1 ml → pauza/doplnění stav nemění), aktivace
+  `C3 ≤ 0,85 × max C3`, stop při poklesu rozdílu o 10 % výšky hrbu,
+  poslední záchrana skok C1 > 15 % mezi koši; před tlačením C3/C1 ≥ 0,8.
+  Na datech testu 6 zastaví 1,5–2,4 ml vzduchu před skokem; očekávaná
+  hladina ≈ 8,8 mm (zbytek ≈ 4,2 ml) ověří obsluha měřením výšky.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

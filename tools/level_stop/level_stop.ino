@@ -1,23 +1,21 @@
 // ============================================================
-//  TEST 5 – ZASTAVENI HLADINY MEZI PRSTENCI (naslepo)
+//  TEST 7 – ZASTAVENI NA VRCHOLU ROZDILU C1 - C3 (studna 3/3/3 mm)
 //
-//  Otazka: zastavi se hladina VZDY mezi prstenci (C3 odkryty, C1
-//  zakryty), at obsluha pred cyklem prida jakykoli objem? Sketch o
-//  pridanem objemu nic nevi - obsluha ho schvalne voli od oka a pokazde
-//  jiny.
+//  Tlaci se vzduch, dokud rozdil spodni - horni prstenec (C1 - C3)
+//  neprojde vrcholem; pak se pacient OKAMZITE zavre a tlaceni konci.
+//  Obsluha pak zmeri vysku hladiny od vnejsiho dna lahvicky.
 //
-//  Detekce je cela relativni (viz TEST5.md):
-//    cyklus 1 (uceni) - tlaci se, dokud C3 neprestane klesat; hodnota
-//        C3 v tom okamziku je F3 (suchy prstenec), D1 = C1 - F3
-//    cykly 2+ - zastavi se pri delta = (C1 - C3) / (C1 - F3) >= 0,7
-//    pojistka - C1 klesne pod polovinu sveho maxima v cyklu (vztazeno
-//        k zakladu) => hladina prochazi C1, konec serie
-//  Pri detekci se pacientsky ventil zavira OKAMZITE (uvnitr vzorkovani),
-//  motor stoji, teprve pak se lahvicka odvzdusni.
+//  Detekce (viz TEST7.md) bezi na OSE VYTLACENEHO VZDUCHU, ne casu:
+//  vzorky se sbiraji jen behem tlaceni (faze 'w') do kosu po 0,125 ml,
+//  klouzavy prumer pres 1 ml (8 kosu). Pauza, doplneni vzduchu ani
+//  klid stav detektoru nezmeni - nevytlaci se zadny vzduch.
+//    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
+//    vrchol    C1 - C3 (okno) klesne o 10 % vysky hrbu pod sve maximum
+//    skok      C1 (kos) o 15 % niz nez v predchozim kosu = posledni zachrana
+//  Pred tlacenim: C3/C1 v klidu musi byt >= 0,8 (horni prstenec zakryt),
+//  jinak se netlaci a obsluha doplni kapalinu.
 //
-//  Loguji se syrova data jako v testech 1-4; detekce bezi nad medianem
-//  z 0,5 s. Udalosti detekce jsou v logu jako radky '#'.
-//
+//  Rezim PROFIL (v<ml>) zustava: vytlaci pevny objem, detekce jen zapisuje.
 //  Serial Monitor: 115200 Bd. Log si zachyt do souboru.
 // ============================================================
 #include <Arduino.h>
@@ -121,17 +119,14 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define KPA_PER_CMH2O          0.0981f
 #define P_ATM_MIN_KPA         90.0f   // konzervativne nizky tlak okoli (~1000 m n. m.)
 
-// ---------- detekce (vse relativni, zadne pF ani ml) ----------
-// Median z DET_MED_N vzorku (0,5 s pri 20 vzorcich/s). Vsechny prahy jsou
-// pomery k hodnotam namerenym v tomto behu - viz TEST5.md.
-#define DET_MED_N           10
-#define DET_HIST_STEP_ML     0.25f  // krok historie C3 pro strmost
-#define DET_HIST_LEN         5      // 5 bodu = strmost pres 1 ml
-#define DET_RISE_FRAC        0.1f   // vyznamna zmena prstence = 10 % jeho klidu 'k'
-#define DET_FALL_FRAC        0.5f   // uceni: pokles C3 od maxima > 0,5 x jeho vzestupu
-#define DET_PLATEAU_FRAC     0.3f   // ucenie: konec poklesu = strmost < 0,3 x max. strmost
-#define DET_DENOM_FRAC       0.3f   // delta se pocita, az C1 - F3 > 0,3 x D1
-#define DET_GUARD_FRAC       0.5f   // pojistka: C1 - zaklad < 0,5 x (max C1 - zaklad)
+// ---------- detekce vrcholu (vse relativni, zadne pF) ----------
+#define DET_MED_N           10      // median pro monitor 'm'
+#define PEAK_BIN_ML      0.125f     // kos vytlaceneho vzduchu
+#define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu = 1 ml
+#define PEAK_ARM_FRAC     0.85f     // aktivace: C3 <= 0,85 x vlastni maximum
+#define PEAK_DROP_FRAC    0.10f     // vrchol: pokles o 10 % vysky hrbu
+#define STEP_DROP_FRAC    0.15f     // skok: C1 v kosu o 15 % niz nez predchozi kos
+#define START_Q_MIN       0.80f     // pred tlacenim C3/C1 >= 0,8 (horni prstenec zakryt)
 #define MAX_REFILLS          3      // max. doplneni vzduchu v jednom cyklu
 
 // ---------- hlidani senzoru ----------
@@ -154,16 +149,15 @@ static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to 
 static uint8_t  cycleCount     = 5;     // pocet cyklu
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = -1.0f; // <0 = vypocet, jinak rucne (r<ml>)
-static float    deltaStop      = 0.7f;  // prah delta pro zastaveni (d<x>)
-static float    profileAirMl   = 20.0f; // >0 = PROFIL: vytlacit tolik vzduchu, detekce
+static float    profileAirMl   = 0.0f;  // >0 = PROFIL: vytlacit tolik vzduchu, detekce
                                         // jen zapisuje (stin); 0 = zastaveni detekci (v<ml>)
 
 // ---------- typy detekce ----------
 // Pred prvni funkci a v parametrech funkci jen jako uint8_t: Arduino IDE
 // vklada automaticky generovane prototypy pred prvni funkci a vyctovy typ
 // v nich by jeste nemusel byt znamy.
-enum DetMode : uint8_t { DET_OFF, DET_LEARN, DET_STOP };
-enum DetHit  : uint8_t { HIT_NONE, HIT_STOP, HIT_GUARD };
+enum DetMode : uint8_t { DET_OFF, DET_ON };
+enum DetHit  : uint8_t { HIT_NONE, HIT_STOP, HIT_STEP };
 
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
@@ -347,7 +341,7 @@ static bool abortRequested() {
 //       o=klid po odvzdusneni (atm. tlak)
 //       r=predtlakovani (pacient uzavren)  p=otevreni pacienta + klid
 //       s=zastaveno detekci (pacient uz uzavren, prejezd serva)
-static void detectFeed(float c1, float c3);
+static void detectFeed(float c1, float c3, char phase);
 
 // Hlidani zamrzleho senzoru: bitove stejna hodnota FROZEN_LIMIT x po sobe
 // na kteremkoli kanalu ukonci beh (pres abortRequested()).
@@ -379,7 +373,7 @@ static void logSample(char phase) {
     float c3 = readElectrode(2);
     watchFrozen(c1, c2, c3);
     lastC1 = c1; lastC2 = c2; lastC3 = c3;
-    detectFeed(c1, c3);
+    detectFeed(c1, c3, phase);
     Serial.print(cycleNo);
     Serial.print(';'); Serial.print(millis() - cycleT0);
     Serial.print(';'); Serial.print(phase);
@@ -585,19 +579,19 @@ static bool waitConfirm(const __FlashStringHelper *prompt) {
 
 static DetMode detMode = DET_OFF;
 static DetHit  detHitKind = HIT_NONE;
-static float   b1[DET_MED_N], b3[DET_MED_N];
-static uint8_t bIdx = 0, bCount = 0;
-static float   hist3[DET_HIST_LEN];
-static uint8_t histCount = 0;
-static float   histNextMl = 0.0f;
-static float   c1Peak, c3Peak, slopeMax;
-static float   c1Base;                 // zaklad pojistky: C1 z 'k' (uceni), F3 (dale)
-static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // klid 'k' (sd jen do logu)
-static float   learnedF3 = 0.0f, learnedD1 = 0.0f;
-static bool    learned = false;
-static bool    c3Fell = false;         // uceni: C3 uz vystoupalo a spadlo (odkryto)
-static float   hitM1, hitM3, hitDelta;
-static bool    shadowStopDone, shadowGuardDone;   // profil: udalost uz zapsana
+static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // klid 'k'
+// kosy po PEAK_BIN_ML: rozpracovany kos + kruhova historie hotovych
+static float   accC1, accC3;
+static uint16_t accN;
+static int16_t binIdx;                  // index rozpracovaneho kosu (-1 = zadny)
+static float   binC1[PEAK_WIN_BINS], binC3[PEAK_WIN_BINS];
+static uint8_t binHead, binCount;
+static float   prevBinC1;               // pro skok; < 0 = neplatny
+static char    prevPhase;
+// stav hledani vrcholu
+static bool    armed, haveD0, stopDone, stepDone;
+static float   d0, dMax, dMaxMl, c3Max;
+static float   hitD, hitC1, hitC3;
 
 static bool detectHit() { return detHitKind != HIT_NONE; }
 
@@ -612,117 +606,97 @@ static float median(const float *src) {
     return 0.5f * (v[DET_MED_N / 2 - 1] + v[DET_MED_N / 2]);
 }
 
-// Vyprazdni median i historii strmosti - po kazdem preruseni toku
-// (doplneni vzduchu), aby skok ventilu nevstoupil do strmosti.
-static void detectResetBuffers() {
-    bIdx = 0; bCount = 0; histCount = 0;
-    histNextMl = pushedMl();
-}
-
-static void detectStart(uint8_t mode) {
-    detectResetBuffers();
-    c1Peak = -1e9f; c3Peak = -1e9f; slopeMax = 0.0f;
-    c1Base = (mode == DET_LEARN) ? c1Rest : learnedF3;
-    c3Fell = false;
-    shadowStopDone = false; shadowGuardDone = false;
+static void detectStart() {
+    accC1 = accC3 = 0; accN = 0; binIdx = -1;
+    binHead = binCount = 0; prevBinC1 = -1.0f; prevPhase = 0;
+    armed = haveD0 = stopDone = stepDone = false;
+    dMax = -1e9f; dMaxMl = 0; c3Max = -1e9f; d0 = 0;
     detHitKind = HIT_NONE;
-    detMode = (DetMode)mode;
+    detMode = DET_ON;
 }
 
-// Okamzita reakce: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
-// protoze moveAir()/sampleFor() se po detectHit() hned vrati.
 static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(prefix);
-    Serial.print(kind == HIT_GUARD ? F("POJISTKA C1") : F("STOP"));
+    Serial.print(kind == HIT_STEP ? F("SKOK C1") : F("STOP vrchol"));
     Serial.print(F(" @ ")); Serial.print(pushedMl(), 2);
-    Serial.print(F(" ml  C1=")); Serial.print(hitM1, 3);
-    Serial.print(F(" C3=")); Serial.print(hitM3, 3);
-    Serial.print(F(" delta=")); Serial.println(hitDelta, 3);
+    Serial.print(F(" ml  C1=")); Serial.print(hitC1, 3);
+    Serial.print(F(" C3=")); Serial.print(hitC3, 3);
+    Serial.print(F(" d=")); Serial.print(hitD, 3);
+    Serial.print(F(" d0=")); Serial.print(d0, 3);
+    Serial.print(F(" dmax=")); Serial.print(dMax, 3);
+    Serial.print(F(" @ ")); Serial.println(dMaxMl, 2);
 }
 
-// Profil: udalost se jen zapise (kazdy druh jednou za cyklus), nic se
-// nezastavi. Uceni se presto ulozi, aby dalsi cykly mohly zapisovat delta.
-static void shadowFire(uint8_t kind) {
-    bool &done = (kind == HIT_GUARD) ? shadowGuardDone : shadowStopDone;
+// Zastaveni: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
+// protoze moveAir()/sampleFor() se po detectHit() hned vrati. V profilu
+// se udalost jen zapise (kazdy druh jednou za cyklus).
+static void detectFire(uint8_t kind) {
+    bool &done = (kind == HIT_STEP) ? stepDone : stopDone;
     if (done) return;
     done = true;
-    printEvent(F("# STIN "), kind);
-    if (kind == HIT_STOP && detMode == DET_LEARN && !learned) {
-        learnedF3 = hitM3;
-        learnedD1 = hitM1 - hitM3;
-        learned = true;
-        Serial.print(F("# NAUCENO F3=")); Serial.print(learnedF3, 3);
-        Serial.print(F(" D1=")); Serial.println(learnedD1, 3);
-    }
-}
-
-static void detectFire(uint8_t kind, float m1, float m3, float delta) {
-    hitM1 = m1; hitM3 = m3; hitDelta = delta;
-    if (profileAirMl > 0.0f) { shadowFire(kind); return; }
+    if (profileAirMl > 0.0f) { printEvent(F("# STIN "), kind); return; }
     curPatAngle = angPatIsolate;
     OCR1A = angleTicks(angPatIsolate);
     detHitKind = (DetHit)kind;
     detMode = DET_OFF;
 }
 
-// Pojistka C1, dve nezavisle podminky:
-//  1) posledni zachrana (vzdy aktivni): C1 kleslo o vic nez 10 % pod
-//     svuj klid 'k' - mezi prstenci i nad nimi je C1 vzdy nad klidem,
-//     pod nim je jen po odkryti
-//  2) C1 uz bylo v cyklu vysoko a spadlo pod polovinu vzestupu. V uceni
-//     az po odkryti C3 (hladina muze projit C1 jen po C3) a se vzestupem
-//     nad 10 % klidu, pozdeji se vzestupem nad polovinou D1.
-static bool guardTripped(float m1) {
-    if (m1 < c1Rest * (1.0f - DET_RISE_FRAC)) return true;
-    float rise = c1Peak - c1Base;
-    if (detMode == DET_LEARN) {
-        if (!c3Fell || rise < DET_RISE_FRAC * c1Rest) return false;
-    } else if (rise < 0.5f * learnedD1) {
-        return false;
+// Okno pres posledni 1 ml: aktivace po poklesu C3, pak vrchol C1 - C3.
+// Argmax rozdilu nezavisi na spolecnem zisku ani posunu obou prstencu.
+static void detectWindow() {
+    float w1 = 0, w3 = 0;
+    for (uint8_t i = 0; i < PEAK_WIN_BINS; i++) { w1 += binC1[i]; w3 += binC3[i]; }
+    w1 /= PEAK_WIN_BINS; w3 /= PEAK_WIN_BINS;
+    float d = w1 - w3;
+    if (!haveD0) { d0 = d; haveD0 = true; }
+    if (w3 > c3Max) c3Max = w3;
+    if (!armed && w3 <= PEAK_ARM_FRAC * c3Max) {
+        armed = true;
+        Serial.print(F("# aktivace @ ")); Serial.print(pushedMl(), 2);
+        Serial.print(F(" ml  C3=")); Serial.print(w3, 3);
+        Serial.print(F(" max C3=")); Serial.println(c3Max, 3);
     }
-    return (m1 - c1Base) < DET_GUARD_FRAC * rise;
+    if (!armed) return;
+    if (d > dMax) { dMax = d; dMaxMl = pushedMl(); }
+    if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) {
+        hitD = d; hitC1 = w1; hitC3 = w3;
+        detectFire(HIT_STOP);
+    }
 }
 
-// Uceni: strmost poklesu C3 pres posledni 1 ml; konec poklesu, kdyz C3
-// nejdriv vystoupalo nad klid (o vic nez 10 % klidu), pak spadlo od
-// maxima o vic nez polovinu tohoto vzestupu a strmost klesla pod 0,3 x
-// nejvetsi strmost tohoto poklesu. Zadny prah nezavisi na sumu - ten se
-// meni s okolim (test 5: sd 0,03 az 0,14 pF).
-static bool learnPlateau(float m3) {
-    float ml = pushedMl();
-    if (ml < histNextMl) return false;
-    histNextMl = ml + DET_HIST_STEP_ML;
-    for (uint8_t i = 0; i < DET_HIST_LEN - 1; i++) hist3[i] = hist3[i + 1];
-    hist3[DET_HIST_LEN - 1] = m3;
-    if (histCount < DET_HIST_LEN) { histCount++; return false; }
-    float slope = (hist3[0] - hist3[DET_HIST_LEN - 1])
-                / (DET_HIST_STEP_ML * (DET_HIST_LEN - 1));
-    if (slope > slopeMax) slopeMax = slope;
-    float rise = c3Peak - c3Rest;
-    c3Fell = rise > DET_RISE_FRAC * c3Rest
-          && (c3Peak - m3) > DET_FALL_FRAC * rise;
-    return c3Fell && slope < DET_PLATEAU_FRAC * slopeMax;
+// Hotovy kos: nejdriv skok C1 proti predchozimu kosu, pak okno.
+static void detectBin(float c1, float c3) {
+    if (prevBinC1 > 0 && c1 < (1.0f - STEP_DROP_FRAC) * prevBinC1) {
+        hitC1 = c1; hitC3 = c3; hitD = c1 - c3;
+        detectFire(HIT_STEP);
+        if (detMode == DET_OFF) return;
+    }
+    prevBinC1 = c1;
+    binC1[binHead] = c1; binC3[binHead] = c3;
+    binHead = (binHead + 1) % PEAK_WIN_BINS;
+    if (binCount < PEAK_WIN_BINS) binCount++;
+    if (binCount == PEAK_WIN_BINS) detectWindow();
 }
 
-static void detectFeed(float c1, float c3) {
+// Vzorky jen behem tlaceni ('w'). Preruseni toku zahodi rozpracovany kos
+// a porovnani pro skok (prepnuti ventilu dela skoky); okno a maxima
+// zustavaji - pauza ani doplneni vzduchu stav hledani vrcholu nezmeni.
+static void detectFeed(float c1, float c3, char phase) {
     if (detMode == DET_OFF) return;
-    b1[bIdx] = c1; b3[bIdx] = c3;
-    bIdx = (bIdx + 1) % DET_MED_N;
-    if (bCount < DET_MED_N) { bCount++; return; }
-    float m1 = median(b1), m3 = median(b3);
-    if (m1 > c1Peak) c1Peak = m1;
-    if (m3 > c3Peak) c3Peak = m3;
-
-    if (guardTripped(m1)) { detectFire(HIT_GUARD, m1, m3, 0.0f); return; }
-
-    if (detMode == DET_LEARN) {
-        if (learnPlateau(m3)) detectFire(HIT_STOP, m1, m3, 1.0f);
-        return;
+    bool flowing = (phase == 'w');
+    if (flowing && prevPhase != 'w') {
+        accC1 = accC3 = 0; accN = 0; binIdx = -1; prevBinC1 = -1.0f;
     }
-    float denom = m1 - learnedF3;
-    if (denom < DET_DENOM_FRAC * learnedD1) return;
-    float delta = (m1 - m3) / denom;
-    if (delta >= deltaStop) detectFire(HIT_STOP, m1, m3, delta);
+    prevPhase = phase;
+    if (!flowing) return;
+    int16_t idx = (int16_t)(pushedMl() / PEAK_BIN_ML);
+    if (binIdx >= 0 && idx != binIdx && accN > 0) {
+        detectBin(accC1 / accN, accC3 / accN);
+        accC1 = accC3 = 0; accN = 0;
+        if (detMode == DET_OFF) return;
+    }
+    binIdx = idx;
+    accC1 += c1; accC3 += c3; accN++;
 }
 
 // ============================================================
@@ -767,11 +741,7 @@ static bool pushUntilDetect() {
                 return false;
             }
             refills++;
-            DetMode m = detMode;
-            detMode = DET_OFF;                 // skoky ventilu do detekce nepatri
-            if (!refillAir()) return false;
-            detectResetBuffers();
-            detMode = m;
+            if (!refillAir()) return false;    // faze 'e'/'a'/'v' detekce ignoruje
         }
         if (!moveAir(airMl(), true, 'w', 1)) return false;
     }
@@ -779,7 +749,7 @@ static bool pushUntilDetect() {
 }
 
 static void printHit() {
-    printEvent(detHitKind == HIT_GUARD ? F("# *** ") : F("# "), detHitKind);
+    printEvent(detHitKind == HIT_STEP ? F("# *** ") : F("# "), detHitKind);
 }
 
 // Profil: vytlaci se profileAirMl (s doplnovanim), detekce bezi jen jako
@@ -788,11 +758,7 @@ static bool pushProfile() {
     if (!openPatientAndHold()) return false;
     while (pushedMl() < profileAirMl - 0.001f) {
         if (airMl() < 0.01f) {
-            DetMode m = detMode;
-            detMode = DET_OFF;                 // skoky ventilu do detekce nepatri
-            if (!refillAir()) return false;
-            detectResetBuffers();
-            detMode = m;
+            if (!refillAir()) return false;    // faze 'e'/'a'/'v' detekce ignoruje
         }
         float rest = profileAirMl - pushedMl();
         if (!moveAir(rest < airMl() ? rest : airMl(), true, 'w', 1)) return false;
@@ -803,22 +769,32 @@ static bool pushProfile() {
 // ============================================================
 //  Jeden cyklus
 // ============================================================
+// Klid 'k' s uzavrenou lahvickou (S<->V) a kontrola vychoziho stavu:
+// horni prstenec musi byt zakryty (C3/C1 >= 0,8). Jinak by hladina uz
+// byla v mezere nebo niz a tlacit se nesmi - obsluha doplni kapalinu.
+static bool restAndCheckStart() {
+    for (;;) {
+        if (!airValveTo(angAirSyrVial)) return false;
+        if (!sampleFor(VALVE_SETTLE_MS, 'v')) return false;
+        if (!restWithStats()) return false;
+        float q = c3Rest / c1Rest;
+        Serial.print(F("# start C3/C1=")); Serial.println(q, 3);
+        if (profileAirMl > 0.0f || q >= START_Q_MIN) return true;
+        Serial.println(F("# *** hladina neni nad hornim prstencem, netlaci se ***"));
+        if (!airValveTo(angAirVialFilt)) return false;
+        if (!waitConfirm(F("DOPLNIT kapalinu nad horni prstenec, potvrdit"))) return false;
+    }
+}
+
 static bool runCycle(uint8_t n) {
     cycleNo = n;
     Serial.print(F("# ===== CYKLUS ")); Serial.print(n);
     Serial.print('/'); Serial.print(cycleCount); Serial.println(F(" ====="));
 
-    bool learnCycle = !learned;
     bool profile = profileAirMl > 0.0f;
-    if (profile) {
-        // Jedina vyzva cyklu: strikacka je po minulem cyklu uz doplnena,
-        // obsluha jen doplni kapalinu (poznamka, napr. 'zbytek', jde do logu).
-        if (!waitConfirm(F("PROFIL: doplnit kapalinu OD OKA (pokazde jinak), potvrdit"))) return false;
-    } else if (learnCycle) {
-        if (!waitConfirm(F("naplnit lahvicku (napr. 10 ml), potvrdit"))) return false;
-    } else {
-        if (!waitConfirm(F("pridat roztok OD OKA (pokazde jinak), potvrdit"))) return false;
-    }
+    if (!waitConfirm(profile
+            ? F("PROFIL: doplnit kapalinu OD OKA (pokazde jinak), potvrdit")
+            : F("naplnit lahvicku NEZNAMYM objemem 9-14 ml, vlozit, potvrdit"))) return false;
     if (!fdcEnsure()) return false;      // senzor mohl mezi cykly zamrznout
 
     steppersEnable();
@@ -826,30 +802,20 @@ static bool runCycle(uint8_t n) {
     cycleT0 = millis();
 
     // Lahvicka uzavrena (S<->V), pacient zustava ISOLATE.
-    if (!airValveTo(angAirSyrVial)) return false;
-    if (!sampleFor(VALVE_SETTLE_MS, 'v')) return false;
-    if (!restWithStats()) return false;
+    if (!restAndCheckStart()) return false;
     if (!precompress(precompMl())) return false;
 
-    detectStart(learnCycle ? DET_LEARN : DET_STOP);
+    detectStart();
     bool ok = profile ? pushProfile() : pushUntilDetect();
     detMode = DET_OFF;
     if (!ok) return false;
-    bool guard = false;
+    bool step = false;
     if (!profile) {
         printHit();
         if (!sampleFor(SERVO_SETTLE_MS, 's')) return false;   // pacient uz zavren
-        guard = (detHitKind == HIT_GUARD);
+        step = (detHitKind == HIT_STEP);
     }
     detHitKind = HIT_NONE;
-
-    if (!profile && learnCycle && !guard) {
-        learnedF3 = hitM3;
-        learnedD1 = hitM1 - hitM3;
-        learned = true;
-        Serial.print(F("# NAUCENO F3=")); Serial.print(learnedF3, 3);
-        Serial.print(F(" D1=")); Serial.println(learnedD1, 3);
-    }
 
     Serial.println(F("# klid pod tlakem (d), pak odvzdusneni a klid (o)"));
     if (!sampleFor(KLID_POST_MS, 'd')) return false;
@@ -861,9 +827,9 @@ static bool runCycle(uint8_t n) {
     Serial.print(F(" hotov, vytlaceno ")); Serial.print(pushedMl(), 2);
     Serial.println(F(" ml vzduchu"));
 
-    if (!profile && !waitConfirm(F("kde je hladina? (nad C3 / mezi / pod C1), poslat"))) return false;
-    if (guard) {
-        Serial.println(F("# serie ukoncena pojistkou C1"));
+    if (!profile && !waitConfirm(F("ZMERIT vysku hladiny od vnejsiho dna [mm], poslat cislo"))) return false;
+    if (step) {
+        Serial.println(F("# serie ukoncena skokem C1"));
         return false;
     }
     return true;
@@ -874,7 +840,6 @@ static bool runCycle(uint8_t n) {
 // ============================================================
 static void runSeries() {
     running = true;
-    learned = false;
     printLogHeader();
 
     // Lahvicka se plni VZDY v teto poloze: pacient uzavren, V<->F otevreno.
@@ -908,12 +873,12 @@ static void printInfo() {
     printChannelMap();
     Serial.print(F("# cykly=")); Serial.print(cycleCount);
     Serial.print(F("  rychlost=1 ml/")); Serial.print(flowSecPerMl);
-    Serial.print(F(" s  delta stop=")); Serial.println(deltaStop, 2);
+    Serial.println(F(" s"));
     if (profileAirMl > 0.0f) {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.println(F("# REZIM: zastaveni detekci"));
+        Serial.println(F("# REZIM: zastaveni na vrcholu C1-C3 (test 7)"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
@@ -934,22 +899,20 @@ static void printInfo() {
     Serial.print(F(" ml  tared=")); Serial.println(tared ? F("ano") : F("ne"));
 }
 
-// Napoveda: postup testu 6 krok za krokem, pak prehled prikazu.
+// Napoveda: postup testu 7 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# ================ POSTUP TESTU 6 ================"));
+    Serial.println(F("# ================ POSTUP TESTU 7 ================"));
     Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
     Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
     Serial.println(F("# 2) MAPA: 'm', prst postupne na spodni / svislou / horni"));
     Serial.println(F("#    elektrodu -> 16 pF musi ukazat C1 / C2 / C3."));
     Serial.println(F("#    Jinak 'n<s><v><h>' (napr. n213) a znovu 'm'."));
-    Serial.println(F("#    'm' se ukonci libovolnym znakem."));
-    Serial.println(F("# 3) SUCHE ELEKTRODY: 'D', dal podle vyzev (bez lahvicky,"));
-    Serial.println(F("#    3x prazdna SUCHA lahvicka, znovu bez lahvicky)"));
-    Serial.println(F("# 4) 't' = vzduchova strikacka je plna"));
-    Serial.println(F("# 5) 'i' = kontrola: REZIM PROFIL 20 ml, cykly=5, FDC OK"));
-    Serial.println(F("# 6) 'g' = 5 cyklu. Na vyzvu naplnit lahvicku OD OKA"));
-    Serial.println(F("#    9-12 ml (hladina nad hornim prstencem), vlozit, Enter."));
-    Serial.println(F("#    Zbyla-li po cyklu kapalina, napsat 'zbytek'."));
+    Serial.println(F("# 3) 't' = vzduchova strikacka je plna"));
+    Serial.println(F("# 4) 'i' = REZIM zastaveni na vrcholu, cykly=5, FDC OK"));
+    Serial.println(F("# 5) 'g' = 5 cyklu. Na vyzvu naplnit lahvicku NEZNAMYM"));
+    Serial.println(F("#    objemem 9-14 ml (pokazde jinak), vlozit, Enter."));
+    Serial.println(F("# 6) Po zastaveni a 30 s klidu vyndat lahvicku, ZMERIT"));
+    Serial.println(F("#    vysku hladiny od vnejsiho dna v mm a poslat cislo."));
     Serial.println(F("# 7) log poslat jako soubor"));
     Serial.println(F("# ------------------- prikazy -------------------"));
     Serial.println(F("# h napoveda  i info  f kontrola FDC  a CAPDAC  x STOP"));
@@ -957,7 +920,7 @@ static void printHelp() {
     Serial.println(F("# j/k jog vzduch +-0.5 ml  u0/u1 pacient ISOL/OTEV"));
     Serial.println(F("# u2/u3/u4 vzduch S-V/S-F/V-F  #<text> znacka do logu"));
     Serial.println(F("# v<ml> profil (v0=zastaveni)  c<n> cykly  s<s> s/ml"));
-    Serial.println(F("# d<x> prah delta  r<ml>/r predtlak rucne/vypoctem"));
+    Serial.println(F("# r<ml>/r predtlak rucne/vypoctem"));
 }
 
 static void jogAir(bool push) {
@@ -1114,12 +1077,6 @@ static void handleLine() {
             float v = atof(&line[1]);
             if (v == 0.0f || (v >= 5.0f && v <= 60.0f)) { profileAirMl = v; printInfo(); }
             else Serial.println(F("# CHYBA: v0 (zastaveni) nebo v5..v60 (profil)"));
-            break;
-        }
-        case 'd': {
-            float v = atof(&line[1]);
-            if (v > 0.3f && v < 1.0f) { deltaStop = v; printInfo(); }
-            else Serial.println(F("# CHYBA: rozsah 0.3..1.0"));
             break;
         }
         case 'r': {
