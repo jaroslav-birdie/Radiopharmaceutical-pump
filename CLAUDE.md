@@ -376,8 +376,8 @@ enum State {
 
     // Iterativní cyklus – opakuje se ITER_COUNT×, plus závěrečné vytlačení
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes vzduchový filtr
-    ST_ITER_FILL_AIR,    // nasátí vzduchu do stříkačky (5 ml v 1. iteraci,
-                         // dále dle naučeného objemu z předchozí iterace)
+    ST_ITER_FILL_AIR,    // doplnění vzduchové stříkačky z atmosféry na plný
+                         // objem (nikdy víc, než stříkačka pojme)
     ST_ITER_PUSH_AIR,    // vytlačení kapaliny do pacienta až na kritickou hladinu;
                          // pokud nestačí nasátý objem, opakuje se
                          // ST_ITER_EQUALIZE → ST_ITER_FILL_AIR stejně jako ve Fázi 1
@@ -479,7 +479,8 @@ je neznámý tlakový stav samotné **stříkačky** po ručním osazení pístu
 - ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
 - ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` déle než `NO_FLOW_TIMEOUT_MS` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
 - ✅ Počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE`/`ST_ITER_EQUALIZE` → `ST_P1_FILL_AIR`/`ST_ITER_FILL_AIR`) se počítá **jak ve Fázi 1, tak v každé jednotlivé iteraci zvlášť**; po překročení `MAX_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
-- ✅ Systém si po každé iteraci ukládá **celkový** skutečně spotřebovaný objem vzduchu potřebný k dosažení kritické hladiny (součet počátečního nasátí i všech případných doplnění v rámci téže iterace) – tato hodnota určuje nasávaný objem pro **následující** iteraci (1. iterace používá pevnou počáteční hodnotu `VOL_AIR_ITER1_ML`)
+- ✅ **O ukončení tlačení rozhoduje výhradně detekce změn kapacity** (FDC1004), nikdy objem vytlačeného vzduchu. Vzduch je jen hnací médium; vazba mezi vytlačeným vzduchem a hladinou v lahvičce není stálá (stlačitelnost, tlak v celém systému, měnící se tlak u pacienta). Objem se proto **neučí ani neopakuje** z předchozí iterace – ani po úspěšné detekci v ředicím cyklu se nesmí jen „aplikovat stejné množství vzduchu"
+- ✅ Objem vzduchu ve stříkačce se sleduje (čítáním kroků) **jen kvůli správnému plnění stříkačky**: poznat, že dochází a je třeba doplnit, a při nasátí **nikdy nepřekročit kapacitu** (`VOL_AIR_SYRINGE_MAX_ML` = 10 ml, výchozí stav plná) – nasátí doplní stříkačku nejvýš na plný objem
 
 ---
 
@@ -620,7 +621,7 @@ má mírně jinou mechanickou nulu serva.
 - V `config.h` jsou definovány **výchozí hodnoty** (fallback, použité při první inicializaci)
 - Po sestavení konkrétního kusu lze úhly doladit v servisním režimu (enkodér) a uložit do EEPROM
 - Při startu se hodnoty načtou z EEPROM; pokud EEPROM neobsahuje platná data (první spuštění), použijí se výchozí hodnoty z `config.h` a rovnou se do EEPROM zapíší
-- Žádná jiná provozní data (kalibrace kapacity, naučené objemy vzduchu) se mezi jednotlivými aplikacemi neukládají – každá aplikace začíná vlastní kalibrací od nuly
+- Žádná jiná provozní data (kalibrace kapacity) se mezi jednotlivými aplikacemi neukládají – každá aplikace začíná vlastní kalibrací od nuly
 
 ---
 
@@ -685,7 +686,6 @@ má mírně jinou mechanickou nulu serva.
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
 #define VOL_AIR_RESERVE_ML      3.0f   // trvalá rezerva ve vzduchové stříkačce
-#define VOL_AIR_ITER1_ML        5.0f   // počáteční objem nasávaný v 1. iteraci (upravitelné)
 #define VOL_SAL_TOTAL_ML       30.0f
 #define VOL_SAL_ITER_ML         3.0f   // dávka fyziologického roztoku na 1 iteraci
 #define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce
@@ -770,6 +770,6 @@ Před finální verzí nastav `#define DEBUG 0`.
 - [ ] Ihned po ST_INIT nastaveny oba ventily do pracovních poloh (PATIENT_VALVE_ISOLATE, AIR_VALVE_SYRINGE_TO_FILTER) – ne spoléhat na 0° default
 - [ ] Pacientský ventil v PATIENT_VALVE_ISOLATE při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
 - [ ] MAX_AIR_REFILLS ošetřen ve Fázi 1 i v každé iteraci → ST_ALARM_EXCESS_AIR
-- [ ] Naučený objem vzduchu pro další iteraci = součet nasátí + všech doplnění v aktuální iteraci
+- [ ] Tlačení končí jen detekcí kapacity; objem vzduchu se neučí, sleduje se jen pro doplnění stříkačky (nikdy nad `VOL_AIR_SYRINGE_MAX_ML`)
 - [ ] Zadaný objem enkodérem omezen na rozsah VOL_FINE_MIN/MAX_10ML resp. _20ML
 - [ ] Kompilace bez warningů
