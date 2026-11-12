@@ -685,7 +685,6 @@ má mírně jinou mechanickou nulu serva.
 
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
-#define VOL_AIR_RESERVE_ML      3.0f   // trvalá rezerva ve vzduchové stříkačce
 #define VOL_SAL_TOTAL_ML       30.0f
 #define VOL_SAL_ITER_ML         3.0f   // dávka fyziologického roztoku na 1 iteraci
 #define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce

@@ -120,11 +120,11 @@ void PumpController::update() {
         case ST_P1_PUSH_AIR:     handlePushAir(true);     break;
         case ST_P1_EQUALIZE:     handleEqualize(true);    break;
         case ST_P1_FILL_AIR:     handleFillAir(true);     break;
-        case ST_P1_ADD_SALINE:   handleAddSaline(true);   break;
+        case ST_P1_ADD_SALINE:   handleAddSaline();       break;
         case ST_ITER_EQUALIZE:   handleEqualize(false);   break;
         case ST_ITER_FILL_AIR:   handleFillAir(false);    break;
         case ST_ITER_PUSH_AIR:   handlePushAir(false);    break;
-        case ST_ITER_ADD_SALINE: handleAddSaline(false);  break;
+        case ST_ITER_ADD_SALINE: handleAddSaline();       break;
         case ST_PAUSED:          handlePaused();          break;
         default:                 break;   // terminální stavy: nic
     }
@@ -227,12 +227,11 @@ void PumpController::resumeSystem() {
     dispDirty_ = true;
 }
 
-// Spustí tlačení vzduchu – vždy jen po trvalou rezervu stříkačky.
+// Spustí tlačení vzduchu – celý obsah stříkačky. Tlačení ukončí detekce
+// kapacity; dojde-li vzduch dřív, stříkačka se doplní. Objem vzduchu
+// o hladině nic neříká (stlačitelnost, tlak v systému a u pacienta).
 void PumpController::startAirPush() {
-    float pushable = airMl_ - VOL_AIR_RESERVE_ML;
-    if (pushable < 0.0f) {
-        pushable = 0.0f;
-    }
+    float pushable = airMl_;
     logEvent(LOG_AIR_PUSH);
     dispDirty_ = true;
     refreshDisplay();                    // překreslit, dokud motor stojí
@@ -240,12 +239,12 @@ void PumpController::startAirPush() {
     armFlowWatch();
 }
 
-// Po skončení pohybu vzduchové stříkačky aktualizuje bilanci objemu.
+// Po skončení pohybu vzduchové stříkačky aktualizuje obsah stříkačky –
+// slouží jen k tomu, aby nasátí nikdy nepřekročilo její kapacitu.
 void PumpController::finishAirMove(bool push) {
     float moved = airSyr_.movedMl();
     if (push) {
         airMl_ -= moved;
-        airUsedMl_ += moved;
     } else {
         airMl_ += moved;
     }
@@ -360,14 +359,13 @@ void PumpController::handlePushAir(bool phase1) {
             if (targetReached) {
                 airSyr_.stop();
                 finishAirMove(true);
-                refillMode_ = false;
                 logEvent(LOG_CRITICAL_LEVEL);
                 // Ventil k pacientovi zůstává OTEVŘENÝ - stlačený vzduch
                 // v lahvičce ještě dotlačuje kapalinu hadičkou (viz phase 7).
                 pushDone_ = true;
                 phaseT_ = millis();
                 phase_ = 7;
-            } else if (airSyr_.idle()) { // stříkačka na rezervě – nutné doplnění
+            } else if (airSyr_.idle()) { // stříkačka prázdná – nutné doplnění
                 finishAirMove(true);
                 refills_++;
                 if (refills_ > MAX_AIR_REFILLS) {
@@ -398,7 +396,6 @@ void PumpController::handlePushAir(bool phase1) {
             break;
         case 5:                          // k doplnění vzduchu přes vyrovnání tlaku
             if (patientValve_.settled()) {
-                refillMode_ = true;
                 changeState(phase1 ? ST_P1_EQUALIZE : ST_ITER_EQUALIZE);
             }
             break;
@@ -467,13 +464,10 @@ void PumpController::handleFillAir(bool phase1) {
             if (!airValve_.settled()) {
                 break;
             }
-            // Fáze 1 a doplňování: plná stříkačka; jinak naučený objem
-            float target = (phase1 || refillMode_)
-                         ? (VOL_AIR_SYRINGE_MAX_ML - airMl_)
-                         : intakeMl_;
-            float room = VOL_AIR_SYRINGE_MAX_ML - airMl_;
-            if (target > room) {
-                target = room;
+            // Vždy doplnit na plnou stříkačku, nikdy víc, než pojme
+            float target = VOL_AIR_SYRINGE_MAX_ML - airMl_;
+            if (target < 0.0f) {
+                target = 0.0f;
             }
             logEvent(LOG_AIR_FILL);
             dispDirty_ = true;
@@ -502,7 +496,7 @@ void PumpController::handleFillAir(bool phase1) {
 }
 
 // Přidání dávky fyziologického roztoku do lahvičky.
-void PumpController::handleAddSaline(bool phase1) {
+void PumpController::handleAddSaline() {
     switch (phase_) {
         case 0:
             // Tolerance 0,1 ml kryje zaokrouhlení kroků; stříkačka se plní
@@ -524,17 +518,7 @@ void PumpController::handleAddSaline(bool phase1) {
         case 1:
             if (salSyr_.idle()) {
                 salMl_ -= salSyr_.movedMl();
-                if (!phase1) {
-                    // Učení: příští nasátí = skutečná spotřeba + přirážka
-                    float learned = airUsedMl_ + VOL_AIR_INTAKE_MARGIN_ML;
-                    float maxIntake = VOL_AIR_SYRINGE_MAX_ML - VOL_AIR_RESERVE_ML;
-                    if (learned < 1.0f) learned = 1.0f;
-                    if (learned > maxIntake) learned = maxIntake;
-                    intakeMl_ = learned;
-                }
-                airUsedMl_ = 0.0f;
                 refills_ = 0;
-                refillMode_ = false;
                 iter_++;
                 // I po POSLEDNÍM doplnění roztoku se pokračuje na
                 // ST_ITER_EQUALIZE - i tento objem se má ještě vytlačit

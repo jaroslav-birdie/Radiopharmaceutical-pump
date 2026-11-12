@@ -63,7 +63,7 @@ private:
     void handleGlobalKeys();
     void pauseSystem(bool byNoFlow);
     void resumeSystem();
-    void startAirPush();                 // tlačení až k rezervě stříkačky
+    void startAirPush();                 // tlačení celého obsahu stříkačky
     void finishAirMove(bool push);       // aktualizace bilance objemu vzduchu
     void armFlowWatch();
     bool flowStalled();
@@ -82,7 +82,7 @@ private:
     void handlePushAir(bool phase1);
     void handleEqualize(bool phase1);
     void handleFillAir(bool phase1);
-    void handleAddSaline(bool phase1);
+    void handleAddSaline();
     void handlePaused();
 
     // --- hardware ---
@@ -108,12 +108,9 @@ private:
 
     uint8_t  iter_ = 0;                  // 0 = Fáze 1, 1-9 = iterace
     uint8_t  refills_ = 0;               // doplnění vzduchu v aktuálním kroku
-    bool     refillMode_ = false;        // FILL_AIR doplňuje po vyčerpání stříkačky
     bool     pushDone_ = false;          // po prodlevě na dotečení: true=hotovo, false=doplnit vzduch
-    float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky
+    float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky (jen pro plnění)
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
-    float    airUsedMl_ = 0.0f;          // spotřeba vzduchu v aktuální iteraci
-    float    intakeMl_ = VOL_AIR_ITER1_ML;      // naučený objem pro nasátí
     uint16_t volumeDml_ = 100;           // zadaný objem lahvičky (desetiny ml)
     bool     is20ml_ = false;
 
