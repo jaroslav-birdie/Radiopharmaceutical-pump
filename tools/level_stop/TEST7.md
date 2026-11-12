@@ -17,27 +17,34 @@ rozhodne, jak dál.
 
 ## Detektor (bez učení, každý běh zvlášť)
 
-Detektor neběží na čase, ale na **ose vytlačeného vzduchu**:
+Vzduch je **jen hnací médium**. Jeho spotřeba s hladinou nijak nesouvisí
+a detekce ji **nepoužívá**. Sleduje se jen, jestli ve stříkačce ještě
+vzduch je; když dojde, stříkačka se doplní. Sloupec `vytlaceno_ml` v logu
+je jen diagnostika polohy motoru.
 
-- vzorky se sbírají **jen během tlačení** (fáze `w`) do košů po
-  **0,125 ml** vzduchu (průměr košíku),
-- klouzavé okno je **8 košů = 1 ml**: `C1ₒ`, `C3ₒ`, `d = C1ₒ − C3ₒ`,
-- `d₀` = první plné okno běhu (výchozí výška hrbu).
+Detektor běží **na čase**, vždy když je pacientská cesta otevřená
+a ustálená: fáze `p` (otevřeno, motor stojí) a `w` (tlačení). Hladina se
+může hýbat i se stojícím motorem (zbytkový přetlak), proto se detekce
+nevypíná se stříkačkou.
+
+- koš = **12 vzorků** (0,6 s při 20 vzorcích/s), průměr,
+- klouzavé okno = **8 košů** (4,8 s): `C1ₒ`, `C3ₒ`, `d = C1ₒ − C3ₒ`,
+- `d₀` = první plné okno běhu.
 
 | krok | podmínka |
 |---|---|
 | **aktivace** | `C3ₒ ≤ 0,85 × max C3ₒ` v tomto běhu (horní prstenec se začal odkrývat) |
 | **vrchol** | od aktivace se sleduje `dmax`; zastaví se, když `d < dmax − 0,10·(dmax − d₀)` |
-| **skok C1** (poslední záchrana) | koš C1 o víc než **15 %** níž než předchozí koš → zastavení, konec série |
+| **skok C1** (poslední záchrana) | koš C1 o víc než **15 %** níž než větší ze dvou předchozích košů → zastavení, konec série |
 
 Vlastnosti:
-- **Pauza, doplnění vzduchu, klid:** nic se nevytlačuje, takže se stav
-  detektoru nemění. Okno i maxima zůstávají, zahodí se jen rozpracovaný
+- **Pacient zavřený** (doplnění vzduchu, přejezdy ventilů): hladina stojí,
+  vzorky se ignorují. Okno i maxima zůstávají, zahodí se jen rozpracovaný
   koš a porovnání pro skok (přepnutí ventilu dělá skoky).
 - **Na zesílení ani posunu nezávisí:** poloha maxima rozdílu se nezmění,
   když se oba prstence vynásobí nebo posunou stejně (vliv samolepky,
   vodivosti, okolí).
-- Žádný práh v pF ani v ml roztoku.
+- Žádný práh v pF ani v ml.
 
 Při detekci se pacient zavírá **okamžitě, uvnitř vzorkování**. Motor
 stojí, tlačení skončí. Teprve po 15 s klidu pod tlakem se lahvička
@@ -53,31 +60,38 @@ kapalinu.
 
 ### Přehrání na datech testu 6
 
-Na PC přeložený stejný algoritmus, puštěný na pět profilů testu 6:
+Na PC přeložený stejný algoritmus, puštěný na pět profilů testu 6
+(časy od začátku cyklu, včetně doplňování vzduchu):
 
-| cyklus | aktivace [ml] | vrchol dmax [ml] | **zastavení** [ml] | skok C1 15 % [ml] | zastavení před skokem [ml vzduchu] |
+| cyklus | aktivace [s] | **zastavení** [s] | C1 / C3 při zastavení [pF] | skok C1 [s] | zastavení před skokem [s] |
 |---|---|---|---|---|---|
-| 1 | 12,50 | 15,25 | **16,50** | 18,26 | 1,76 |
-| 2 | 10,25 | 13,00 | **14,25** | – (max. pokles 12 %) | – |
-| 3 | 10,63 | 14,00 | **15,38** | 16,88 | 1,50 |
-| 4 | 10,38 | 12,75 | **14,63** | 16,63 | 2,00 |
-| 5 | 13,25 | 16,26 | **17,26** | 19,63 | 2,37 |
+| 1 | 120,7 | **143,5** | 4,69 / 2,69 | 153,7 | 10,2 |
+| 2 | 108,2 | **130,4** | 4,74 / 2,71 | 141,8 | 11,4 |
+| 3 | 110,6 | **137,6** | 4,69 / 2,68 | 146,0 | 8,4 |
+| 4 | 109,4 | **132,8** | 4,77 / 2,71 | 144,2 | 11,4 |
+| 5 | 125,0 | **148,4** | 4,64 / 2,73 | 161,0 | 12,6 |
 
-- Zastavení přichází vždy **před skokem**, pojistka skoku nikde
-  nezasáhla falešně.
-- Výška hrbu `dmax − d₀` = 2,2–2,4 pF ve všech cyklech.
+- Zastavení přichází vždy **před skokem**, pojistka skoku zachytila skok
+  ve všech cyklech (pokles 17–29 %) a nikde nezasáhla falešně (jinde
+  nejvýš 11 %).
+- **Signál při zastavení je velmi stálý:** C1 4,64–4,77 pF, C3
+  2,68–2,73 pF při náplních, které se lišily. Hladina by tedy měla stát
+  pokaždé na stejném místě.
+- Časy závisí na rychlosti motoru (`s5`), polohu hladiny neurčují.
 
 ### Očekávání (stanovené PŘEDEM)
 
-Z testu 6: zastavení ≈ 2,1 ± 0,2 ml vzduchu před skokem, zpoždění za
-skutečným vrcholem ≈ 0,9 ml vzduchu. Převodem vzduch → roztok ≈ 1,5 : 1
-(test 5) to dává hladinu **≈ 8,8 mm** (8,0–9,0 mm), tedy těsně nad horní
-hranou spodního prstence (8,5 mm), **zbytek ≈ 4,2 ml** (3,3–4,3 ml).
+Kde přesně hladina stojí, z dosavadních dat **určit nejde** (poloha šla
+jen přes osu vzduchu, která s hladinou nesouvisí). Proto se měří.
+Z geometrie: vrchol rozdílu nastává, když je horní prstenec odkrytý
+a spodní ještě zakrytý, tedy hladina **v mezeře nebo na horní hraně
+spodního prstence**, 8,5–11,5 mm.
 
 | výsledek | význam |
 |---|---|
-| výška 8–9,5 mm ve všech cyklech, rozptyl ≤ ±0,5 mm | převod platí, detektor použitelný |
-| výška opakovatelná, ale jinde | převod vzduch → roztok neplatí, posun se dá korigovat |
+| výška v 8,5–11,5 mm ve všech cyklech, rozptyl ≤ ±0,5 mm | detektor použitelný |
+| výška opakovatelná, ale v horním prstenci (> 11,5 mm) | stop příliš brzy – posunout práh poklesu |
+| výška 5,5–8,5 mm (ve spodním prstenci) | stop pozdě, ale jehla sahá na dno – posoudit rezervu |
 | velký rozptyl (> ±1 mm) | detektor závisí na náplni – rozhodnout jinak |
 | výška < 5,5 mm | hladina prošla spodním prstencem – nepoužitelné |
 
@@ -119,8 +133,8 @@ hladiny, číst **spodní okraj menisku**.
 | řádek | význam |
 |---|---|
 | `# start C3/C1=…` | kontrola před tlačením |
-| `# aktivace @ x ml  C3=… max C3=…` | horní prstenec se začal odkrývat |
-| `# STOP vrchol @ x ml  C1=… C3=… d=… d0=… dmax=… @ y` | zastavení (okno 1 ml), `y` = poloha maxima |
+| `# aktivace @ t=… ms  C3=… max C3=…` | horní prstenec se začal odkrývat |
+| `# STOP vrchol @ t=… ms  C1=… C3=… d=… d0=… dmax=… @ t=…` | zastavení (okno 4,8 s), druhý čas = maximum rozdílu |
 | `# *** SKOK C1 @ …` | poslední záchrana, série končí |
 | `# obsluha: 8.5` | změřená výška hladiny [mm] |
 
@@ -139,4 +153,4 @@ hladiny, číst **spodní okraj menisku**.
 
 Příkaz `d` (práh δ) z testu 5 je zrušený, učení F3 taky.
 
-Překlad (`avr-g++`): flash 25 064 B (76,5 %), SRAM 654 B (31,9 %), bez varování.
+Překlad (`avr-g++`): flash 25 208 B (76,9 %), SRAM 656 B (32,0 %), bez varování.

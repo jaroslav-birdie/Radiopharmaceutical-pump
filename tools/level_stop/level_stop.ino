@@ -5,13 +5,14 @@
 //  neprojde vrcholem; pak se pacient OKAMZITE zavre a tlaceni konci.
 //  Obsluha pak zmeri vysku hladiny od vnejsiho dna lahvicky.
 //
-//  Detekce (viz TEST7.md) bezi na OSE VYTLACENEHO VZDUCHU, ne casu:
-//  vzorky se sbiraji jen behem tlaceni (faze 'w') do kosu po 0,125 ml,
-//  klouzavy prumer pres 1 ml (8 kosu). Pauza, doplneni vzduchu ani
-//  klid stav detektoru nezmeni - nevytlaci se zadny vzduch.
+//  Detekce (viz TEST7.md) bezi na CASE, jen kdyz je pacient otevreny
+//  ('p', 'w'): kose po 12 vzorcich (0,6 s), klouzave okno 8 kosu.
+//  Vzduch je jen hnaci medium - jeho spotreba se v detekci nepouziva,
+//  strikacka se jen doplni, kdyz dojde. S pacientem zavrenym hladina
+//  stoji a detektor si stav drzi.
 //    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
 //    vrchol    C1 - C3 (okno) klesne o 10 % vysky hrbu pod sve maximum
-//    skok      C1 (kos) o 15 % niz nez v predchozim kosu = posledni zachrana
+//    skok      C1 (kos) o 15 % niz nez vetsi ze 2 predchozich = posledni zachrana
 //  Pred tlacenim: C3/C1 v klidu musi byt >= 0,8 (horni prstenec zakryt),
 //  jinak se netlaci a obsluha doplni kapalinu.
 //
@@ -121,11 +122,11 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 
 // ---------- detekce vrcholu (vse relativni, zadne pF) ----------
 #define DET_MED_N           10      // median pro monitor 'm'
-#define PEAK_BIN_ML      0.125f     // kos vytlaceneho vzduchu
-#define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu = 1 ml
+#define PEAK_BIN_SAMPLES    12      // kos = 12 vzorku (0,6 s pri 20 vzorcich/s)
+#define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu (4,8 s)
 #define PEAK_ARM_FRAC     0.85f     // aktivace: C3 <= 0,85 x vlastni maximum
 #define PEAK_DROP_FRAC    0.10f     // vrchol: pokles o 10 % vysky hrbu
-#define STEP_DROP_FRAC    0.15f     // skok: C1 v kosu o 15 % niz nez predchozi kos
+#define STEP_DROP_FRAC    0.15f     // skok: C1 v kosu o 15 % niz nez vetsi ze 2 predchozich
 #define START_Q_MIN       0.80f     // pred tlacenim C3/C1 >= 0,8 (horni prstenec zakryt)
 #define MAX_REFILLS          3      // max. doplneni vzduchu v jednom cyklu
 
@@ -580,17 +581,17 @@ static bool waitConfirm(const __FlashStringHelper *prompt) {
 static DetMode detMode = DET_OFF;
 static DetHit  detHitKind = HIT_NONE;
 static float   c1Rest, c3Rest, c1Sigma, c3Sigma;   // klid 'k'
-// kosy po PEAK_BIN_ML: rozpracovany kos + kruhova historie hotovych
+// kosy po PEAK_BIN_SAMPLES vzorcich: rozpracovany kos + kruhova historie hotovych
 static float   accC1, accC3;
 static uint16_t accN;
-static int16_t binIdx;                  // index rozpracovaneho kosu (-1 = zadny)
 static float   binC1[PEAK_WIN_BINS], binC3[PEAK_WIN_BINS];
 static uint8_t binHead, binCount;
-static float   prevBinC1;               // pro skok; < 0 = neplatny
+static float   prevBinC1, prev2BinC1;   // dva predchozi kose pro skok; < 0 = neplatny
 static char    prevPhase;
 // stav hledani vrcholu
 static bool    armed, haveD0, stopDone, stepDone;
-static float   d0, dMax, dMaxMl, c3Max;
+static float   d0, dMax, c3Max;
+static uint32_t dMaxMs;                 // cas maxima rozdilu od zacatku cyklu
 static float   hitD, hitC1, hitC3;
 
 static bool detectHit() { return detHitKind != HIT_NONE; }
@@ -607,10 +608,10 @@ static float median(const float *src) {
 }
 
 static void detectStart() {
-    accC1 = accC3 = 0; accN = 0; binIdx = -1;
-    binHead = binCount = 0; prevBinC1 = -1.0f; prevPhase = 0;
+    accC1 = accC3 = 0; accN = 0;
+    binHead = binCount = 0; prevBinC1 = prev2BinC1 = -1.0f; prevPhase = 0;
     armed = haveD0 = stopDone = stepDone = false;
-    dMax = -1e9f; dMaxMl = 0; c3Max = -1e9f; d0 = 0;
+    dMax = -1e9f; dMaxMs = 0; c3Max = -1e9f; d0 = 0;
     detHitKind = HIT_NONE;
     detMode = DET_ON;
 }
@@ -618,13 +619,13 @@ static void detectStart() {
 static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(prefix);
     Serial.print(kind == HIT_STEP ? F("SKOK C1") : F("STOP vrchol"));
-    Serial.print(F(" @ ")); Serial.print(pushedMl(), 2);
-    Serial.print(F(" ml  C1=")); Serial.print(hitC1, 3);
+    Serial.print(F(" @ t=")); Serial.print(millis() - cycleT0);
+    Serial.print(F(" ms  C1=")); Serial.print(hitC1, 3);
     Serial.print(F(" C3=")); Serial.print(hitC3, 3);
     Serial.print(F(" d=")); Serial.print(hitD, 3);
     Serial.print(F(" d0=")); Serial.print(d0, 3);
     Serial.print(F(" dmax=")); Serial.print(dMax, 3);
-    Serial.print(F(" @ ")); Serial.println(dMaxMl, 2);
+    Serial.print(F(" @ t=")); Serial.println(dMaxMs);
 }
 
 // Zastaveni: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
@@ -641,7 +642,7 @@ static void detectFire(uint8_t kind) {
     detMode = DET_OFF;
 }
 
-// Okno pres posledni 1 ml: aktivace po poklesu C3, pak vrchol C1 - C3.
+// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak vrchol C1 - C3.
 // Argmax rozdilu nezavisi na spolecnem zisku ani posunu obou prstencu.
 static void detectWindow() {
     float w1 = 0, w3 = 0;
@@ -652,25 +653,28 @@ static void detectWindow() {
     if (w3 > c3Max) c3Max = w3;
     if (!armed && w3 <= PEAK_ARM_FRAC * c3Max) {
         armed = true;
-        Serial.print(F("# aktivace @ ")); Serial.print(pushedMl(), 2);
-        Serial.print(F(" ml  C3=")); Serial.print(w3, 3);
+        Serial.print(F("# aktivace @ t=")); Serial.print(millis() - cycleT0);
+        Serial.print(F(" ms  C3=")); Serial.print(w3, 3);
         Serial.print(F(" max C3=")); Serial.println(c3Max, 3);
     }
     if (!armed) return;
-    if (d > dMax) { dMax = d; dMaxMl = pushedMl(); }
+    if (d > dMax) { dMax = d; dMaxMs = millis() - cycleT0; }
     if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) {
         hitD = d; hitC1 = w1; hitC3 = w3;
         detectFire(HIT_STOP);
     }
 }
 
-// Hotovy kos: nejdriv skok C1 proti predchozimu kosu, pak okno.
+// Hotovy kos: nejdriv skok C1 proti vetsimu ze dvou predchozich kosu
+// (skok se casto rozdeli do dvou kosu), pak okno.
 static void detectBin(float c1, float c3) {
-    if (prevBinC1 > 0 && c1 < (1.0f - STEP_DROP_FRAC) * prevBinC1) {
+    float ref = max(prevBinC1, prev2BinC1);
+    if (prev2BinC1 > 0 && c1 < (1.0f - STEP_DROP_FRAC) * ref) {
         hitC1 = c1; hitC3 = c3; hitD = c1 - c3;
         detectFire(HIT_STEP);
         if (detMode == DET_OFF) return;
     }
+    prev2BinC1 = prevBinC1;
     prevBinC1 = c1;
     binC1[binHead] = c1; binC3[binHead] = c3;
     binHead = (binHead + 1) % PEAK_WIN_BINS;
@@ -678,25 +682,29 @@ static void detectBin(float c1, float c3) {
     if (binCount == PEAK_WIN_BINS) detectWindow();
 }
 
-// Vzorky jen behem tlaceni ('w'). Preruseni toku zahodi rozpracovany kos
-// a porovnani pro skok (prepnuti ventilu dela skoky); okno a maxima
-// zustavaji - pauza ani doplneni vzduchu stav hledani vrcholu nezmeni.
+// Detekce bezi na CASE, vzdy kdyz je pacientska cesta otevrena a ustalena:
+// 'p' (otevreno, motor stoji) a 'w' (tlaceni). Hladina se muze hybat
+// i bez motoru (zbytkovy pretlak), proto se nezastavuje se strikackou.
+// Spotrebovany vzduch detekce vubec nepouziva - neni vazany na hladinu.
+// S pacientem zavrenym (doplneni vzduchu, prejezdy ventilu) hladina
+// stoji; vzorky se ignoruji, okno a maxima zustavaji, zahodi se jen
+// rozpracovany kos a porovnani pro skok (prepnuti ventilu dela skoky).
+static bool patientFlowPhase(char phase) {
+    return phase == 'p' || phase == 'w';
+}
+
 static void detectFeed(float c1, float c3, char phase) {
     if (detMode == DET_OFF) return;
-    bool flowing = (phase == 'w');
-    if (flowing && prevPhase != 'w') {
-        accC1 = accC3 = 0; accN = 0; binIdx = -1; prevBinC1 = -1.0f;
+    bool flowing = patientFlowPhase(phase);
+    if (flowing && !patientFlowPhase(prevPhase)) {
+        accC1 = accC3 = 0; accN = 0; prevBinC1 = prev2BinC1 = -1.0f;
     }
     prevPhase = phase;
     if (!flowing) return;
-    int16_t idx = (int16_t)(pushedMl() / PEAK_BIN_ML);
-    if (binIdx >= 0 && idx != binIdx && accN > 0) {
-        detectBin(accC1 / accN, accC3 / accN);
-        accC1 = accC3 = 0; accN = 0;
-        if (detMode == DET_OFF) return;
-    }
-    binIdx = idx;
     accC1 += c1; accC3 += c3; accN++;
+    if (accN < PEAK_BIN_SAMPLES) return;
+    detectBin(accC1 / accN, accC3 / accN);
+    accC1 = accC3 = 0; accN = 0;
 }
 
 // ============================================================
@@ -824,8 +832,7 @@ static bool runCycle(uint8_t n) {
     if (!topUpAir()) return false;
 
     Serial.print(F("# cyklus ")); Serial.print(n);
-    Serial.print(F(" hotov, vytlaceno ")); Serial.print(pushedMl(), 2);
-    Serial.println(F(" ml vzduchu"));
+    Serial.println(F(" hotov"));
 
     if (!profile && !waitConfirm(F("ZMERIT vysku hladiny od vnejsiho dna [mm], poslat cislo"))) return false;
     if (step) {
