@@ -128,3 +128,14 @@ přesunutá lahvička, špatná mapa kanálů):
   → **stop**,
 - `C1 − C3` neroste, když C3 klesá → stop/pauza,
 - C3 klesá, ale C1 se nehýbe ani v tlačení → kontrola senzoru.
+
+## Surový proti filtrovanému signálu
+
+![Surový a filtrovaný](img8/obr4_surovy_filtr.png)
+
+Test 8, cyklus 2, vzorky jen s otevřeným pacientem. Šum surového signálu
+≈ 0,13 pF (C1) a 0,10 pF (C3) na vzorek. Filtr sketche (průměr 96 vzorků)
+na prudkém sestupu C3 **zaostává** za surovým signálem o ≈ 0,1–0,15 pF.
+O čem filtr rozhoduje, to se tím posune později (níž). Ve výšce hladiny je
+to zpoždění tím větší, čím rychleji hladina klesá. S lepším stíněním
+(nižší šum) půjde filtr zkrátit a zpoždění zmenšit.
