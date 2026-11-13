@@ -197,6 +197,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   (C3/max 0,775–0,785), kontrola shody vždy OK. Zbývá: kontrola přítomnosti
   lahvičky, C3/C1 ≥ 0,90 na startu, maximum z plató, vyřadit koleno, test
   se startem uprostřed plató (iterace ≈ 7 ml).
+- **Test 10** (`tools/level_stop/TEST10.md`): zastavení jako test 9,
+  koleno vyřazeno (záviselo na rychlosti). Nové kontroly: suché hodnoty
+  v prázdné studně před sérií; před tlačením C1 i C3 ≥ suchá + 0,5 pF
+  (lahvička je tam) a C3/C1 ≥ 0,88; při aktivaci C3/C1 v okamžiku maxima C3
+  ≥ 0,88 (maximum z plató), jinak zastavení a konec série (dosavadní
+  data 0,914–1,03). Cyklus 1 nejdřív bez lahvičky, cykly 3–5 náplň ≈ 7 ml
+  (start jako v iteraci).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
