@@ -154,6 +154,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   většímu ze 2 předchozích košů; před tlačením C3/C1 ≥ 0,8. Na datech
   testu 6 zastaví vždy před skokem při C1 4,64–4,77 / C3 2,68–2,73 pF;
   skutečnou výšku hladiny měří obsluha.
+  **Výsledek testu 7** (`tools/level_stop/ANALYZA_TEST7.md`): hladina po
+  zastavení **4,08 ± 0,28 mm** (zbytek ≈ 1,3 ± 0,15 ml) – velmi opakovatelné,
+  ale 1,5 mm **pod** spodním prstencem. Vrchol C1 − C3 sám leží ≈ 8 mm
+  (horní hrana spodního prstence), detektor ho potvrdí až ≈ 9 s toku
+  později (široký hrb, okno 4,8 s). Kratší okno → předčasná zastavení.
+  C1 v klidu po zastavení s výškou nesouvisí. Otevřené: rezerva do skoku
+  (odkrytí jehly?) vs. zastavení výš podílem C3/C1.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

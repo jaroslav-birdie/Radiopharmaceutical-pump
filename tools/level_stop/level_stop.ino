@@ -820,8 +820,11 @@ static bool runCycle(uint8_t n) {
     bool step = false;
     if (!profile) {
         printHit();
-        if (!sampleFor(SERVO_SETTLE_MS, 's')) return false;   // pacient uz zavren
         step = (detHitKind == HIT_STEP);
+        // Nulovat PRED 's' - jinak se sampleFor() po detectHit() hned vrati
+        // a ustaleni serva se preskoci (test 7).
+        detHitKind = HIT_NONE;
+        if (!sampleFor(SERVO_SETTLE_MS, 's')) return false;   // pacient uz zavren
     }
     detHitKind = HIT_NONE;
 
