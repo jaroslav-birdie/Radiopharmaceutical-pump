@@ -174,6 +174,11 @@ dosedací plochy dna (= vnější dno lahvičky):
   koleno → vrchol → skok (přehrání 8,7 ± 0,45 mm). **Jeden prstenec**
   by bod zastavení určil taky (`C3 ≤ 0,7 × max` ≈ 10,5 ± 0,7 mm), druhý je
   ale nutný pro kontrolu výchozího stavu (C3/C1), zálohu a kontrolu pořadí.
+  **Šablona bez času** (`ANALYZA_TEST8.md`): v souřadnicích `C3 / max C3`
+  (postup hladiny) a `C1 / max C1` se všech 15 cyklů kryje (±0,01–0,02);
+  vrchol C1 − C3 vždy při `C3 ≈ 0,61 × max` (≈ 6,3 mm). Časová šablona
+  nejde (potřebovala by rychlost). Zastavení `C3 ≤ 0,78 × max` = bod
+  šablony; pás C1 proti C3 slouží jako kontrola shody průběhu.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

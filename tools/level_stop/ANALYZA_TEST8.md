@@ -85,3 +85,46 @@ Zastavit na **prvním** z:
 Očekávání podle přehrání: ≈ 8,7 ± 0,45 mm (8,1–9,6 mm). Ověřit stejně
 jako v testech 7 a 8 měřením výšky. Výšky jsou zatím odvozené (proložení
 přes testy 7 a 8), tentokrát ale z měřených dat, ne z předpokladu.
+
+## Šablona tvaru signálu (diskuse před testem 9)
+
+Otázka: odvodit analytický tvar průběhu, z počátku běhu ho přeškálovat,
+zastavit v předpovězeném bodě a skutečný signál použít jako kontrolu shody.
+
+**Na časové ose to nejde.** Šablona v čase potřebuje rychlost hladiny
+a ta se mezi během mění (tlak u pacienta, doplnění vzduchu, pauzy).
+**Bez času to funguje:** C1 a C3 se vynesou proti sobě, poměrně k
+vlastnímu maximu v běhu. Postup hladiny pak udává pokles horního prstence
+`C3 / max C3`. Rychlost ani čas v tom nejsou.
+
+![Tvar bez času](img8/obr3_bez_casu.png)
+
+*Graf vznikl při analýze (15 cyklů testů 6–8, okna jako ve sketchi).*
+
+| v bodě vrcholu C1 − C3 | průměr ± sd (15 cyklů) |
+|---|---|
+| `C3 / max C3` | **0,613 ± 0,024** |
+| `C1 / max C1` | 0,984 ± 0,012 |
+| `(C1 − C3) / max C3` (výška hrbu) | 0,543 ± 0,047 (test 6 ≈ 0,49, testy 7–8 ≈ 0,58) |
+
+- **Poloha vrcholu je v šabloně pevná**: vrchol nastává při
+  `C3 ≈ 0,61 × max C3`. Škálování jedním parametrem (vlastní maximum C3)
+  stačí. Výška hrbu se mezi sezeními liší až o 20 %, proto **nepředpovídat
+  z amplitudy**.
+- **Vrchol ale leží ≈ 6,3 mm (≈ 2,5 ml)**, pod cílem 8,5 mm. Šablona umožní
+  zastavit v libovolném jejím bodě: cíl 8,5 mm odpovídá `C3 ≈ 0,75–0,78 × max`.
+  Navržené kritérium testu 9 tedy **je** zastavení podle šablony
+  škálované vlastním maximem C3.
+- Plnější šablona (víc parametrů z počátku běhu) nepomůže. Na začátku
+  je hladina nad `SHLD2` a klidové hodnoty se mezi cykly liší
+  (C3 2,6–3,8 pF), takže o pozdějším průběhu skoro nic neříkají.
+  Spolehlivá kotva je jen maximum C3.
+
+**Kontrola shody, nový přínos:** `C1 / max C1` proti `C3 / max C3` leží
+ve všech 15 cyklech v úzkém pásu (±0,01–0,02), dokud C3 neklesne na ≈ 0,62.
+Odchylka znamená, že signál nekopíruje šablonu (porucha elektrody, bublina,
+přesunutá lahvička, špatná mapa kanálů):
+- C1 klesá dřív, než C3 dosáhne ≈ 0,65 × max → hladina jde jinudy, než má
+  → **stop**,
+- `C1 − C3` neroste, když C3 klesá → stop/pauza,
+- C3 klesá, ale C1 se nehýbe ani v tlačení → kontrola senzoru.
