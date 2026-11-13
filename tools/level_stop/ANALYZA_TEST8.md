@@ -139,3 +139,34 @@ na prudkém sestupu C3 **zaostává** za surovým signálem o ≈ 0,1–0,15 pF.
 O čem filtr rozhoduje, to se tím posune později (níž). Ve výšce hladiny je
 to zpoždění tím větší, čím rychleji hladina klesá. S lepším stíněním
 (nižší šum) půjde filtr zkrátit a zpoždění zmenšit.
+
+## Opakování (log 13. 11. 15:46, cykly 1–3)
+
+Omylem nahraný sketch testu 8 (zastavení kolenem), proto jde o další
+měření kolena. Cyklus 4 a dál: obsluha zapomněla vložit lahvičku, nehodnotí se.
+
+| cyklus | 1 | 2 | 3 |
+|---|---|---|---|
+| výška [mm] | 7,7 | 6,8 | 6,3 |
+
+- Koleno celkem (8 cyklů): **6,9 ± 0,6 mm** (5,9–7,7), pod cílem 8,5 mm.
+- Cyklus 2 doplňoval vzduch i **po aktivaci** (pacient zavřený uprostřed
+  sestupu C3). Zastavení to nenarušilo.
+- **Ověření proložení na nových datech:** proložení z testů 7 a 8 předpovědělo
+  výšky nových cyklů 7,1 / 6,5 / 6,4 mm, změřeno 7,7 / 6,8 / 6,3 mm
+  (chyba +0,6 / +0,3 / −0,1 mm). Se všemi 13 body leží šablona
+  `C3 ≤ 0,78 × max` na **≈ 9,0 mm** (sd 0,41 mm), `C3/C1 ≤ 0,68` na 9,0 mm.
+
+### Bezpečnostní nález: chybějící lahvička
+
+Cyklus 4 běžel **bez lahvičky ve studni** a kontrola před tlačením ho
+**pustila**: C3/C1 = 0,934 (C1 2,07, C3 1,93 pF). Prázdná studna má oba
+prstence na suché hodnotě, takže je jejich podíl ≈ 1 stejně jako
+u lahvičky s hladinou nad prstenci. Detektor se nikdy neaktivoval (C3 se
+nehnulo) a tlačilo se, dokud ho obsluha nezastavila (27 ml vzduchu, dvě
+doplnění).
+
+Kontrola výchozího stavu proto potřebuje i **absolutní porovnání se
+suchou hodnotou** změřenou bez lahvičky (v přístroji při kalibraci):
+s lahvičkou byly klidové hodnoty C1 3,4–3,8 pF a C3 3,3–3,7 pF, bez
+lahvičky ≈ 2,0 pF. Rozdíl ≥ 1,3 pF.

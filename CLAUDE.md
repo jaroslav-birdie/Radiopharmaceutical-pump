@@ -185,6 +185,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   dokud C3 > 0,65 × max; při C3 = 0,80 × max musí rozdíl vzrůst ≥ 0,15 × max
   C3. Přehrání 15 cyklů: 8,7 ± 0,45 mm, bez falešné poruchy shody.
   Měření suchých elektrod `D` ze sketche odebráno (flash).
+  **Pozor:** log z 13. 11. 15:46 je ještě sketch testu 8 (koleno): výšky
+  7,7 / 6,8 / 6,3 mm, koleno celkem 6,9 ± 0,6 mm. Proložení z testů 7+8
+  předpovědělo nové výšky s chybou ≤ 0,6 mm. **Prázdná studna (bez
+  lahvičky) prošla kontrolou C3/C1 ≥ 0,8** (0,93) → kontrola výchozího
+  stavu musí porovnat klid i se suchou hodnotou bez lahvičky (s náplní
+  C1/C3 ≥ 3,3 pF, bez lahvičky ≈ 2,0 pF).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
