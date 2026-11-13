@@ -1,20 +1,24 @@
 // ============================================================
-//  TEST 8 – ZASTAVENI V MEZERE NA KOLENI ROZDILU C1 - C3 (studna 3/3/3 mm)
+//  TEST 9 – ZASTAVENI PODLE SABLONY C3 / max C3 (studna 3/3/3 mm)
 //
 //  Tlaci se vzduch, dokud nenastane PRVNI z kriterii nize; pak se pacient
 //  OKAMZITE zavre a tlaceni konci. Obsluha pak zmeri vysku hladiny od
-//  vnejsiho dna lahvicky. Cil: hladina v mezere (~8,5 mm, ~4 ml).
+//  vnejsiho dna lahvicky. Cil: hladina ~8,5 mm (~4 ml).
 //
-//  Detekce (viz TEST8.md) bezi na CASE, jen kdyz je pacient otevreny
+//  Detekce (viz TEST9.md) bezi na CASE, jen kdyz je pacient otevreny
 //  ('p', 'w'): kose po 12 vzorcich (0,6 s), klouzave okno 8 kosu.
 //  Vzduch je jen hnaci medium - jeho spotreba se v detekci nepouziva.
 //    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
 //  pak zastavi PRVNI z:
-//    koleno    narust C1 - C3 za 8 kosu < 0,5 x nejvetsi narust
-//              (a C1 - C3 uz vzrostlo aspon o 1,5 x nejvetsi narust)
-//    vrchol    C1 - C3 kleslo o 10 % vysky hrbu pod sve maximum (zaloha,
-//              v testu 7 hladina 4,1 mm - uz pod spodnim prstencem)
+//    sablona   C3 <= 0,78 x vlastni maximum v behu (testy 7+8: ~8,8 mm)
+//    podil     C3/C1 <= 0,68 (~8,9 mm)
+//    koleno    narust C1 - C3 za 8 kosu < 0,5 x nejvetsi narust (zaloha,
+//              test 8: 6,7 mm)
+//    vrchol    C1 - C3 kleslo o 10 % vysky hrbu (zaloha, test 7: 4,1 mm)
 //    skok      C1 (kos) o 15 % niz nez vetsi ze 2 predchozich = posledni zachrana
+//  Kontrola shody se sablonou (jen zapis '# SHODA ***', nezastavuje):
+//    C1 < 0,95 x max C1, dokud C3 > 0,65 x max C3 (C1 klesa predcasne)
+//    pri C3 = 0,80 x max C3 musi byt (C1 - C3) - d0 >= 0,15 x max C3
 //  Sum muze kazde kriterium jen USPISIT (vic zbytku), nikdy opozdit.
 //  Pred tlacenim: C3/C1 v klidu musi byt >= 0,8 (horni prstenec zakryt),
 //  jinak se netlaci a obsluha doplni kapalinu.
@@ -129,6 +133,12 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu (4,8 s)
 #define PEAK_ARM_FRAC     0.85f     // aktivace: C3 <= 0,85 x vlastni maximum
 #define PEAK_DROP_FRAC    0.10f     // vrchol: pokles o 10 % vysky hrbu
+#define STOP_C3_FRAC      0.78f     // sablona: C3 <= 0,78 x vlastni maximum
+#define STOP_Q_MAX        0.68f     // podil: C3/C1 <= 0,68
+#define FIT_C1_MIN        0.95f     // shoda: C1 >= 0,95 x max C1 ...
+#define FIT_C3_ZONE       0.65f     // ... dokud C3 > 0,65 x max C3
+#define FIT_CHECK_C3      0.80f     // shoda: pri C3 = 0,80 x max C3 ...
+#define FIT_RISE_MIN      0.15f     // ... musi byt (C1 - C3) - d0 >= 0,15 x max C3
 #define KNEE_BINS            8      // koleno: narust C1 - C3 za 8 kosu (4,8 s)
 #define KNEE_SLOPE_FRAC   0.50f     // koleno: narust < 0,5 x nejvetsi narust
 #define KNEE_MIN_RISE     1.50f     // koleno: C1 - C3 - d0 >= 1,5 x nejvetsi narust
@@ -148,8 +158,6 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define FDC_CONF_CHECK  0x0DF0       // RATE, REPEAT a MEAS_1..4 pro zpetnou kontrolu
 #define FDC_CHECK_PERIOD_MS 10
 #define MONITOR_PERIOD_MS  500       // prikaz 'm': vypis C1..C3 kazdych 0,5 s
-#define DRY_MEASURE_MS   10000UL     // prikaz 'D': delka jednoho mereni suchych elektrod
-#define DRY_REINSERTS        3       // prikaz 'D': pocet vlozeni prazdne lahvicky
 
 // ---------- parametry behu (menitelne pres Serial) ----------
 static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to naladen)
@@ -164,7 +172,7 @@ static float    profileAirMl   = 0.0f;  // >0 = PROFIL: vytlacit tolik vzduchu, 
 // vklada automaticky generovane prototypy pred prvni funkci a vyctovy typ
 // v nich by jeste nemusel byt znamy.
 enum DetMode : uint8_t { DET_OFF, DET_ON };
-enum DetHit  : uint8_t { HIT_NONE, HIT_KNEE, HIT_STOP, HIT_STEP };
+enum DetHit  : uint8_t { HIT_NONE, HIT_C3, HIT_Q, HIT_KNEE, HIT_STOP, HIT_STEP };
 
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
@@ -600,7 +608,8 @@ static uint8_t firedMask;               // bit = druh udalosti uz zapsan/provede
 static float   dHist[KNEE_BINS + 1];     // C1 - C3 (okno) poslednich 9 kosu
 static uint8_t dHistCount;
 static float   kneeMax;                  // nejvetsi narust za KNEE_BINS
-static float   d0, dMax, c3Max;
+static float   d0, dMax, c3Max, c1Max;
+static uint8_t fitMask;                  // bit 0 = C1 predcasne, 1 = rozdil neroste, 2 = kontrola provedena
 static uint32_t dMaxMs;                 // cas maxima rozdilu od zacatku cyklu
 static float   hitD, hitC1, hitC3;
 
@@ -622,7 +631,7 @@ static void detectStart() {
     binHead = binCount = 0; prevBinC1 = prev2BinC1 = -1.0f; prevPhase = 0;
     armed = haveD0 = false;
     firedMask = 0; dHistCount = 0; kneeMax = 0;
-    dMax = -1e9f; dMaxMs = 0; c3Max = -1e9f; d0 = 0;
+    dMax = -1e9f; dMaxMs = 0; c3Max = c1Max = -1e9f; d0 = 0; fitMask = 0;
     detHitKind = HIT_NONE;
     detMode = DET_ON;
 }
@@ -630,6 +639,8 @@ static void detectStart() {
 static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(prefix);
     switch (kind) {
+        case HIT_C3:   Serial.print(F("STOP sablona C3")); break;
+        case HIT_Q:    Serial.print(F("STOP podil C3/C1")); break;
         case HIT_KNEE: Serial.print(F("STOP koleno")); break;
         case HIT_STOP: Serial.print(F("STOP vrchol")); break;
         default:       Serial.print(F("SKOK C1")); break;
@@ -641,6 +652,28 @@ static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(F(" d0=")); Serial.print(d0, 3);
     Serial.print(F(" dmax=")); Serial.print(dMax, 3);
     Serial.print(F(" @ t=")); Serial.println(dMaxMs);
+    Serial.print(F("#   C3/maxC3=")); Serial.print(hitC3 / c3Max, 3);
+    Serial.print(F(" C1/maxC1=")); Serial.print(hitC1 / c1Max, 3);
+    Serial.print(F(" (d-d0)/maxC3=")); Serial.print((hitD - d0) / c3Max, 3);
+    Serial.println((fitMask & 3) ? F("  SHODA PORUSENA") : F("  shoda OK"));
+}
+
+// Kontrola shody se sablonou: jen zapis do logu, nic nezastavuje.
+static void fitWarn(uint8_t bit, const __FlashStringHelper *msg) {
+    if (fitMask & bit) return;
+    fitMask |= bit;
+    Serial.print(F("# SHODA *** ")); Serial.print(msg);
+    Serial.print(F(" @ t=")); Serial.println(millis() - cycleT0);
+}
+
+static void checkFit(float w1, float w3, float d) {
+    if (w3 > FIT_C3_ZONE * c3Max && w1 < FIT_C1_MIN * c1Max) {
+        fitWarn(1, F("C1 klesa predcasne"));
+    }
+    if (!(fitMask & 4) && w3 <= FIT_CHECK_C3 * c3Max) {
+        fitMask |= 4;
+        if (d - d0 < FIT_RISE_MIN * c3Max) fitWarn(2, F("C1-C3 neroste"));
+    }
 }
 
 // Zastaveni: pacient se zavira jeste uvnitr vzorkovani, motor stoji,
@@ -673,8 +706,8 @@ static bool kneeReached(float d) {
         && (d - d0) >= KNEE_MIN_RISE * kneeMax;
 }
 
-// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak koleno, vrchol
-// jako zaloha. Obe jsou pomerova - nezavisi na spolecnem zisku prstencu.
+// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak sablona, podil,
+// koleno a vrchol jako zaloha. Vse pomerove - nezavisi na spolecnem zisku prstencu.
 static void detectWindow() {
     float w1 = 0, w3 = 0;
     for (uint8_t i = 0; i < PEAK_WIN_BINS; i++) { w1 += binC1[i]; w3 += binC3[i]; }
@@ -682,6 +715,7 @@ static void detectWindow() {
     float d = w1 - w3;
     if (!haveD0) { d0 = d; haveD0 = true; }
     if (w3 > c3Max) c3Max = w3;
+    if (w1 > c1Max) c1Max = w1;
     if (!armed && w3 <= PEAK_ARM_FRAC * c3Max) {
         armed = true;
         Serial.print(F("# aktivace @ t=")); Serial.print(millis() - cycleT0);
@@ -692,6 +726,11 @@ static void detectWindow() {
     if (!armed) return;
     if (d > dMax) { dMax = d; dMaxMs = millis() - cycleT0; }
     hitD = d; hitC1 = w1; hitC3 = w3;
+    checkFit(w1, w3, d);
+    if (w3 <= STOP_C3_FRAC * c3Max) detectFire(HIT_C3);
+    if (detMode == DET_OFF) return;
+    if (w3 <= STOP_Q_MAX * w1) detectFire(HIT_Q);
+    if (detMode == DET_OFF) return;
     if (knee) detectFire(HIT_KNEE);
     if (detMode == DET_OFF) return;
     if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) detectFire(HIT_STOP);
@@ -920,7 +959,7 @@ static void printInfo() {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.println(F("# REZIM: zastaveni na koleni C1-C3, zaloha vrchol (test 8)"));
+        Serial.println(F("# REZIM: zastaveni sablona C3/max 0.78 | C3/C1 0.68 (test 9)"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
@@ -941,16 +980,16 @@ static void printInfo() {
     Serial.print(F(" ml  tared=")); Serial.println(tared ? F("ano") : F("ne"));
 }
 
-// Napoveda: postup testu 8 krok za krokem, pak prehled prikazu.
+// Napoveda: postup testu 9 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# ================ POSTUP TESTU 8 ================"));
+    Serial.println(F("# ================ POSTUP TESTU 9 ================"));
     Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
     Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
     Serial.println(F("# 2) MAPA: 'm', prst postupne na spodni / svislou / horni"));
     Serial.println(F("#    elektrodu -> 16 pF musi ukazat C1 / C2 / C3."));
     Serial.println(F("#    Jinak 'n<s><v><h>' (napr. n213) a znovu 'm'."));
     Serial.println(F("# 3) 't' = vzduchova strikacka je plna"));
-    Serial.println(F("# 4) 'i' = REZIM zastaveni v mezere, cykly=5, FDC OK"));
+    Serial.println(F("# 4) 'i' = REZIM sablona (test 9), cykly=5, FDC OK"));
     Serial.println(F("# 5) 'g' = 5 cyklu. Na vyzvu naplnit lahvicku NEZNAMYM"));
     Serial.println(F("#    objemem 9-14 ml (pokazde jinak), vlozit, Enter."));
     Serial.println(F("# 6) Po zastaveni a 30 s klidu vyndat lahvicku, ZMERIT"));
@@ -958,7 +997,7 @@ static void printHelp() {
     Serial.println(F("# 7) log poslat jako soubor"));
     Serial.println(F("# ------------------- prikazy -------------------"));
     Serial.println(F("# h napoveda  i info  f kontrola FDC  a CAPDAC  x STOP"));
-    Serial.println(F("# m monitor  n<s><v><h> mapa  D suche  t plna  g start"));
+    Serial.println(F("# m monitor  n<s><v><h> mapa  t plna  g start"));
     Serial.println(F("# j/k jog vzduch +-0.5 ml  u0/u1 pacient ISOL/OTEV"));
     Serial.println(F("# u2/u3/u4 vzduch S-V/S-F/V-F  #<text> znacka do logu"));
     Serial.println(F("# v<ml> profil (v0=zastaveni)  c<n> cykly  s<s> s/ml"));
@@ -1029,54 +1068,6 @@ static void setChannelMap(const char *arg) {
     printChannelMap();
 }
 
-// Jedno mereni suchych elektrod: loguje se jako cyklus 0 s danou fazi,
-// na konci prumer a smerodatna odchylka kazde elektrody.
-static bool dryStep(const __FlashStringHelper *prompt, char phase) {
-    if (!waitConfirm(prompt)) return false;
-    float s[N_CH] = { 0, 0, 0 }, q[N_CH] = { 0, 0, 0 };
-    uint16_t n = 0;
-    uint32_t startMs = millis();
-    uint32_t lastMs = millis() - samplePeriodMs;
-    while (millis() - startMs < DRY_MEASURE_MS) {
-        if (abortRequested()) return false;
-        if (millis() - lastMs < samplePeriodMs) continue;
-        lastMs = millis();
-        logSample(phase);
-        float v[N_CH] = { lastC1, lastC2, lastC3 };
-        for (uint8_t i = 0; i < N_CH; i++) { s[i] += v[i]; q[i] += v[i] * v[i]; }
-        n++;
-    }
-    Serial.print(F("# suche ")); Serial.print(phase); Serial.print(':');
-    for (uint8_t i = 0; i < N_CH; i++) {
-        float m = s[i] / n;
-        Serial.print(F(" C")); Serial.print(i + 1); Serial.print('=');
-        Serial.print(m, 3); Serial.print(F(" sd="));
-        Serial.print(sqrt(max(q[i] / n - m * m, 0.0f)), 3);
-    }
-    Serial.println();
-    return true;
-}
-
-// Prikaz 'D': suche elektrody. b = studna bez lahvicky (jediny stav
-// dostupny v pristroji - lahvicka se vklada az po kalibraci), l = prazdna
-// SUCHA lahvicka (prispevek skla), vlozena opakovane (opakovatelnost
-// usazeni), na konci znovu b (drift).
-static void dryMeasure() {
-    if (!fdcEnsure()) return;
-    cycleNo = 0;
-    cycleT0 = millis();
-    printLogHeader();
-    Serial.println(F("# === SUCHE ELEKTRODY (b = bez lahvicky, l = prazdna lahvicka) ==="));
-    if (!dryStep(F("studna BEZ lahvicky, potvrdit"), 'b')) return;
-    for (uint8_t i = 1; i <= DRY_REINSERTS; i++) {
-        Serial.print(F("# vlozeni ")); Serial.print(i); Serial.print('/');
-        Serial.println(DRY_REINSERTS);
-        if (!dryStep(F("vlozit PRAZDNOU SUCHOU lahvicku (predtim vyndat), potvrdit"), 'l')) return;
-    }
-    if (!dryStep(F("lahvicku vyndat, studna BEZ lahvicky, potvrdit"), 'b')) return;
-    Serial.println(F("# === SUCHE ELEKTRODY HOTOVO ==="));
-}
-
 static void handleLine() {
     if (lineLen == 0) return;
     switch (line[0]) {
@@ -1085,10 +1076,6 @@ static void handleLine() {
         case 'f': fdcEnsure(); break;
         case 'm': monitor(); break;
         case 'n': setChannelMap(&line[1]); break;
-        case 'D':
-            if (running) { Serial.println(F("# CHYBA: beh uz probiha")); break; }
-            dryMeasure();
-            break;
         case 'a':
             for (uint8_t i = 0; i < N_CH; i++) autoCapdac(i);
             printInfo();

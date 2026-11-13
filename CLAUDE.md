@@ -179,6 +179,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   vrchol C1 − C3 vždy při `C3 ≈ 0,61 × max` (≈ 6,3 mm). Časová šablona
   nejde (potřebovala by rychlost). Zastavení `C3 ≤ 0,78 × max` = bod
   šablony; pás C1 proti C3 slouží jako kontrola shody průběhu.
+- **Test 9** (`tools/level_stop/TEST9.md`): zastaví první z
+  `C3 ≤ 0,78 × max C3` (šablona) / `C3/C1 ≤ 0,68`, záloha koleno → vrchol
+  → skok C1. Kontrola shody jen do logu (`# SHODA ***`): C1 < 0,95 × max
+  dokud C3 > 0,65 × max; při C3 = 0,80 × max musí rozdíl vzrůst ≥ 0,15 × max
+  C3. Přehrání 15 cyklů: 8,7 ± 0,45 mm, bez falešné poruchy shody.
+  Měření suchých elektrod `D` ze sketche odebráno (flash).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
