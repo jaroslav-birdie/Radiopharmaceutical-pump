@@ -191,6 +191,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   lahvičky) prošla kontrolou C3/C1 ≥ 0,8** (0,93) → kontrola výchozího
   stavu musí porovnat klid i se suchou hodnotou bez lahvičky (s náplní
   C1/C3 ≥ 3,3 pF, bez lahvičky ≈ 2,0 pF).
+  **Výsledek testu 9** (`tools/level_stop/ANALYZA_TEST9.md`): hladina
+  **8,72 ± 0,27 mm** (zbytek **4,15 ± 0,18 ml**), cíl splněn, předpověď
+  z testů 7+8 sedí. Šablona a podíl C3/C1 nastávají současně
+  (C3/max 0,775–0,785), kontrola shody vždy OK. Zbývá: kontrola přítomnosti
+  lahvičky, C3/C1 ≥ 0,90 na startu, maximum z plató, vyřadit koleno, test
+  se startem uprostřed plató (iterace ≈ 7 ml).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
