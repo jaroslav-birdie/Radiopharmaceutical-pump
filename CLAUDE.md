@@ -211,6 +211,11 @@ dosedací plochy dna (= vnější dno lahvičky):
   doplňují. Kontroly C3/C1 ≥ 0,88 (start i maximum) jsou na hraně (0,893–0,902)
   → snížit na 0,80. Zkouška bez lahvičky v logu chybí (ze starších dat by
   práh +0,5 pF start odmítl).
+- **Test 11** (`tools/level_stop/TEST11.md`): prahy kontrol C3/C1 (start
+  i maximum) sníženy na **0,80**; cyklus 1 nejdřív bez lahvičky, cykly 2–3
+  7 ml, 4–5 6 ml. **Plán převodu do produkce:** `tools/level_stop/PLAN_PREVODU.md`
+  (nový `level_detector.h/.cpp`, 3 kanály v pF, suché hodnoty v kalibraci,
+  okamžité zavření pacienta) – čeká na schválení.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

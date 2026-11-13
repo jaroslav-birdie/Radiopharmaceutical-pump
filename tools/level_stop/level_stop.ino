@@ -1,11 +1,11 @@
 // ============================================================
-//  TEST 10 – SABLONA C3 / max C3 + BEZPECNOSTNI KONTROLY (studna 3/3/3 mm)
+//  TEST 11 – SABLONA C3 / max C3 + KONTROLY S PRAHEM 0,80 (studna 3/3/3 mm)
 //
 //  Tlaci se vzduch, dokud nenastane PRVNI z kriterii nize; pak se pacient
 //  OKAMZITE zavre a tlaceni konci. Obsluha pak zmeri vysku hladiny od
-//  vnejsiho dna lahvicky. Cil: hladina ~8,5 mm (~4 ml), test 9: 8,72 mm.
+//  vnejsiho dna lahvicky. Cil: hladina ~8,5 mm (~4 ml), testy 9+10: 8,75 mm.
 //
-//  Detekce (viz TEST10.md) - jen porovnani hodnot signalu, zadny cas ani
+//  Detekce (viz TEST11.md) - jen porovnani hodnot signalu, zadny cas ani
 //  rychlost. Vzorky jen s otevrenym pacientem ('p', 'w'), filtr: kose po
 //  12 vzorcich, klouzave okno 8 kosu.
 //    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
@@ -17,8 +17,8 @@
 //  Bezpecnostni kontroly:
 //    pred serii  suche hodnoty C1, C3 v PRAZDNE studne
 //    pred tlacenim  C1 i C3 aspon o 0,5 pF nad suchou hodnotou (lahvicka
-//                tam je a ma kapalinu u prstencu), C3/C1 >= 0,88
-//    pri aktivaci  C3/C1 v okamziku maxima C3 >= 0,88 (maximum z plato);
+//                tam je a ma kapalinu u prstencu), C3/C1 >= 0,80
+//    pri aktivaci  C3/C1 v okamziku maxima C3 >= 0,80 (maximum z plato);
 //                jinak okamzite zastaveni a konec serie
 //  Kontrola shody se sablonou (jen zapis '# SHODA ***', nezastavuje):
 //    C1 < 0,95 x max C1, dokud C3 > 0,65 x max C3 (C1 klesa predcasne)
@@ -144,8 +144,8 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define FIT_CHECK_C3      0.80f     // shoda: pri C3 = 0,80 x max C3 ...
 #define FIT_RISE_MIN      0.15f     // ... musi byt (C1 - C3) - d0 >= 0,15 x max C3
 #define STEP_DROP_FRAC    0.15f     // skok: C1 v kosu o 15 % niz nez vetsi ze 2 predchozich
-#define START_Q_MIN       0.88f     // pred tlacenim C3/C1 >= 0,88 (nad sestupem C3)
-#define MAX_Q_MIN         0.88f     // C3/C1 v okamziku maxima C3 >= 0,88 (maximum z plato)
+#define START_Q_MIN       0.80f     // pred tlacenim C3/C1 >= 0,80 (test 10: start iterace 0,90)
+#define MAX_Q_MIN         0.80f     // C3/C1 v okamziku maxima C3 >= 0,80 (test 10: 0,893-0,927)
 #define VIAL_MIN_PF       0.50f     // lahvicka: C1 i C3 v klidu >= sucha hodnota + 0,5 pF
 #define MAX_REFILLS          3      // max. doplneni vzduchu v jednom cyklu
 
@@ -864,7 +864,7 @@ static bool runCycle(uint8_t n) {
     bool profile = profileAirMl > 0.0f;
     if (!waitConfirm(profile
             ? F("PROFIL: doplnit kapalinu OD OKA (pokazde jinak), potvrdit")
-            : F("naplnit lahvicku (cykly 1-2: 9-14 ml, 3-5: ~7 ml), vlozit, potvrdit"))) return false;
+            : F("naplnit lahvicku (1: 9-14 ml, 2-3: 7 ml, 4-5: 6 ml), vlozit, potvrdit"))) return false;
     if (!fdcEnsure()) return false;      // senzor mohl mezi cykly zamrznout
 
     steppersEnable();
@@ -965,7 +965,7 @@ static void printInfo() {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.println(F("# REZIM: sablona C3/max 0.78 | C3/C1 0.68 + kontroly (test 10)"));
+        Serial.println(F("# REZIM: sablona C3/max 0.78 | C3/C1 0.68 + kontroly 0.80 (test 11)"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
@@ -986,20 +986,20 @@ static void printInfo() {
     Serial.print(F(" ml  tared=")); Serial.println(tared ? F("ano") : F("ne"));
 }
 
-// Napoveda: postup testu 10 krok za krokem, pak prehled prikazu.
+// Napoveda: postup testu 11 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# ================ POSTUP TESTU 10 ================"));
+    Serial.println(F("# ================ POSTUP TESTU 11 ================"));
     Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
     Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
     Serial.println(F("# 2) MAPA: 'm', prst postupne na spodni / svislou / horni"));
     Serial.println(F("#    elektrodu -> 16 pF musi ukazat C1 / C2 / C3."));
     Serial.println(F("#    Jinak 'n<s><v><h>' (napr. n213) a znovu 'm'."));
     Serial.println(F("# 3) 't' = vzduchova strikacka je plna"));
-    Serial.println(F("# 4) 'i' = REZIM ... (test 10), cykly=5, FDC OK"));
+    Serial.println(F("# 4) 'i' = REZIM ... (test 11), cykly=5, FDC OK"));
     Serial.println(F("# 5) 'g', 1. vyzva: studna PRAZDNA -> suche hodnoty"));
     Serial.println(F("# 6) cyklus 1: NEJDRIV potvrdit BEZ lahvicky - musi"));
     Serial.println(F("#    hlasit 'lahvicka chybi'; pak vlozit 9-14 ml"));
-    Serial.println(F("# 7) cyklus 2: 9-14 ml, cykly 3-5: ~7 ml (pokazde 7)"));
+    Serial.println(F("# 7) cyklus 2: 7 ml, 3: 7 ml, 4-5: 6 ml (strikackou)"));
     Serial.println(F("# 8) po zastaveni a 30 s klidu ZMERIT vysku hladiny"));
     Serial.println(F("#    od vnejsiho dna v mm a poslat cislo"));
     Serial.println(F("# 9) log poslat jako soubor"));
