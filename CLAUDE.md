@@ -204,6 +204,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   ≥ 0,88 (maximum z plató), jinak zastavení a konec série (dosavadní
   data 0,914–1,03). Cyklus 1 nejdřív bez lahvičky, cykly 3–5 náplň ≈ 7 ml
   (start jako v iteraci).
+  **Výsledek testu 10** (`tools/level_stop/ANALYZA_TEST10.md`): plná
+  lahvička 8,74 ± 0,23 mm, start iterace (≈ 7 ml) 8,76 ± 0,23 mm; testy 9+10
+  (10 cyklů) **8,75 ± 0,21 mm** (8,4–9,0). U ≈ 7 ml se maximum C3 podcení,
+  zastaví ale podíl C3/C1 ≤ 0,68 (nezávislý na maximu) – kritéria se
+  doplňují. Kontroly C3/C1 ≥ 0,88 (start i maximum) jsou na hraně (0,893–0,902)
+  → snížit na 0,80. Zkouška bez lahvičky v logu chybí (ze starších dat by
+  práh +0,5 pF start odmítl).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
