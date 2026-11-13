@@ -1,18 +1,22 @@
 // ============================================================
-//  TEST 7 – ZASTAVENI NA VRCHOLU ROZDILU C1 - C3 (studna 3/3/3 mm)
+//  TEST 8 – ZASTAVENI V MEZERE: PRVNI ZE TRI KRITERII (studna 3/3/3 mm)
 //
-//  Tlaci se vzduch, dokud rozdil spodni - horni prstenec (C1 - C3)
-//  neprojde vrcholem; pak se pacient OKAMZITE zavre a tlaceni konci.
-//  Obsluha pak zmeri vysku hladiny od vnejsiho dna lahvicky.
+//  Tlaci se vzduch, dokud nenastane PRVNI z kriterii nize; pak se pacient
+//  OKAMZITE zavre a tlaceni konci. Obsluha pak zmeri vysku hladiny od
+//  vnejsiho dna lahvicky. Cil: hladina v mezere (~8,5 mm, ~4 ml).
 //
-//  Detekce (viz TEST7.md) bezi na CASE, jen kdyz je pacient otevreny
+//  Detekce (viz TEST8.md) bezi na CASE, jen kdyz je pacient otevreny
 //  ('p', 'w'): kose po 12 vzorcich (0,6 s), klouzave okno 8 kosu.
-//  Vzduch je jen hnaci medium - jeho spotreba se v detekci nepouziva,
-//  strikacka se jen doplni, kdyz dojde. S pacientem zavrenym hladina
-//  stoji a detektor si stav drzi.
+//  Vzduch je jen hnaci medium - jeho spotreba se v detekci nepouziva.
 //    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
-//    vrchol    C1 - C3 (okno) klesne o 10 % vysky hrbu pod sve maximum
+//  pak zastavi PRVNI z:
+//    podil     C3/C1 (okno) <= 0,60
+//    koleno    narust C1 - C3 za 8 kosu < 0,5 x nejvetsi narust
+//              (a C1 - C3 uz vzrostlo aspon o 1,5 x nejvetsi narust)
+//    vrchol    C1 - C3 kleslo o 10 % vysky hrbu pod sve maximum (zaloha,
+//              v testu 7 hladina 4,1 mm - uz pod spodnim prstencem)
 //    skok      C1 (kos) o 15 % niz nez vetsi ze 2 predchozich = posledni zachrana
+//  Sum muze kazde kriterium jen USPISIT (vic zbytku), nikdy opozdit.
 //  Pred tlacenim: C3/C1 v klidu musi byt >= 0,8 (horni prstenec zakryt),
 //  jinak se netlaci a obsluha doplni kapalinu.
 //
@@ -126,6 +130,10 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu (4,8 s)
 #define PEAK_ARM_FRAC     0.85f     // aktivace: C3 <= 0,85 x vlastni maximum
 #define PEAK_DROP_FRAC    0.10f     // vrchol: pokles o 10 % vysky hrbu
+#define STOP_Q_MAX        0.60f     // podil: C3/C1 <= 0,60 (horni prstenec odkryt)
+#define KNEE_BINS            8      // koleno: narust C1 - C3 za 8 kosu (4,8 s)
+#define KNEE_SLOPE_FRAC   0.50f     // koleno: narust < 0,5 x nejvetsi narust
+#define KNEE_MIN_RISE     1.50f     // koleno: C1 - C3 - d0 >= 1,5 x nejvetsi narust
 #define STEP_DROP_FRAC    0.15f     // skok: C1 v kosu o 15 % niz nez vetsi ze 2 predchozich
 #define START_Q_MIN       0.80f     // pred tlacenim C3/C1 >= 0,8 (horni prstenec zakryt)
 #define MAX_REFILLS          3      // max. doplneni vzduchu v jednom cyklu
@@ -158,7 +166,7 @@ static float    profileAirMl   = 0.0f;  // >0 = PROFIL: vytlacit tolik vzduchu, 
 // vklada automaticky generovane prototypy pred prvni funkci a vyctovy typ
 // v nich by jeste nemusel byt znamy.
 enum DetMode : uint8_t { DET_OFF, DET_ON };
-enum DetHit  : uint8_t { HIT_NONE, HIT_STOP, HIT_STEP };
+enum DetHit  : uint8_t { HIT_NONE, HIT_Q, HIT_KNEE, HIT_STOP, HIT_STEP };
 
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
@@ -589,7 +597,11 @@ static uint8_t binHead, binCount;
 static float   prevBinC1, prev2BinC1;   // dva predchozi kose pro skok; < 0 = neplatny
 static char    prevPhase;
 // stav hledani vrcholu
-static bool    armed, haveD0, stopDone, stepDone;
+static bool    armed, haveD0;
+static uint8_t firedMask;               // bit = druh udalosti uz zapsan/proveden
+static float   dHist[KNEE_BINS + 1];     // C1 - C3 (okno) poslednich 9 kosu
+static uint8_t dHistCount;
+static float   kneeMax;                  // nejvetsi narust za KNEE_BINS
 static float   d0, dMax, c3Max;
 static uint32_t dMaxMs;                 // cas maxima rozdilu od zacatku cyklu
 static float   hitD, hitC1, hitC3;
@@ -610,7 +622,8 @@ static float median(const float *src) {
 static void detectStart() {
     accC1 = accC3 = 0; accN = 0;
     binHead = binCount = 0; prevBinC1 = prev2BinC1 = -1.0f; prevPhase = 0;
-    armed = haveD0 = stopDone = stepDone = false;
+    armed = haveD0 = false;
+    firedMask = 0; dHistCount = 0; kneeMax = 0;
     dMax = -1e9f; dMaxMs = 0; c3Max = -1e9f; d0 = 0;
     detHitKind = HIT_NONE;
     detMode = DET_ON;
@@ -618,7 +631,12 @@ static void detectStart() {
 
 static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(prefix);
-    Serial.print(kind == HIT_STEP ? F("SKOK C1") : F("STOP vrchol"));
+    switch (kind) {
+        case HIT_Q:    Serial.print(F("STOP podil C3/C1")); break;
+        case HIT_KNEE: Serial.print(F("STOP koleno")); break;
+        case HIT_STOP: Serial.print(F("STOP vrchol")); break;
+        default:       Serial.print(F("SKOK C1")); break;
+    }
     Serial.print(F(" @ t=")); Serial.print(millis() - cycleT0);
     Serial.print(F(" ms  C1=")); Serial.print(hitC1, 3);
     Serial.print(F(" C3=")); Serial.print(hitC3, 3);
@@ -632,9 +650,9 @@ static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
 // protoze moveAir()/sampleFor() se po detectHit() hned vrati. V profilu
 // se udalost jen zapise (kazdy druh jednou za cyklus).
 static void detectFire(uint8_t kind) {
-    bool &done = (kind == HIT_STEP) ? stepDone : stopDone;
-    if (done) return;
-    done = true;
+    uint8_t bit = (uint8_t)(1 << kind);
+    if (firedMask & bit) return;
+    firedMask |= bit;
     if (profileAirMl > 0.0f) { printEvent(F("# STIN "), kind); return; }
     curPatAngle = angPatIsolate;
     OCR1A = angleTicks(angPatIsolate);
@@ -642,8 +660,24 @@ static void detectFire(uint8_t kind) {
     detMode = DET_OFF;
 }
 
-// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak vrchol C1 - C3.
-// Argmax rozdilu nezavisi na spolecnem zisku ani posunu obou prstencu.
+// Koleno: narust C1 - C3 za poslednich KNEE_BINS kosu klesne pod polovinu
+// nejvetsiho narustu - rozdil prestava rust, hladina opousti horni prstenec.
+static bool kneeReached(float d) {
+    if (dHistCount <= KNEE_BINS) {
+        dHist[dHistCount++] = d;
+    } else {
+        for (uint8_t i = 0; i < KNEE_BINS; i++) dHist[i] = dHist[i + 1];
+        dHist[KNEE_BINS] = d;
+    }
+    if (!armed || dHistCount <= KNEE_BINS) return false;
+    float rise = d - dHist[0];
+    if (rise > kneeMax) kneeMax = rise;
+    return kneeMax > 0 && rise < KNEE_SLOPE_FRAC * kneeMax
+        && (d - d0) >= KNEE_MIN_RISE * kneeMax;
+}
+
+// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak prvni ze tri
+// kriterii. Vsechna jsou pomerova - nezavisi na spolecnem zisku prstencu.
 static void detectWindow() {
     float w1 = 0, w3 = 0;
     for (uint8_t i = 0; i < PEAK_WIN_BINS; i++) { w1 += binC1[i]; w3 += binC3[i]; }
@@ -657,12 +691,15 @@ static void detectWindow() {
         Serial.print(F(" ms  C3=")); Serial.print(w3, 3);
         Serial.print(F(" max C3=")); Serial.println(c3Max, 3);
     }
+    bool knee = kneeReached(d);
     if (!armed) return;
     if (d > dMax) { dMax = d; dMaxMs = millis() - cycleT0; }
-    if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) {
-        hitD = d; hitC1 = w1; hitC3 = w3;
-        detectFire(HIT_STOP);
-    }
+    hitD = d; hitC1 = w1; hitC3 = w3;
+    if (w3 <= STOP_Q_MAX * w1) detectFire(HIT_Q);
+    if (detMode == DET_OFF) return;
+    if (knee) detectFire(HIT_KNEE);
+    if (detMode == DET_OFF) return;
+    if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) detectFire(HIT_STOP);
 }
 
 // Hotovy kos: nejdriv skok C1 proti vetsimu ze dvou predchozich kosu
@@ -888,7 +925,7 @@ static void printInfo() {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.println(F("# REZIM: zastaveni na vrcholu C1-C3 (test 7)"));
+        Serial.println(F("# REZIM: zastaveni v mezere, prvni z podil/koleno/vrchol (test 8)"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
@@ -909,16 +946,16 @@ static void printInfo() {
     Serial.print(F(" ml  tared=")); Serial.println(tared ? F("ano") : F("ne"));
 }
 
-// Napoveda: postup testu 7 krok za krokem, pak prehled prikazu.
+// Napoveda: postup testu 8 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# ================ POSTUP TESTU 7 ================"));
+    Serial.println(F("# ================ POSTUP TESTU 8 ================"));
     Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
     Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
     Serial.println(F("# 2) MAPA: 'm', prst postupne na spodni / svislou / horni"));
     Serial.println(F("#    elektrodu -> 16 pF musi ukazat C1 / C2 / C3."));
     Serial.println(F("#    Jinak 'n<s><v><h>' (napr. n213) a znovu 'm'."));
     Serial.println(F("# 3) 't' = vzduchova strikacka je plna"));
-    Serial.println(F("# 4) 'i' = REZIM zastaveni na vrcholu, cykly=5, FDC OK"));
+    Serial.println(F("# 4) 'i' = REZIM zastaveni v mezere, cykly=5, FDC OK"));
     Serial.println(F("# 5) 'g' = 5 cyklu. Na vyzvu naplnit lahvicku NEZNAMYM"));
     Serial.println(F("#    objemem 9-14 ml (pokazde jinak), vlozit, Enter."));
     Serial.println(F("# 6) Po zastaveni a 30 s klidu vyndat lahvicku, ZMERIT"));
