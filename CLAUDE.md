@@ -216,6 +216,14 @@ dosedací plochy dna (= vnější dno lahvičky):
   7 ml, 4–5 6 ml. **Plán převodu do produkce:** `tools/level_stop/PLAN_PREVODU.md`
   (nový `level_detector.h/.cpp`, 3 kanály v pF, suché hodnoty v kalibraci,
   okamžité zavření pacienta) – čeká na schválení.
+  **Výsledek testu 11** (`tools/level_stop/ANALYZA_TEST11.md`, bez
+  stínění): start bez lahvičky odmítnut (−0,005 pF nad suchou). Testy 9–11
+  (15 cyklů) **8,70 ± 0,22 mm** nezávisle na náplni (9–14 / 7 / 6 ml).
+  U 6 ml zastavil podíl hned při aktivaci – byl pod 0,68 už dřív → **podíl
+  hlídat od začátku tlačení** (před aktivací ve všech cyklech ≥ 0,72),
+  kontrolu maxima z plató jen zapisovat (6 ml: 0,82), start C3/C1 ≥ 0,70.
+  Šum vzniká až s kapalinou (prázdná studna sd 0,002 pF, s lahvičkou
+  0,3–0,5 pF v klidu) – stínění porovnat hlavně tady.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
