@@ -156,17 +156,22 @@ dosedací plochy dna (= vnější dno lahvičky):
   skutečnou výšku hladiny měří obsluha.
   **Výsledek testu 7** (`tools/level_stop/ANALYZA_TEST7.md`): hladina po
   zastavení **4,08 ± 0,28 mm** (zbytek ≈ 1,3 ± 0,15 ml) – velmi opakovatelné,
-  ale 1,5 mm **pod** spodním prstencem. Vrchol C1 − C3 sám leží ≈ 8 mm
-  (horní hrana spodního prstence), detektor ho potvrdí až ≈ 9 s toku
-  později (široký hrb, okno 4,8 s). Kratší okno → předčasná zastavení.
+  ale 1,5 mm **pod** spodním prstencem. Vrchol C1 − C3 sám leží ≈ 6,3 mm
+  (oprava po testu 8; původní odhad 8 mm stál na chybném předpokladu),
+  detektor ho potvrdí až ≈ 9 s toku později (široký hrb, okno 4,8 s). Kratší okno → předčasná zastavení.
   C1 v klidu po zastavení s výškou nesouvisí. Otevřené: rezerva do skoku
   (odkrytí jehly?) vs. zastavení výš podílem C3/C1.
   **1,3 ml není bezpečné** – cíl je hladina v mezeře ≈ 8,5 mm (≈ 4 ml).
 - **Test 8** (`tools/level_stop/TEST8.md`), geometrie beze změny: zastavuje
   **koleno** `C1 − C3` (nárůst za 4,8 s < 0,5 × největší nárůst a rozdíl už
   vzrostl o ≥ 1,5 × ten nárůst), záloha vrchol, poslední záchrana skok C1.
-  Šum koleno jen uspíší (víc zbytku). Přehrání testů 6+7: odhad
-  9,3 ± 1,5 mm (7,5–11,5), ověřuje se měřením výšky. **Jeden prstenec**
+  Šum koleno jen uspíší (víc zbytku). **Výsledek** (`ANALYZA_TEST8.md`):
+  **6,72 ± 0,67 mm** (≈ 2,8 ml), koleno nastává prakticky na vrcholu.
+  Z 10 změřených výšek testů 7+8 (jen analýza, rychlost se do řízení
+  nedostane): `C3 ≤ 0,78 × max` leží ≈ 8,8 mm, `C3 ≤ 0,75 × max` ≈ 8,4 mm,
+  `C3/C1 ≤ 0,68` ≈ 8,9 mm, přechody leží níž, než odpovídá geometrii.
+  Návrh testu 9: první z `C3 ≤ 0,78 × max` / `C3/C1 ≤ 0,68`, záloha
+  koleno → vrchol → skok (přehrání 8,7 ± 0,45 mm). **Jeden prstenec**
   by bod zastavení určil taky (`C3 ≤ 0,7 × max` ≈ 10,5 ± 0,7 mm), druhý je
   ale nutný pro kontrolu výchozího stavu (C3/C1), zálohu a kontrolu pořadí.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
