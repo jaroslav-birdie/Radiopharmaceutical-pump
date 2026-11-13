@@ -1,5 +1,5 @@
 // ============================================================
-//  TEST 8 – ZASTAVENI V MEZERE: PRVNI ZE TRI KRITERII (studna 3/3/3 mm)
+//  TEST 8 – ZASTAVENI V MEZERE NA KOLENI ROZDILU C1 - C3 (studna 3/3/3 mm)
 //
 //  Tlaci se vzduch, dokud nenastane PRVNI z kriterii nize; pak se pacient
 //  OKAMZITE zavre a tlaceni konci. Obsluha pak zmeri vysku hladiny od
@@ -10,7 +10,6 @@
 //  Vzduch je jen hnaci medium - jeho spotreba se v detekci nepouziva.
 //    aktivace  C3 (okno) klesne na 0,85 x sve maximum v behu
 //  pak zastavi PRVNI z:
-//    podil     C3/C1 (okno) <= 0,60
 //    koleno    narust C1 - C3 za 8 kosu < 0,5 x nejvetsi narust
 //              (a C1 - C3 uz vzrostlo aspon o 1,5 x nejvetsi narust)
 //    vrchol    C1 - C3 kleslo o 10 % vysky hrbu pod sve maximum (zaloha,
@@ -130,7 +129,6 @@ static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) =
 #define PEAK_WIN_BINS        8      // klouzave okno = 8 kosu (4,8 s)
 #define PEAK_ARM_FRAC     0.85f     // aktivace: C3 <= 0,85 x vlastni maximum
 #define PEAK_DROP_FRAC    0.10f     // vrchol: pokles o 10 % vysky hrbu
-#define STOP_Q_MAX        0.60f     // podil: C3/C1 <= 0,60 (horni prstenec odkryt)
 #define KNEE_BINS            8      // koleno: narust C1 - C3 za 8 kosu (4,8 s)
 #define KNEE_SLOPE_FRAC   0.50f     // koleno: narust < 0,5 x nejvetsi narust
 #define KNEE_MIN_RISE     1.50f     // koleno: C1 - C3 - d0 >= 1,5 x nejvetsi narust
@@ -166,7 +164,7 @@ static float    profileAirMl   = 0.0f;  // >0 = PROFIL: vytlacit tolik vzduchu, 
 // vklada automaticky generovane prototypy pred prvni funkci a vyctovy typ
 // v nich by jeste nemusel byt znamy.
 enum DetMode : uint8_t { DET_OFF, DET_ON };
-enum DetHit  : uint8_t { HIT_NONE, HIT_Q, HIT_KNEE, HIT_STOP, HIT_STEP };
+enum DetHit  : uint8_t { HIT_NONE, HIT_KNEE, HIT_STOP, HIT_STEP };
 
 // ---------- uhly ventilu ----------
 static uint8_t angPatOpen, angPatIsolate;
@@ -632,7 +630,6 @@ static void detectStart() {
 static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(prefix);
     switch (kind) {
-        case HIT_Q:    Serial.print(F("STOP podil C3/C1")); break;
         case HIT_KNEE: Serial.print(F("STOP koleno")); break;
         case HIT_STOP: Serial.print(F("STOP vrchol")); break;
         default:       Serial.print(F("SKOK C1")); break;
@@ -676,8 +673,8 @@ static bool kneeReached(float d) {
         && (d - d0) >= KNEE_MIN_RISE * kneeMax;
 }
 
-// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak prvni ze tri
-// kriterii. Vsechna jsou pomerova - nezavisi na spolecnem zisku prstencu.
+// Okno pres poslednich 8 kosu: aktivace po poklesu C3, pak koleno, vrchol
+// jako zaloha. Obe jsou pomerova - nezavisi na spolecnem zisku prstencu.
 static void detectWindow() {
     float w1 = 0, w3 = 0;
     for (uint8_t i = 0; i < PEAK_WIN_BINS; i++) { w1 += binC1[i]; w3 += binC3[i]; }
@@ -695,8 +692,6 @@ static void detectWindow() {
     if (!armed) return;
     if (d > dMax) { dMax = d; dMaxMs = millis() - cycleT0; }
     hitD = d; hitC1 = w1; hitC3 = w3;
-    if (w3 <= STOP_Q_MAX * w1) detectFire(HIT_Q);
-    if (detMode == DET_OFF) return;
     if (knee) detectFire(HIT_KNEE);
     if (detMode == DET_OFF) return;
     if (d < dMax - PEAK_DROP_FRAC * (dMax - d0)) detectFire(HIT_STOP);
@@ -925,7 +920,7 @@ static void printInfo() {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.println(F("# REZIM: zastaveni v mezere, prvni z podil/koleno/vrchol (test 8)"));
+        Serial.println(F("# REZIM: zastaveni na koleni C1-C3, zaloha vrchol (test 8)"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {

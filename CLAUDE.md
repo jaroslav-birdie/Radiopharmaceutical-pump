@@ -162,11 +162,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   C1 v klidu po zastavení s výškou nesouvisí. Otevřené: rezerva do skoku
   (odkrytí jehly?) vs. zastavení výš podílem C3/C1.
   **1,3 ml není bezpečné** – cíl je hladina v mezeře ≈ 8,5 mm (≈ 4 ml).
-- **Test 8** (`tools/level_stop/TEST8.md`): zastavit na **prvním** z
-  `C3/C1 ≤ 0,60` / koleno `C1 − C3` (nárůst za 4,8 s < 0,5 × max) /
-  vrchol (záloha) / skok C1. Každé kritérium šum jen **uspíší** (víc
-  zbytku), takže funguje i při dnešním šumu a se stíněním se zpřesní.
-  Přehrání testů 6+7: odhad 10,6 ± 0,9 mm, nejníž 8,8 mm (ověřit měřením).
+- **Test 8** (`tools/level_stop/TEST8.md`), geometrie beze změny: zastavuje
+  **koleno** `C1 − C3` (nárůst za 4,8 s < 0,5 × největší nárůst a rozdíl už
+  vzrostl o ≥ 1,5 × ten nárůst), záloha vrchol, poslední záchrana skok C1.
+  Šum koleno jen uspíší (víc zbytku). Přehrání testů 6+7: odhad
+  9,3 ± 1,5 mm (7,5–11,5), ověřuje se měřením výšky. **Jeden prstenec**
+  by bod zastavení určil taky (`C3 ≤ 0,7 × max` ≈ 10,5 ± 0,7 mm), druhý je
+  ale nutný pro kontrolu výchozího stavu (C3/C1), zálohu a kontrolu pořadí.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
