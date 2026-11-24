@@ -230,7 +230,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   testů 9–11: 8,67 ± 0,23 mm (8,34–9,0)**, nezávisle na náplni i stínění.
   Suché hodnoty se stíněním C1 1,69 / C3 1,74 pF. ⚠️ Plná lahvička (hladina
   nad `SHLD2`) jen +0,58 pF nad suchou → kontrola lahvičky (+0,5 pF) na hraně.
-  Neověřeno: jiná rychlost tlačení, pauza na sestupu, 20ml lahvička.
+  Neověřeno: pauza na sestupu, 20ml lahvička. **Rychlost tlačení je vždy
+  1 ml / 5 s** (rozhodnutí obsluhy) – filtr detekce je na ni naladěný.
+- **Test 12** (`tools/level_stop/TEST12.md`): podíl C3/C1 ≤ 0,68 hlídaný
+  **od začátku tlačení**, kontrola maxima z plató jen zápis, start
+  C3/C1 ≥ 0,70, lahvička ≥ suchá + 0,25 pF, max. 6 doplnění; před sérií
+  měření prázdné lahvičky; cykly 20 ml / bez lahvičky + 9–14 ml / 7 / 6 / 6 ml.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
