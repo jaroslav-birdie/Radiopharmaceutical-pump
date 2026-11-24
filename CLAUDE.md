@@ -224,6 +224,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   kontrolu maxima z plató jen zapisovat (6 ml: 0,82), start C3/C1 ≥ 0,70.
   Šum vzniká až s kapalinou (prázdná studna sd 0,002 pF, s lahvičkou
   0,3–0,5 pF v klidu) – stínění porovnat hlavně tady.
+  **Test 11 se stíněním** (`tools/level_stop/ANALYZA_TEST11_STINENI.md`):
+  šum při tlačení ≈ 2,2× nižší (C1 0,49 → 0,22, C3 0,32 → 0,14 pF), signál
+  −10 %, tvar v šabloně beze změny, výšky 8,58 ± 0,25 mm. **Všech 20 cyklů
+  testů 9–11: 8,67 ± 0,23 mm (8,34–9,0)**, nezávisle na náplni i stínění.
+  Suché hodnoty se stíněním C1 1,69 / C3 1,74 pF. ⚠️ Plná lahvička (hladina
+  nad `SHLD2`) jen +0,58 pF nad suchou → kontrola lahvičky (+0,5 pF) na hraně.
+  Neověřeno: jiná rychlost tlačení, pauza na sestupu, 20ml lahvička.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
