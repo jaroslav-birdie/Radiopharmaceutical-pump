@@ -236,6 +236,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   **od začátku tlačení**, kontrola maxima z plató jen zápis, start
   C3/C1 ≥ 0,70, lahvička ≥ suchá + 0,25 pF, max. 6 doplnění; před sérií
   měření prázdné lahvičky; cykly 20 ml / bez lahvičky + 9–14 ml / 7 / 6 / 6 ml.
+  **Výsledek testu 12** (`tools/level_stop/ANALYZA_TEST12.md`): 8,58 ± 0,25 mm;
+  **testy 9–12 (25 cyklů): 8,65 ± 0,23 mm (8,2–9,0), zbytek ≈ 4,1 ml** při
+  startu 6 / 7 / 9–14 / 20 ml, s i bez stínění, i s doplněním vzduchu po
+  aktivaci. Podíl od začátku zastavil u 6 ml před aktivací, nikde předčasně.
+  Lahvička: prázdná +0,05 pF, s kapalinou +0,58 až +1,98 pF → práh 0,25 pF
+  sedí. Kritérium připravené k převodu (`PLAN_PREVODU.md` aktualizovat).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
