@@ -108,8 +108,8 @@
 #define CAP_FLOW_EPS_PERMILLE    3      // promile poklesu kapacity = "hladina klesá"
 
 // === ČASOVÁNÍ PROCESU ===
-#define EQUALIZE_TIME_MS      3000UL    // doba vyrovnávání tlaku přes filtr
-#define CALIBRATION_MS       10000UL    // celková doba kalibrace kapacitního senzoru
+#define EQUALIZE_TIME_MS      1000UL    // vyrovnání tlaku přes filtr (po roztoku / po nasátí; ověřit)
+#define CALIBRATION_MS        3000UL    // kalibrace = suché hodnoty (prázdná studna sd 0,002 pF)
 #define CAP_SAMPLE_MS           50UL    // perioda čtení FDC1004
 #define DISPLAY_REFRESH_MS     500UL    // perioda překreslení OLED (jen při stojících motorech)
 #define KEY_DEBOUNCE_MS         30UL    // odskok tlačítek
@@ -153,20 +153,13 @@
 // Kontrola před každým tlačením (lahvička uzavřená, pacient izolován)
 #define LVL_START_Q_MIN      0.70f      // C3/C1 >= 0,70 (v mezeře 0,5-0,6)
 #define LVL_VIAL_MIN_PF      0.25f      // C1 i C3 >= suchá hodnota + 0,25 pF (prázdná lahvička +0,05)
-#define LVL_REST_MS          5000UL     // klid pro kontrolu před tlačením
-#define LVL_VALVE_SETTLE_MS  1500UL     // po přejezdu ventilu navíc, než se měří / tlačí
-#define LVL_OPEN_SETTLE_MS   5000UL     // klid po otevření pacienta, před tlačením
+#define LVL_REST_MS          2000UL     // klid pro kontrolu před tlačením (rezervy prahů >> šum průměru)
+#define LVL_RESUME_SETTLE_MS 1500UL     // po znovuotevření pacienta (doplnění) bez vzorků - jako
+                                        // ve sketchi testů 9-12 (přechodový jev ventilu)
 
 // === PŘEDTLAK (před otevřením pacienta, pacient izolován) ===
-// Objem = plyn v systému x (tlak hadičky + žilní tlak) / nízký tlak okolí.
-// Počítá se s prázdnou lahvičkou (nejvíc plynu = konzervativní směr).
-#define PRECOMP_VIAL_ML       30.0f     // objem lahvičky po okraj (odhad)
-#define PRECOMP_DEAD_ML        1.0f     // mrtvý objem vzduchové cesty (odhad)
-#define PRECOMP_PATIENT_CM    40.0f     // pacient max. o délku hadičky výš
-#define PRECOMP_VENOUS_CM     20.0f     // horní odhad periferního žilního tlaku
-#define PRECOMP_KPA_PER_CMH2O 0.0981f
-#define PRECOMP_P_ATM_KPA     90.0f     // konzervativně nízký tlak okolí (~1000 m n. m.)
-#define PRECOMP_SETTLE_MS     3000UL    // klid po předtlaku, pacient ještě izolován
+// Pevný objem; dřívější výpočet (plyn 30+10+1 ml x 60 cmH2O / 90 kPa) dával 2,68 ml.
+#define PRECOMP_ML             3.0f     // předtlak vzduchem do uzavřené lahvičky
 
 // === OLED SH1106 128x64 ===
 #define OLED_ADDR             0x3C

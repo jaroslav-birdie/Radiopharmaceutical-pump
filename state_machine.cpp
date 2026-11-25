@@ -527,10 +527,7 @@ void PumpController::sensorFault() {
 // Předtlak: plyn v systému (prázdná lahvička = nejvíc plynu, konzervativní
 // směr) krát poměr nejhoršího tlaku v hadičce k nízkému tlaku okolí.
 float PumpController::precompMl() const {
-    float gasMl = PRECOMP_VIAL_ML + airMl_ + PRECOMP_DEAD_ML;
-    float dpKpa = (PRECOMP_PATIENT_CM + PRECOMP_VENOUS_CM) * PRECOMP_KPA_PER_CMH2O;
-    float ml = gasMl * dpKpa / PRECOMP_P_ATM_KPA;
-    return (ml < airMl_) ? ml : airMl_;
+    return (PRECOMP_ML < airMl_) ? PRECOMP_ML : airMl_;
 }
 
 // Klid před tlačením (lahvička uzavřená, pacient izolován): lahvička musí
@@ -657,10 +654,7 @@ void PumpController::handlePushAir(bool phase1) {
                 phase_ = PP_VALVE_WAIT;
             }
             break;
-        case PP_VALVE_WAIT:
-            if (millis() - phaseT_ < LVL_VALVE_SETTLE_MS) {
-                break;
-            }
+        case PP_VALVE_WAIT:              // ventil dojel - bez další prodlevy
             phaseT_ = millis();
             if (pushResume_) {           // po doplnění vzduchu: rovnou otevřít
                 logEvent(LOG_VALVE_PATIENT_MOVE);
@@ -670,7 +664,7 @@ void PumpController::handlePushAir(bool phase1) {
                 restSumC1_ = restSumC3_ = 0.0f;
                 restN_ = 0;
                 sayPrefix();
-                Serial.println(F("Klid 5 s (vzduch S-V): kontrola lahvicky"));
+                Serial.println(F("Klid (vzduch S-V): kontrola lahvicky"));
                 phase_ = PP_REST;
             }
             break;
@@ -692,8 +686,8 @@ void PumpController::handlePushAir(bool phase1) {
                 phase_ = PP_PRECOMP_SETTLE;
             }
             break;
-        case PP_PRECOMP_SETTLE:
-            if (millis() - phaseT_ >= PRECOMP_SETTLE_MS) {
+        case PP_PRECOMP_SETTLE:          // předtlak hotov - hned otevřít pacienta
+            {
                 // Detektor běží od povelu k otevření (jako ve sketchi) -
                 // přebytek předtlaku teče k pacientovi hned.
                 lvl_.reset();
@@ -703,13 +697,13 @@ void PumpController::handlePushAir(bool phase1) {
                 patientValve_.moveTo(angles_.patientOpen);
                 lvlFeed_ = true;
                 sayPrefix();
-                Serial.println(F("Pacient OTEVREN, detekce bezi, klid 5 s"));
+                Serial.println(F("Pacient OTEVREN, detekce bezi"));
                 phaseT_ = millis();
                 phase_ = PP_OPEN_WAIT;
             }
             break;
-        case PP_OPEN_WAIT:
-            if (millis() - phaseT_ >= LVL_OPEN_SETTLE_MS) {
+        case PP_OPEN_WAIT:               // tlačit hned po dojezdu ventilu
+            if (patientValve_.settled()) {
                 startAirPush();
                 phase_ = PP_PUSH;
             }
@@ -721,7 +715,7 @@ void PumpController::handlePushAir(bool phase1) {
             }
             break;
         case PP_RESUME_WAIT:
-            if (millis() - phaseT_ >= LVL_VALVE_SETTLE_MS) {
+            if (millis() - phaseT_ >= LVL_RESUME_SETTLE_MS) {
                 pushResume_ = false;
                 lvl_.flowBreak();
                 lvlFeed_ = true;
@@ -798,7 +792,7 @@ void PumpController::handleEqualize(bool phase1) {
     switch (phase_) {
         case 0:
             sayPrefix();
-            Serial.println(F("Vyrovnani tlaku (V-F, 3 s)"));
+            Serial.println(F("Vyrovnani tlaku (V-F)"));
             logEvent(LOG_EQUALIZE);
             airValve_.moveTo(angles_.airVialToFilter);
             phase_ = 1;

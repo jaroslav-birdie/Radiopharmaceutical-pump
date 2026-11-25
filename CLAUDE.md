@@ -245,7 +245,7 @@ dosedací plochy dna (= vnější dno lahvičky):
 - **Převedeno do produkce** (`tools/level_stop/PLAN_PREVODU.md`, stav):
   `level_detector.h/.cpp` = přepis detektoru ze sketche testu 12; přehrání
   logů testů 9–12 přes produkční kód (`tools/level_stop/analyza/replay.cpp`)
-  zastaví na **stejném vzorku** jako sketch. Tlačení: klid 5 s s kontrolou
+  zastaví na **stejném vzorku** jako sketch. Tlačení: klid (od 25. 11. 2 s) s kontrolou
   lahvičky (čeká se, dokud lahvička není) a C3/C1 ≥ 0,70 → předtlak →
   otevření pacienta (detektor běží) → tlačení; při zastavení **ihned
   `PATIENT_VALVE_ISOLATE`**, pak `V↔F` (`FLUID_DRAIN_MS` zrušen). Doplnění
@@ -262,6 +262,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   (C1 2,40 → ≥ 3,27 → 2,78 pF, okno ještě neplné) – přechodový jev otevření
   s předtlakem. Skok C1 se proto hlídá **až po aktivaci** (pád pod spodní
   prstenec je možný jen po průchodu horním); přehrání testů 9–12 beze změny.
+- **Prodlevy zkráceny (25. 11.):** po přejezdu ventilu (servo 1 s) už nic
+  navíc, klid před tlačením 2 s, předtlak **pevně 3 ml** (dřív výpočet
+  2,68 ml) a hned otevření pacienta, tlačení hned po dojezdu ventilu
+  (dřív 3 + 5 s), vyrovnání přes filtr 1 s (dřív 3 s), kalibrace 3 s.
+  Ponecháno 1,5 s bez vzorků po znovuotevření pacienta při doplnění vzduchu
+  (stejně jako ve sketchi testů 9–12). Ověřit na zařízení.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
