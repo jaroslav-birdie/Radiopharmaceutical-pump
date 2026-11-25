@@ -106,6 +106,8 @@
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)
+#define NO_FLOW_WATCH            0      // hlídání stagnace svislou elektrodou: 0 = vypnuto
+                                        // (falešné pauzy 1-15x za tlačení, test 12 / zařízení 25. 11.)
 #define NO_FLOW_TIMEOUT_MS    3000UL    // bez poklesu hladiny déle -> ST_PAUSED (doladit!)
 #define CAP_FLOW_EPS_PERMILLE    3      // promile poklesu kapacity = "hladina klesá"
 

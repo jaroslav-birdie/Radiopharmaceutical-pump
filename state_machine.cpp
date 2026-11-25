@@ -804,7 +804,7 @@ void PumpController::handlePushAir(bool phase1) {
                     pushResume_ = true;
                     phase_ = PP_REFILL_CLOSE;
                 }
-            } else if (flowStalled()) {
+            } else if (NO_FLOW_WATCH && flowStalled()) {
                 pauseSystem(true);
             }
             break;

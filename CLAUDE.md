@@ -252,7 +252,9 @@ dosedací plochy dna (= vnější dno lahvičky):
   vzduchu uprostřed tlačení **bez odvzdušnění** lahvičky (jako v testech),
   detektor drží stav. ⚠️ Hlídání stagnace (`NO_FLOW_TIMEOUT_MS`, svislá
   elektroda) by podle logu testu 12 zbytečně pozastavilo 1–15× za tlačení –
-  ponecháno na pokyn obsluhy, ověřit na zařízení.
+  na zařízení 25. 11. potvrzeno (2 pauzy za 7 s) → **vypnuto** (`NO_FLOW_WATCH 0`).
+  Svislá elektroda se za celé tlačení změní jen o 0,1–0,4 pF (v testu 11
+  cyklus 2 dokonce vzroste), za 3 s ≈ 0,01 pF proti šumu 0,1–0,5 pF.
   **Zařízení 25. 11.:** falešná porucha „skok C1" 2 s po otevření pacienta
   (C1 2,40 → ≥ 3,27 → 2,78 pF, okno ještě neplné) – přechodový jev otevření
   s předtlakem. Skok C1 se proto hlídá **až po aktivaci** (pád pod spodní
@@ -824,6 +826,7 @@ má mírně jinou mechanickou nulu serva.
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          5    // max. počet doplnění vzduchu (Fáze 1 i každá
                                        // iterace zvlášť) před vyhlášením ST_ALARM_EXCESS_AIR
+#define NO_FLOW_WATCH             0    // hlídání stagnace svislou elektrodou VYPNUTO
 #define NO_FLOW_TIMEOUT_MS     3000    // bez poklesu kapacity déle než toto -> ST_PAUSED
                                        // (orientační, doladit na reálném prototypu)
 
