@@ -73,6 +73,13 @@ private:
     void restStartCheck();               // klid před tlačením - lahvička a výchozí stav
     float precompMl() const;             // objem předtlaku
     void sensorFault();
+
+    // --- obsluha přes Serial Monitor ---
+    bool takeConfirm();                  // Enter nebo tlačítko START
+    bool confirmed(const __FlashStringHelper *prompt);   // výzva + čekání na Enter
+    void sayPrefix();                    // "# [Faze 1] " / "# [Iterace i/N] "
+    void announceState(State prev);      // název stavu, v krokovacím režimu výzva
+    void printStatus();                  // příkaz '?'
     void refreshDisplay();
     bool inputPressed(Key k);            // klávesnice NEBO Serial
     int8_t inputDelta();                 // enkodér NEBO Serial
@@ -119,11 +126,15 @@ private:
     bool     pushActive_ = false;        // vzduchová stříkačka tlačí (bilance po dojezdu)
     bool     lvlFeed_ = false;           // pacient otevřen - vzorky jdou do detektoru
     bool     sampleFresh_ = false;       // v této smyčce je nový vzorek FDC1004
-    bool     vialMissingLogged_ = false;
     uint8_t  fitLogged_ = 0;             // už zapsané příznaky kontroly shody
     float    restSumC1_ = 0.0f;          // klid před tlačením
     float    restSumC3_ = 0.0f;
     uint16_t restN_ = 0;
+
+    // --- obsluha ---
+    bool     promptShown_ = false;       // výzva aktuálního kroku už vypsána
+    bool     stepMode_ = STEP_MODE_DEFAULT;   // krokovací režim
+    bool     stepWait_ = false;          // čeká se na Enter před krokem procesu
     float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky (jen pro plnění)
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
     uint16_t volumeDml_ = 100;           // zadaný objem lahvičky (desetiny ml)

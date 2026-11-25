@@ -61,7 +61,7 @@ void logEvent(LogMsg msg) {
     lastMsg = msg;
     char buf[24];
     logCopyMsg(msg, buf, sizeof(buf));
-    Serial.print(F("[LOG] "));
+    Serial.print(F("# "));
     Serial.println(buf);
 }
 

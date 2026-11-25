@@ -8,6 +8,10 @@
 
 // === LADĚNÍ ===
 #define DEBUG 1
+// Krokovací režim: před každým krokem procesu (tlačení, vyrovnání tlaku,
+// doplnění vzduchu, přidání roztoku) se vypíše, co přijde, a čeká se na
+// Enter. Za běhu přepíná příkaz 'k'. Pro zkoušky na zařízení zapnuto.
+#define STEP_MODE_DEFAULT 1
 
 // === PINY – ENKODÉR (HW zatím nepřipojen; funkci supluje Serial) ===
 #define PIN_ENC_CLK      2    // INT0

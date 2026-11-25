@@ -22,6 +22,42 @@ static const char *const STATE_NAMES[ST_STATE_COUNT] PROGMEM = {
     SN_DONE, SN_PAUSED, SN_ALARM, SN_ESTOP, SN_ERROR
 };
 
+// Popisy kroků procesu pro výpis (krokovací režim, změna stavu).
+static const char SD_PUSH[]     PROGMEM = "TLACENI: kontrola lahvicky, predtlak, tlaceni do kriticke hladiny";
+static const char SD_RESUME[]   PROGMEM = "TLACENI pokracuje po doplneni vzduchu";
+static const char SD_EQUALIZE[] PROGMEM = "VYROVNANI tlaku lahvicky pres filtr";
+static const char SD_FILL[]     PROGMEM = "DOPLNENI vzduchove strikacky na plny objem";
+static const char SD_SALINE[]   PROGMEM = "PRIDANI fyziologickeho roztoku do lahvicky";
+
+static bool isProcessState(State s) {
+    return s >= ST_P1_PUSH_AIR && s <= ST_ITER_ADD_SALINE;
+}
+
+// Skládání řádku displeje bez snprintf. Vrací ukazatel na koncovou nulu.
+static char *appendText(char *dst, const char *pgm) {
+    strcpy_P(dst, pgm);
+    return dst + strlen(dst);
+}
+
+static char *appendUint(char *dst, uint16_t v) {
+    utoa(v, dst, 10);
+    return dst + strlen(dst);
+}
+
+static char *appendTenths(char *dst, uint16_t tenths) {
+    dst = appendUint(dst, tenths / 10);
+    *dst++ = '.';
+    *dst++ = (char)('0' + tenths % 10);
+    *dst = '\0';
+    return dst;
+}
+
+// Výpis "<text><hodnota>" na Serial - společná funkce šetří flash.
+static void sayVal(const __FlashStringHelper *label, float v, uint8_t digits) {
+    Serial.print(label);
+    Serial.print(v, digits);
+}
+
 // Pod-kroky ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR (phase_).
 enum PushPhase : uint8_t {
     PP_AIR_VALVE = 0,    // vzduchový ventil S<->V (lahvička uzavřena, pacient izolován)
@@ -36,7 +72,8 @@ enum PushPhase : uint8_t {
     PP_PUSH,             // tlačení, detektor běží
     PP_REFILL_CLOSE,     // stříkačka prázdná: pacient se zavírá, pak doplnění
     PP_STOPPED,          // kritická hladina: pacient se zavírá (povel už dán)
-    PP_VENT              // odtlakování lahvičky V<->F
+    PP_VENT,             // odtlakování lahvičky V<->F
+    PP_VIAL_WAIT         // lahvička chybí: čeká se na obsluhu (Enter)
 };
 
 // ============================================================
@@ -84,7 +121,7 @@ void PumpController::begin() {
                   SAL_DIR_PUSH_LEVEL);
 
     if (!cap_.begin()) {
-        Serial.println(F("VAROVANI: FDC1004 neodpovida!"));
+        Serial.println(F("# *** FDC1004 neodpovida"));
     }
     disp_.begin();
     kb_.begin();
@@ -128,11 +165,29 @@ void PumpController::update() {
     kb_.update();
     enc_.update();
     ser_.update();
+    if (ser_.takeStepToggle()) {
+        stepMode_ = !stepMode_;
+        Serial.println(stepMode_ ? F("# Krokovani ZAP")
+                                 : F("# Krokovani VYP"));
+    }
+    if (ser_.takeStatus()) {
+        printStatus();
+    }
     handleGlobalKeys();
     serviceLevel();
     if (cap_.frozen() && state_ >= ST_CALIBRATING && state_ <= ST_PAUSED
             && state_ != ST_COMPLETE) {
         sensorFault();
+    }
+
+    if (stepWait_ && state_ != ST_PAUSED) {
+        // Krokovací režim: krok procesu začne až po Enteru. Čeká se jen
+        // mezi kroky (pacient izolován, motory stojí).
+        if (!takeConfirm()) {
+            refreshDisplay();
+            return;
+        }
+        stepWait_ = false;
     }
 
     switch (state_) {
@@ -159,14 +214,108 @@ void PumpController::update() {
 // ============================================================
 
 void PumpController::changeState(State s) {
+    State prev = state_;
     state_ = s;
     phase_ = 0;
     phaseT_ = millis();
     dispDirty_ = true;
-#if DEBUG
-    Serial.print(F("Stav: "));
-    Serial.println((uint8_t)s);
-#endif
+    promptShown_ = false;
+    stepWait_ = false;
+    announceState(prev);
+}
+
+// Vypíše, do jakého kroku systém přechází. V krokovacím režimu se mezi
+// dvěma kroky procesu čeká na Enter (stepWait_, viz update()).
+void PumpController::announceState(State prev) {
+    const char *desc = NULL;
+    switch (state_) {
+        case ST_P1_PUSH_AIR:
+        case ST_ITER_PUSH_AIR:   desc = pushResume_ ? SD_RESUME : SD_PUSH; break;
+        case ST_P1_EQUALIZE:
+        case ST_ITER_EQUALIZE:   desc = SD_EQUALIZE; break;
+        case ST_P1_FILL_AIR:
+        case ST_ITER_FILL_AIR:   desc = SD_FILL; break;
+        case ST_P1_ADD_SALINE:
+        case ST_ITER_ADD_SALINE: desc = SD_SALINE; break;
+        default: break;
+    }
+    if (desc == NULL) {
+        char buf[22];
+        strncpy_P(buf, (const char *)pgm_read_ptr(&STATE_NAMES[state_]), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        Serial.print(F("# ===== "));
+        Serial.println(buf);
+        return;
+    }
+    if (stepMode_ && isProcessState(prev)) {
+        stepWait_ = true;
+        ser_.flush();
+        Serial.print(F(">>> "));
+        Serial.print(iter_ == 0 ? F("[Faze 1] ") : F("[Iterace] "));
+        Serial.print(F("Dalsi krok: "));
+        Serial.print((const __FlashStringHelper *)desc);
+        Serial.println(F(". Enter = pokracovat"));
+    } else {
+        sayPrefix();
+        Serial.print(F("===== "));
+        Serial.println((const __FlashStringHelper *)desc);
+    }
+}
+
+void PumpController::sayPrefix() {
+    if (iter_ == 0) {
+        Serial.print(F("# [Faze 1] "));
+    } else {
+        uint8_t shown = (iter_ > ITER_COUNT) ? (uint8_t)ITER_COUNT : iter_;
+        Serial.print(F("# [Iterace "));
+        Serial.print(shown);
+        Serial.print('/');
+        Serial.print((uint8_t)ITER_COUNT);
+        Serial.print(F("] "));
+    }
+}
+
+bool PumpController::takeConfirm() {
+    bool a = ser_.takeConfirm();
+    bool b = kb_.pressed(KEY_START);
+    return a || b;
+}
+
+// Výzva obsluze: vypíše se jednou, pak se čeká na Enter (nebo START).
+bool PumpController::confirmed(const __FlashStringHelper *prompt) {
+    if (!promptShown_) {
+        ser_.flush();
+        Serial.print(F(">>> "));
+        Serial.print(prompt);
+        Serial.println(F(" Enter = pokracovat"));
+        promptShown_ = true;
+    }
+    if (takeConfirm()) {
+        promptShown_ = false;
+        return true;
+    }
+    return false;
+}
+
+void PumpController::printStatus() {
+    char buf[22];
+    strncpy_P(buf, (const char *)pgm_read_ptr(&STATE_NAMES[state_]), sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    Serial.print(F("# STAV: ")); Serial.print(buf);
+    Serial.print(F(" (stav ")); Serial.print((uint8_t)state_);
+    Serial.print(F(", krok ")); Serial.print(phase_);
+    Serial.print(F(")  iterace ")); Serial.print(iter_);
+    Serial.print('/'); Serial.println((uint8_t)ITER_COUNT);
+    sayVal(F("#   vzduch ve strikacce "), airMl_, 1);
+    sayVal(F(" ml, roztok "), salMl_, 1);
+    sayVal(F(" ml, objem lahvicky "), volumeDml_ / 10.0f, 1);
+    Serial.println(F(" ml"));
+    sayVal(F("#   C1="), cap_.lowerPf(), 3);
+    sayVal(F(" C3="), cap_.upperPf(), 3);
+    sayVal(F(" pF  suche C1="), cap_.dryLower(), 3);
+    sayVal(F(" C3="), cap_.dryUpper(), 3);
+    Serial.print(F("  detekce ")); Serial.print(lvlFeed_ ? F("BEZI") : F("stoji"));
+    Serial.print(F("  krokovani ")); Serial.println(stepMode_ ? F("ZAP") : F("VYP"));
 }
 
 void PumpController::safeValves() {
@@ -233,9 +382,11 @@ void PumpController::pauseSystem(bool byNoFlow) {
     salSyr_.pause();
     // Ventily zůstávají v aktuální poloze – PAUSE pokračuje ve stejném kroku
     if (byNoFlow) {
+        Serial.println(F("# Hladina 3 s neklesa (svisla el.) - pauza, pokracuje sama"));
         logEvent(LOG_NO_FLOW);
     }
     logEvent(LOG_PAUSED);
+    Serial.println(F(">>> PAUZA: p = pokracovat, x = STOP"));
     state_ = ST_PAUSED;
     dispDirty_ = true;
 }
@@ -256,6 +407,10 @@ void PumpController::resumeSystem() {
 // o hladině nic neříká (stlačitelnost, tlak v systému a u pacienta).
 void PumpController::startAirPush() {
     float pushable = airMl_;
+    sayPrefix();
+    Serial.print(F("Tlaceni, ve strikacce "));
+    Serial.print(pushable, 1);
+    Serial.println(F(" ml"));
     logEvent(LOG_AIR_PUSH);
     dispDirty_ = true;
     refreshDisplay();                    // překreslit, dokud motor stojí
@@ -310,6 +465,12 @@ void PumpController::serviceLevel() {
     if (fit & ~fitLogged_) {
         fitLogged_ |= fit;
         logEvent(LOG_FIT_WARN);          // jen informace, nezastavuje
+        sayPrefix();
+        Serial.print(F("Mimo sablonu (info):"));
+        if (fit & LVL_FIT_C1_EARLY) Serial.print(F(" C1 klesa predcasne"));
+        if (fit & LVL_FIT_NO_RISE)  Serial.print(F(" C1-C3 neroste"));
+        if (fit & LVL_FIT_MAX_OFF)  Serial.print(F(" max mimo plato"));
+        Serial.println();
     }
     if (r != LVL_NONE) {
         onLevelResult(r);
@@ -330,12 +491,20 @@ void PumpController::onLevelResult(LevelResult r) {
         state_ = savedState_;
         salSyr_.resume();
     }
-#if DEBUG
-    Serial.print(F("Hladina: vysledek ")); Serial.print((uint8_t)r);
-    Serial.print(F(" C1=")); Serial.print(lvl_.winC1(), 3);
-    Serial.print(F(" C3=")); Serial.print(lvl_.winC3(), 3);
-    Serial.print(F(" C3/max=")); Serial.println(lvl_.winC3() / lvl_.maxC3(), 3);
-#endif
+    sayPrefix();
+    switch (r) {
+        case LVL_STOP_RATIO:    Serial.print(F("KRITICKA HLADINA (podil)")); break;
+        case LVL_STOP_TEMPLATE: Serial.print(F("KRITICKA HLADINA (sablona)")); break;
+        case LVL_STOP_PEAK:     Serial.print(F("KRITICKA HLADINA (vrchol)")); break;
+        default:                Serial.print(F("*** SKOK C1 - porucha")); break;
+    }
+    Serial.println(F(" - pacient UZAVREN"));
+    sayVal(F("#   C1="), lvl_.winC1(), 3);
+    sayVal(F(" C3="), lvl_.winC3(), 3);
+    sayVal(F(" pF  C3/C1="), lvl_.winC3() / lvl_.winC1(), 3);
+    sayVal(F("  C3/max="), lvl_.winC3() / lvl_.maxC3(), 3);
+    sayVal(F("  vzduch ve strikacce "), airMl_, 1);
+    Serial.println(F(" ml"));
     if (r == LVL_FAULT_STEP) {
         safeValves();
         logEvent(LOG_LEVEL_FAULT);
@@ -351,6 +520,8 @@ void PumpController::sensorFault() {
     airSyr_.stop();
     salSyr_.stop();
     safeValves();
+    Serial.println(cap_.present() ? F("# *** FDC1004 nemeri - zkontroluj konektory elektrod")
+                                  : F("# *** FDC1004 neodpovida (I2C)"));
     logEvent(LOG_SENSOR_FAULT);
     changeState(ST_ERROR);
 }
@@ -382,29 +553,36 @@ void PumpController::restStartCheck() {
     restSumC1_ = restSumC3_ = 0.0f;
     restN_ = 0;
     phaseT_ = millis();
-#if DEBUG
-    Serial.print(F("Klid: C1=")); Serial.print(c1, 3);
-    Serial.print(F(" C3=")); Serial.print(c3, 3);
-    Serial.print(F(" C3/C1=")); Serial.println(c3 / c1, 3);
-#endif
+    sayPrefix();
+    sayVal(F("Klid: C1="), c1, 3);
+    sayVal(F(" C3="), c3, 3);
+    sayVal(F(" pF (nad suchou +"), c1 - cap_.dryLower(), 2);
+    sayVal(F(" / +"), c3 - cap_.dryUpper(), 2);
+    Serial.print(F("), C3/C1=")); Serial.println(c3 / c1, 3);
     bool vial = c1 >= cap_.dryLower() + LVL_VIAL_MIN_PF
              && c3 >= cap_.dryUpper() + LVL_VIAL_MIN_PF;
     if (!vial) {
-        if (!vialMissingLogged_) {
-            vialMissingLogged_ = true;
-            logEvent(LOG_VIAL_MISSING);
-        }
-        return;                          // měřit znovu, dokud lahvička není
+        logEvent(LOG_VIAL_MISSING);
+        phase_ = PP_VIAL_WAIT;           // obsluha vloží lahvičku, pak znovu klid
+        return;
     }
-    vialMissingLogged_ = false;
     if (c3 < LVL_START_Q_MIN * c1) {
+        sayPrefix();
+        Serial.print(F("Hladina POD hornim prstencem (C3/C1 < "));
+        Serial.print(LVL_START_Q_MIN, 2);
+        Serial.println(F(") - STOP"));
         safeValves();
         logEvent(LOG_LEVEL_LOW);
         changeState(ST_ERROR);
         return;
     }
+    float pre = precompMl();
+    sayPrefix();
+    Serial.print(F("Lahvicka OK. Predtlak "));
+    Serial.print(pre, 2);
+    Serial.println(F(" ml (pacient uzavren)"));
     logEvent(LOG_PRECOMPRESS);
-    airSyr_.startMove(precompMl(), true);
+    airSyr_.startMove(pre, true);
     pushActive_ = true;
     phase_ = PP_PRECOMP;
 }
@@ -414,13 +592,21 @@ void PumpController::restStartCheck() {
 // ============================================================
 
 void PumpController::handleInit() {
-    if (valvesSettled()) {
+    if (!valvesSettled()) {
+        return;
+    }
+    if (confirmed(F("PRIPRAVA: ventily, strikacky (vzduch PLNA 10 ml). Studna PRAZDNA, bez lahvicky."))) {
         logEvent(LOG_WAIT_READY);
         changeState(ST_WAIT_READY);
     }
 }
 
 void PumpController::handleWaitReady() {
+    if (!promptShown_) {
+        ser_.flush();
+        Serial.println(F(">>> Lahvicka: 1 = 10 ml, 2 = 20 ml"));
+        promptShown_ = true;
+    }
     if (inputPressed(KEY_10ML)) {
         is20ml_ = false;
         volumeDml_ = 100;
@@ -434,37 +620,63 @@ void PumpController::handleWaitReady() {
     }
 }
 
+// Objem: +/- po 0,1 ml (enkodér nebo Serial), nebo číslo v ml. Enter
+// potvrdí objem, druhý Enter spustí kalibraci.
 void PumpController::handleSetVolume() {
-    int8_t d = inputDelta();
-    if (d != 0) {
-        int16_t v = (int16_t)volumeDml_ + d * VOL_FINE_STEP_DML;
-        int16_t lo = is20ml_ ? VOL_FINE_MIN_20ML_DML : VOL_FINE_MIN_10ML_DML;
-        int16_t hi = is20ml_ ? VOL_FINE_MAX_20ML_DML : VOL_FINE_MAX_10ML_DML;
+    int16_t lo = is20ml_ ? VOL_FINE_MIN_20ML_DML : VOL_FINE_MIN_10ML_DML;
+    int16_t hi = is20ml_ ? VOL_FINE_MAX_20ML_DML : VOL_FINE_MAX_10ML_DML;
+    if (phase_ == 0) {
+        int16_t v = (int16_t)volumeDml_ + inputDelta() * VOL_FINE_STEP_DML;
+        int16_t typed = ser_.takeVolumeDml();
+        if (typed >= 0) {
+            v = typed;
+        }
         if (v < lo) v = lo;
         if (v > hi) v = hi;
-        volumeDml_ = (uint16_t)v;
-        dispDirty_ = true;
-    }
-    if (inputPressed(KEY_START)) {
+        if (v != (int16_t)volumeDml_ || !promptShown_) {
+            volumeDml_ = (uint16_t)v;
+            dispDirty_ = true;
+            sayVal(F("# Objem lahvicky: "), volumeDml_ / 10.0f, 1);
+            sayVal(F(" ml (rozsah "), lo / 10.0f, 1);
+            Serial.print('-'); Serial.print(hi / 10.0f, 1); Serial.println(F(")"));
+            if (!promptShown_) {
+                Serial.println(F(">>> Objem: +/- nebo cislo (10.4), Enter = potvrdit"));
+                promptShown_ = true;
+            }
+        }
+        if (takeConfirm()) {
+            promptShown_ = false;
+            phase_ = 1;
+        }
+    } else if (confirmed(F("KALIBRACE - studna PRAZDNA (bez lahvicky)."))) {
         enableSteppers();             // od START platí ENABLED po celý proces (i PAUSE)
         logEvent(LOG_CALIBRATING);
         changeState(ST_CALIBRATING);
     }
 }
 
-// Vzduchová stříkačka sedí v S<->F (vyvětrána do atmosféry) už od zapnutí
-// (viz begin()), takže tu není potřeba žádný samostatný krok navíc -
-// kalibrace přechází rovnou do Fáze 1.
+// Kalibrace = suché hodnoty prstenců v prázdné studně. Lahvička se vkládá
+// až potom (vzduchová stříkačka sedí v S<->F už od zapnutí).
 void PumpController::handleCalibrating() {
     if (phase_ == 0) {
         if (!cap_.present()) {
             sensorFault();
             return;
         }
+        Serial.print(F("# Kalibrace "));
+        Serial.print(CALIBRATION_MS / 1000);
+        Serial.println(F(" s, nesahat"));
         cap_.startCalibration();
         phase_ = 1;
-    } else if (!cap_.calibrating()) {
-        logEvent(LOG_CALIB_DONE);
+    } else if (phase_ == 1) {
+        if (!cap_.calibrating()) {
+            logEvent(LOG_CALIB_DONE);
+            sayVal(F("# Suche hodnoty: C1="), cap_.dryLower(), 3);
+            sayVal(F(" C3="), cap_.dryUpper(), 3);
+            Serial.println(F(" pF"));
+            phase_ = 2;
+        }
+    } else if (confirmed(F("VLOZ LAHVICKU s jehlami do studny."))) {
         changeState(ST_P1_PUSH_AIR);
     }
 }
@@ -503,11 +715,21 @@ void PumpController::handlePushAir(bool phase1) {
             } else {
                 restSumC1_ = restSumC3_ = 0.0f;
                 restN_ = 0;
+                sayPrefix();
+                Serial.println(F("Klid 5 s (vzduch S-V): kontrola lahvicky"));
                 phase_ = PP_REST;
             }
             break;
         case PP_REST:
             restStartCheck();
+            break;
+        case PP_VIAL_WAIT:
+            if (confirmed(F("Lahvicka CHYBI / prazdna - vloz ji."))) {
+                restSumC1_ = restSumC3_ = 0.0f;
+                restN_ = 0;
+                phaseT_ = millis();
+                phase_ = PP_REST;
+            }
             break;
         case PP_PRECOMP:
             if (airSyr_.idle()) {
@@ -526,6 +748,8 @@ void PumpController::handlePushAir(bool phase1) {
                 logEvent(LOG_VALVE_PATIENT_MOVE);
                 patientValve_.moveTo(angles_.patientOpen);
                 lvlFeed_ = true;
+                sayPrefix();
+                Serial.println(F("Pacient OTEVREN, detekce bezi, klid 5 s"));
                 phaseT_ = millis();
                 phase_ = PP_OPEN_WAIT;
             }
@@ -547,6 +771,8 @@ void PumpController::handlePushAir(bool phase1) {
                 pushResume_ = false;
                 lvl_.flowBreak();
                 lvlFeed_ = true;
+                sayPrefix();
+                Serial.println(F("Pacient znovu OTEVREN"));
                 startAirPush();
                 phase_ = PP_PUSH;
             }
@@ -559,6 +785,7 @@ void PumpController::handlePushAir(bool phase1) {
                     // Motory zůstávají ENABLED (drží polohu) - DISABLE je
                     // vyhrazeno jen pro ST_COMPLETE a ST_EMERGENCY_STOP.
                     safeValves();
+                    Serial.println(F("# *** Limit doplneni vzduchu - mozna netesnost"));
                     logEvent(LOG_ALARM_EXCESS_AIR);
                     changeState(ST_ALARM_EXCESS_AIR);
                 } else {
@@ -566,6 +793,10 @@ void PumpController::handlePushAir(bool phase1) {
                     // tlakem (bez odvzdušnění), detektor si drží stav.
                     lvlFeed_ = false;
                     lvl_.flowBreak();
+                    sayPrefix();
+                    Serial.print(F("Strikacka prazdna - pacient UZAVREN, doplneni "));
+                    Serial.print(refills_); Serial.print('/'); Serial.print(MAX_AIR_REFILLS);
+                    Serial.println(F(" (lahvicka pod tlakem)"));
                     logEvent(LOG_VALVE_PATIENT_MOVE);
                     patientValve_.moveTo(angles_.patientIsolate);
                     pushResume_ = true;
@@ -582,6 +813,8 @@ void PumpController::handlePushAir(bool phase1) {
             break;
         case PP_STOPPED:                 // pacient už zavřen - odtlakovat lahvičku
             if (patientValve_.settled()) {
+                sayPrefix();
+                Serial.println(F("Odtlakovani lahvicky (V-F)"));
                 logEvent(LOG_VALVE_AIR_MOVE);
                 airValve_.moveTo(angles_.airVialToFilter);
                 phase_ = PP_VENT;
@@ -610,6 +843,8 @@ void PumpController::handlePushAir(bool phase1) {
 void PumpController::handleEqualize(bool phase1) {
     switch (phase_) {
         case 0:
+            sayPrefix();
+            Serial.println(F("Vyrovnani tlaku (V-F, 3 s)"));
             logEvent(LOG_EQUALIZE);
             airValve_.moveTo(angles_.airVialToFilter);
             phase_ = 1;
@@ -645,6 +880,9 @@ void PumpController::handleFillAir(bool phase1) {
             if (target < 0.0f) {
                 target = 0.0f;
             }
+            sayPrefix();
+            sayVal(F("Nasati "), target, 1);
+            Serial.println(F(" ml vzduchu (S-F)"));
             logEvent(LOG_AIR_FILL);
             dispDirty_ = true;
             refreshDisplay();            // překreslit, dokud motor stojí
@@ -681,10 +919,15 @@ void PumpController::handleAddSaline() {
                 // Motory zůstávají ENABLED (drží polohu) - DISABLE je
                 // vyhrazeno jen pro ST_COMPLETE a ST_EMERGENCY_STOP.
                 safeValves();
+                Serial.println(F("# *** Malo roztoku"));
                 logEvent(LOG_ERROR);
                 changeState(ST_ERROR);
                 break;
             }
+            sayPrefix();
+            sayVal(F("Pridani "), VOL_SAL_ITER_ML, 1);
+            sayVal(F(" ml roztoku, zbyva "), salMl_, 1);
+            Serial.println(F(" ml"));
             logEvent(LOG_SALINE_PUSH);
             dispDirty_ = true;
             refreshDisplay();
@@ -744,19 +987,24 @@ void PumpController::refreshDisplay() {
     logCopyMsg(logLastMsg(), buf, sizeof(buf));
     disp_.drawRow(2, buf);
 
-    snprintf_P(buf, sizeof(buf), PSTR("Objem: %u.%u ml"),
-               volumeDml_ / 10, volumeDml_ % 10);
+    // Bez snprintf (šetří ~1 kB flash); obsah displeje se ještě doladí.
+    char *e = appendText(buf, PSTR("Objem: "));
+    e = appendTenths(e, volumeDml_);
+    appendText(e, PSTR(" ml"));
     disp_.drawRow(4, buf);
 
     if (iter_ == 0) {
-        snprintf_P(buf, sizeof(buf), PSTR("Faze 1  Vz:%u.%u ml"),
-                   (uint8_t)airMl_, (uint8_t)(airMl_ * 10.0f) % 10);
+        e = appendText(buf, PSTR("Faze 1  Vz:"));
+        e = appendTenths(e, (uint16_t)(airMl_ * 10.0f + 0.5f));
+        appendText(e, PSTR(" ml"));
     } else {
         // Při závěrečném vytlačení je iter_ o 1 vyšší než ITER_COUNT -
         // na displeji se ořízne, aby neukazoval např. "12/11".
         uint8_t shown = (iter_ > ITER_COUNT) ? (uint8_t)ITER_COUNT : iter_;
-        snprintf_P(buf, sizeof(buf), PSTR("Iterace: %u/%u"),
-                   shown, (uint8_t)ITER_COUNT);
+        e = appendText(buf, PSTR("Iterace: "));
+        e = appendUint(e, shown);
+        *e++ = '/';
+        appendUint(e, (uint8_t)ITER_COUNT);
     }
     disp_.drawRow(6, buf);
 }

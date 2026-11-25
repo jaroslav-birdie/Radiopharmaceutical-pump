@@ -704,6 +704,26 @@ akci, případně několik posledních řádků jako jednoduchý log. Obsah konk
 obrazovek dořešíme později – zatím stačí, že mechanismus logování je sdílený
 a nezávislý na tom, zda je klávesnice/enkodér fyzicky připojen.
 
+### Ovládání přes Serial Monitor (do dodání klávesnice)
+
+`serial_input.cpp`, čte se po řádcích (Serial Monitor musí posílat konec
+řádku – „Newline" nebo „Both NL & CR"):
+
+| Vstup | Význam |
+|---|---|
+| Enter (prázdný řádek) | potvrzení výzvy `>>>` (jako START) |
+| `1` / `2` | lahvička 10 / 20 ml |
+| `+` / `-` (i `+++`), `10.4` | úprava / přímé zadání objemu |
+| `k` | krokovací režim zap/vyp (`STEP_MODE_DEFAULT 1` = zapnut) |
+| `?` | výpis stavu (stav, vzduch, roztok, C1/C3, suché hodnoty) |
+| `p` / `x` | PAUSE/PLAY / nouzový STOP – **hned na znak**, bez Enteru |
+
+Výpis: řádky `# …` popisují, co systém právě dělá, `>>> …` čeká na Enter.
+Krokovací režim čeká před každým krokem procesu (vyrovnání, nasátí,
+tlačení, roztok) – vždy jen **mezi** kroky, s izolovaným pacientem
+a stojícími motory; PAUSE/STOP a hlídání senzoru běží i během čekání.
+Obrazovky OLED se doladí později.
+
 > Klávesnice a enkodér zatím nejsou fyzicky dostupné. Kód se proto píše
 > výhradně proti pinům z `config.h` (třídy `Keyboard`/`Encoder`) – po zapojení
 > reálného hardwaru se neupravuje logika, jen se ověří, že fyzické zapojení
