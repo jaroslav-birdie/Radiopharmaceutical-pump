@@ -4,8 +4,7 @@
 // Max ~21 znaků kvůli šířce řádku OLED (128 px / 6 px na znak).
 static const char MSG_BOOT[]          PROGMEM = "Start systemu";
 static const char MSG_VALVES_SAFE[]   PROGMEM = "Ventily do bezpecna";
-static const char MSG_WAIT_READY[]    PROGMEM = "Osad system, vol 1/2";
-static const char MSG_SET_VOLUME[]    PROGMEM = "Uprav objem, pak s";
+static const char MSG_WAIT_READY[]    PROGMEM = "Osazeno, START";
 static const char MSG_CALIBRATING[]   PROGMEM = "Kalibrace senzoru";
 static const char MSG_CALIB_DONE[]    PROGMEM = "Kalibrace hotova";
 static const char MSG_VALVE_PAT[]     PROGMEM = "Pohyb ventilu 1";
@@ -31,7 +30,7 @@ static const char MSG_SENSOR_FAULT[]  PROGMEM = "Chyba senzoru!";
 static const char MSG_FIT_WARN[]      PROGMEM = "Prubeh mimo sablonu";
 
 static const char *const MSG_TABLE[LOG_MSG_COUNT] PROGMEM = {
-    MSG_BOOT, MSG_VALVES_SAFE, MSG_WAIT_READY, MSG_SET_VOLUME,
+    MSG_BOOT, MSG_VALVES_SAFE, MSG_WAIT_READY,
     MSG_CALIBRATING, MSG_CALIB_DONE, MSG_VALVE_PAT, MSG_VALVE_AIR,
     MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE,
     MSG_ITER, MSG_CRITICAL, MSG_PAUSED, MSG_RESUMED,

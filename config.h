@@ -99,12 +99,6 @@
                                         // 12 dávek (Fáze 1 + 11 iterací) = 51 ml z 60 ml
 #define ITER_COUNT               11      // počet iterativních cyklů po Fázi 1
 
-// === ZADÁVÁNÍ PŘESNÉHO OBJEMU (krok 0,1 ml; hodnoty v desetinách ml) ===
-#define VOL_FINE_STEP_DML        1      // 0,1 ml
-#define VOL_FINE_MIN_10ML_DML   80      // 8,0 ml
-#define VOL_FINE_MAX_10ML_DML  120      // 12,0 ml
-#define VOL_FINE_MIN_20ML_DML  180      // 18,0 ml
-#define VOL_FINE_MAX_20ML_DML  220      // 22,0 ml
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          3      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť); testy 9-12 max. 2

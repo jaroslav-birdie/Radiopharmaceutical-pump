@@ -8,7 +8,6 @@ enum LogMsg : uint8_t {
     LOG_BOOT = 0,
     LOG_VALVES_SAFE,
     LOG_WAIT_READY,
-    LOG_SET_VOLUME,
     LOG_CALIBRATING,
     LOG_CALIB_DONE,
     LOG_VALVE_PATIENT_MOVE,

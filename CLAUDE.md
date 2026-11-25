@@ -57,8 +57,8 @@ Platforma: Arduino Uno (ATmega328P @ 16 MHz).
 > **nENBL DRV8825**: oba drivery sdílí jeden společný pin (nikdy není potřeba
 > povolit jen jeden motor nezávisle na druhém). Aktivní LOW = výstupy povoleny.
 >
-> - **DISABLED**: od zapnutí (`ST_INIT`) až do stisku START (`ST_WAIT_READY`,
->   `ST_SET_VOLUME`) – obsluha v této době ručně osazuje lahvičku a stříkačky
+> - **DISABLED**: od zapnutí (`ST_INIT`) až do stisku START (`ST_WAIT_READY`)
+>   – obsluha v této době ručně osazuje ventily a stříkačky
 > - **ENABLED**: od stisku START po celý zbytek aplikačního procesu –
 >   `ST_PAUSED` (nouzové **pozastavení**), `ST_ALARM_EXCESS_AIR` i `ST_ERROR`
 >   motory ponechávají ENABLED (drží polohu pístu proti zpětnému tlaku)
@@ -471,8 +471,8 @@ Podmínky pro variantu B:
 enum State {
     ST_INIT,             // zapnutí; serva okamžitě do definovaných PRACOVNÍCH
                          // poloh – NIKOLI do syrového 0° servo-defaultu
-    ST_WAIT_READY,       // čekání na osazení systému a stisk START
-    ST_SET_VOLUME,       // zadávání objemu enkodérem, potvrzení stiskem
+    ST_WAIT_READY,       // osazeno, START spustí kalibraci (objem lahvičky se
+                         // nezadává – na řízení nemá vliv, náplň 6–20 ml)
     ST_CALIBRATING,      // kalibrace senzoru = suché hodnoty v PRÁZDNÉ studně
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
@@ -721,8 +721,6 @@ a nezávislý na tom, zda je klávesnice/enkodér fyzicky připojen.
 | Vstup | Význam |
 |---|---|
 | Enter (prázdný řádek) | potvrzení výzvy `>>>` (jako START) |
-| `1` / `2` | lahvička 10 / 20 ml |
-| `+` / `-` (i `+++`), `10.4` | úprava / přímé zadání objemu |
 | `k` | krokovací režim zap/vyp (`STEP_MODE_DEFAULT 1` = zapnut) |
 | `?` | výpis stavu (stav, vzduch, roztok, C1/C3, suché hodnoty) |
 | `p` / `x` | PAUSE/PLAY / nouzový STOP – **hned na znak**, bez Enteru |
@@ -820,13 +818,6 @@ má mírně jinou mechanickou nulu serva.
 #define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce
 #define ITER_COUNT               9
 
-// === ZADÁVÁNÍ PŘESNÉHO OBJEMU (enkodér, krok 0,1 ml) ===
-#define VOL_FINE_STEP_ML         0.1f
-#define VOL_FINE_MIN_10ML        8.0f
-#define VOL_FINE_MAX_10ML       12.0f
-#define VOL_FINE_MIN_20ML       18.0f
-#define VOL_FINE_MAX_20ML       22.0f
-
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          3    // max. počet doplnění vzduchu (Fáze 1 i každá
                                        // iterace zvlášť) před vyhlášením ST_ALARM_EXCESS_AIR
@@ -905,5 +896,4 @@ Před finální verzí nastav `#define DEBUG 0`.
 - [ ] Pacientský ventil v PATIENT_VALVE_ISOLATE při každém stavu kromě ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR
 - [ ] MAX_AIR_REFILLS ošetřen ve Fázi 1 i v každé iteraci → ST_ALARM_EXCESS_AIR
 - [ ] Tlačení končí jen detekcí kapacity; objem vzduchu se neučí, sleduje se jen pro doplnění stříkačky (nikdy nad `VOL_AIR_SYRINGE_MAX_ML`)
-- [ ] Zadaný objem enkodérem omezen na rozsah VOL_FINE_MIN/MAX_10ML resp. _20ML
 - [ ] Kompilace bez warningů

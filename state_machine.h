@@ -15,8 +15,7 @@
 
 enum State : uint8_t {
     ST_INIT = 0,         // zapnutí; serva okamžitě do izolačních poloh
-    ST_WAIT_READY,       // čekání na osazení systému a volbu 10/20 ml
-    ST_SET_VOLUME,       // jemné doladění objemu (enkodér/Serial), START spustí
+    ST_WAIT_READY,       // osazeno, START (Enter) spustí kalibraci
     ST_CALIBRATING,      // kalibrace senzoru = suché hodnoty v PRÁZDNÉ studně (10 s)
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
@@ -82,7 +81,6 @@ private:
     void printStatus();                  // příkaz '?'
     void refreshDisplay();
     bool inputPressed(Key k);            // klávesnice NEBO Serial
-    int8_t inputDelta();                 // enkodér NEBO Serial
 
     // --- EEPROM ---
     void loadValveAngles();
@@ -90,7 +88,6 @@ private:
     // --- obsluhy stavů ---
     void handleInit();
     void handleWaitReady();
-    void handleSetVolume();
     void handleCalibrating();
     void handlePushAir(bool phase1);
     void handleEqualize(bool phase1);
@@ -137,8 +134,6 @@ private:
     bool     stepWait_ = false;          // čeká se na Enter před krokem procesu
     float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky (jen pro plnění)
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
-    uint16_t volumeDml_ = 100;           // zadaný objem lahvičky (desetiny ml)
-    bool     is20ml_ = false;
 
     // --- hlídání průtoku ---
     int32_t  flowRefRaw_ = 0;

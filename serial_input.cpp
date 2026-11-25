@@ -1,9 +1,8 @@
 #include "serial_input.h"
 
 void SerialInput::begin() {
-    Serial.println(F("# Ovladani: Enter = potvrdit vyzvu | 1/2 = lahvicka 10/20 ml |"));
-    Serial.println(F("#   +/- nebo cislo (10.4) = objem | k = krokovani zap/vyp |"));
-    Serial.println(F("#   ? = stav | p = PAUSE/PLAY | x = nouzovy STOP"));
+    Serial.println(F("# Ovladani: Enter = potvrdit | k = krokovani | ? = stav |"));
+    Serial.println(F("#   p = PAUSE/PLAY | x = nouzovy STOP"));
 }
 
 void SerialInput::update() {
@@ -45,37 +44,12 @@ void SerialInput::update() {
 // Jeden řádek. Cokoli, co není příkaz, je potvrzení výzvy.
 void SerialInput::handleLine() {
     char c = line_[0];
-    if (len_ == 1 && c == '1') {
-        event_[KEY_10ML] = true;
-    } else if (len_ == 1 && c == '2') {
-        event_[KEY_20ML] = true;
-    } else if (len_ == 1 && (c == 'k' || c == 'K')) {
+    if (len_ == 1 && (c == 'k' || c == 'K')) {
         stepToggle_ = true;
     } else if (len_ == 1 && c == '?') {
         status_ = true;
-    } else if (c == '+' || c == '-') {
-        for (uint8_t i = 0; i < len_; i++) {
-            if (line_[i] == '+' && delta_ < 100) delta_++;
-            if (line_[i] == '-' && delta_ > -100) delta_--;
-        }
-    } else if (c >= '0' && c <= '9' && len_ > 1) {
-        // "10.4" -> 104 desetin ml (bez atof, šetří flash)
-        int16_t v = 0, frac = -1;
-        for (uint8_t i = 0; i < len_; i++) {
-            char d = line_[i];
-            if (d == '.' || d == ',') {
-                frac = 0;
-            } else if (d >= '0' && d <= '9') {
-                if (frac < 0) {
-                    v = v * 10 + (d - '0');
-                } else if (frac == 0) {
-                    frac = d - '0';      // jen první desetinné místo
-                }
-            }
-        }
-        volumeDml_ = v * 10 + (frac > 0 ? frac : 0);
     } else {
-        confirm_ = true;                 // Enter, 's' nebo jakýkoli text
+        confirm_ = true;                 // Enter nebo jakýkoli text
     }
 }
 
@@ -87,22 +61,10 @@ bool SerialInput::pressed(Key k) {
     return true;
 }
 
-int8_t SerialInput::takeDelta() {
-    int8_t d = delta_;
-    delta_ = 0;
-    return d;
-}
-
 bool SerialInput::takeConfirm() {
     bool c = confirm_;
     confirm_ = false;
     return c;
-}
-
-int16_t SerialInput::takeVolumeDml() {
-    int16_t v = volumeDml_;
-    volumeDml_ = -1;
-    return v;
 }
 
 bool SerialInput::takeStepToggle() {
@@ -119,7 +81,4 @@ bool SerialInput::takeStatus() {
 
 void SerialInput::flush() {
     confirm_ = false;
-    volumeDml_ = -1;
-    delta_ = 0;
-    event_[KEY_10ML] = event_[KEY_20ML] = false;
 }

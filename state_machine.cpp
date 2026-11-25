@@ -5,7 +5,6 @@
 // Názvy stavů pro OLED (ASCII, max 21 znaků).
 static const char SN_INIT[]     PROGMEM = "Inicializace";
 static const char SN_READY[]    PROGMEM = "Priprava systemu";
-static const char SN_VOLUME[]   PROGMEM = "Volba objemu";
 static const char SN_CALIB[]    PROGMEM = "Kalibrace";
 static const char SN_P1[]       PROGMEM = "Faze 1";
 static const char SN_ITER[]     PROGMEM = "Iterace";
@@ -16,7 +15,7 @@ static const char SN_ESTOP[]    PROGMEM = "NOUZOVY STOP";
 static const char SN_ERROR[]    PROGMEM = "CHYBA";
 
 static const char *const STATE_NAMES[ST_STATE_COUNT] PROGMEM = {
-    SN_INIT, SN_READY, SN_VOLUME, SN_CALIB,
+    SN_INIT, SN_READY, SN_CALIB,
     SN_P1, SN_P1, SN_P1, SN_P1,
     SN_ITER, SN_ITER, SN_ITER, SN_ITER,
     SN_DONE, SN_PAUSED, SN_ALARM, SN_ESTOP, SN_ERROR
@@ -193,7 +192,6 @@ void PumpController::update() {
     switch (state_) {
         case ST_INIT:            handleInit();            break;
         case ST_WAIT_READY:      handleWaitReady();       break;
-        case ST_SET_VOLUME:      handleSetVolume();       break;
         case ST_CALIBRATING:     handleCalibrating();     break;
         case ST_P1_PUSH_AIR:     handlePushAir(true);     break;
         case ST_P1_EQUALIZE:     handleEqualize(true);    break;
@@ -308,7 +306,6 @@ void PumpController::printStatus() {
     Serial.print('/'); Serial.println((uint8_t)ITER_COUNT);
     sayVal(F("#   vzduch ve strikacce "), airMl_, 1);
     sayVal(F(" ml, roztok "), salMl_, 1);
-    sayVal(F(" ml, objem lahvicky "), volumeDml_ / 10.0f, 1);
     Serial.println(F(" ml"));
     sayVal(F("#   C1="), cap_.lowerPf(), 3);
     sayVal(F(" C3="), cap_.upperPf(), 3);
@@ -345,10 +342,6 @@ bool PumpController::inputPressed(Key k) {
     bool a = kb_.pressed(k);
     bool b = ser_.pressed(k);
     return a || b;
-}
-
-int8_t PumpController::inputDelta() {
-    return enc_.takeDelta() + ser_.takeDelta();
 }
 
 // STOP a PAUSE/PLAY fungují globálně nezávisle na stavu.
@@ -606,54 +599,10 @@ void PumpController::handleInit() {
     }
 }
 
+// START (Enter) spustí kalibraci. Objem lahvičky se nezadává - na řízení
+// nemá vliv (tlačení ukončuje detekce hladiny, dávky roztoku jsou pevné).
 void PumpController::handleWaitReady() {
-    if (!promptShown_) {
-        ser_.flush();
-        Serial.println(F(">>> Lahvicka: 1 = 10 ml, 2 = 20 ml"));
-        promptShown_ = true;
-    }
-    if (inputPressed(KEY_10ML)) {
-        is20ml_ = false;
-        volumeDml_ = 100;
-        logEvent(LOG_SET_VOLUME);
-        changeState(ST_SET_VOLUME);
-    } else if (inputPressed(KEY_20ML)) {
-        is20ml_ = true;
-        volumeDml_ = 200;
-        logEvent(LOG_SET_VOLUME);
-        changeState(ST_SET_VOLUME);
-    }
-}
-
-// Objem: +/- po 0,1 ml (enkodér nebo Serial), nebo číslo v ml. Enter
-// potvrdí objem, druhý Enter spustí kalibraci.
-void PumpController::handleSetVolume() {
-    int16_t lo = is20ml_ ? VOL_FINE_MIN_20ML_DML : VOL_FINE_MIN_10ML_DML;
-    int16_t hi = is20ml_ ? VOL_FINE_MAX_20ML_DML : VOL_FINE_MAX_10ML_DML;
-    if (phase_ == 0) {
-        int16_t v = (int16_t)volumeDml_ + inputDelta() * VOL_FINE_STEP_DML;
-        int16_t typed = ser_.takeVolumeDml();
-        if (typed >= 0) {
-            v = typed;
-        }
-        if (v < lo) v = lo;
-        if (v > hi) v = hi;
-        if (v != (int16_t)volumeDml_ || !promptShown_) {
-            volumeDml_ = (uint16_t)v;
-            dispDirty_ = true;
-            sayVal(F("# Objem lahvicky: "), volumeDml_ / 10.0f, 1);
-            sayVal(F(" ml (rozsah "), lo / 10.0f, 1);
-            Serial.print('-'); Serial.print(hi / 10.0f, 1); Serial.println(F(")"));
-            if (!promptShown_) {
-                Serial.println(F(">>> Objem: +/- nebo cislo (10.4), Enter = potvrdit"));
-                promptShown_ = true;
-            }
-        }
-        if (takeConfirm()) {
-            promptShown_ = false;
-            phase_ = 1;
-        }
-    } else if (confirmed(F("KALIBRACE - studna PRAZDNA (bez lahvicky)."))) {
+    if (confirmed(F("KALIBRACE - studna PRAZDNA (bez lahvicky)."))) {
         enableSteppers();             // od START platí ENABLED po celý proces (i PAUSE)
         logEvent(LOG_CALIBRATING);
         changeState(ST_CALIBRATING);
@@ -998,8 +947,8 @@ void PumpController::refreshDisplay() {
     disp_.drawRow(2, buf);
 
     // Bez snprintf (šetří ~1 kB flash); obsah displeje se ještě doladí.
-    char *e = appendText(buf, PSTR("Objem: "));
-    e = appendTenths(e, volumeDml_);
+    char *e = appendText(buf, PSTR("Roztok: "));
+    e = appendTenths(e, (uint16_t)(salMl_ * 10.0f + 0.5f));
     appendText(e, PSTR(" ml"));
     disp_.drawRow(4, buf);
 
