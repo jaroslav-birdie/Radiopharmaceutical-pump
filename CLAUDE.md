@@ -808,7 +808,9 @@ má mírně jinou mechanickou nulu serva.
 
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
-#define CH_LOWER_CIN 1 / CH_VERT_CIN 2 / CH_UPPER_CIN 3   // mapa kanálů (dotykový test)
+#define CH_LOWER_CIN           1   // spodní prstenec (mapa kanálů – dotykový test)
+#define CH_VERT_CIN            2   // svislá elektroda
+#define CH_UPPER_CIN           3   // horní prstenec
 // Detekce hladiny: LVL_* (podíl 0,68, šablona 0,78, aktivace 0,85, ...)
 // a předtlak PRECOMP_* – viz skutečný config.h
 
