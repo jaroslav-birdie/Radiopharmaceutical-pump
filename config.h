@@ -105,7 +105,7 @@
 #define VOL_FINE_MAX_20ML_DML  220      // 22,0 ml
 
 // === BEZPEČNOSTNÍ LIMITY ===
-#define MAX_AIR_REFILLS          5      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť)
+#define MAX_AIR_REFILLS          3      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť); testy 9-12 max. 2
 #define NO_FLOW_WATCH            0      // hlídání stagnace svislou elektrodou: 0 = vypnuto
                                         // (falešné pauzy 1-15x za tlačení, test 12 / zařízení 25. 11.)
 #define NO_FLOW_TIMEOUT_MS    3000UL    // bez poklesu hladiny déle -> ST_PAUSED (doladit!)

@@ -827,7 +827,7 @@ má mírně jinou mechanickou nulu serva.
 #define VOL_FINE_MAX_20ML       22.0f
 
 // === BEZPEČNOSTNÍ LIMITY ===
-#define MAX_AIR_REFILLS          5    // max. počet doplnění vzduchu (Fáze 1 i každá
+#define MAX_AIR_REFILLS          3    // max. počet doplnění vzduchu (Fáze 1 i každá
                                        // iterace zvlášť) před vyhlášením ST_ALARM_EXCESS_AIR
 #define NO_FLOW_WATCH             0    // hlídání stagnace svislou elektrodou VYPNUTO
 #define NO_FLOW_TIMEOUT_MS     3000    // bez poklesu kapacity déle než toto -> ST_PAUSED
