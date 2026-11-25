@@ -99,3 +99,54 @@ CH_LOWER_CIN 1, CH_VERT_CIN 2, CH_UPPER_CIN 3
 2. `capacitive` (3 kanály, pF, suché hodnoty, zamrznutí),
 3. `state_machine` + `config.h` + `logger`,
 4. překlad, flash/SRAM, CLAUDE.md.
+
+---
+
+## Stav: PŘEVEDENO (25. 11.)
+
+Schváleno s rozhodnutím obsluhy: **předtlak převést, `NO_FLOW_TIMEOUT_MS`
+ponechat**, rychlost tlačení vždy 1 ml / 5 s. Kritéria podle testu 12
+(podíl od začátku, kontrola maxima jen zápis, start C3/C1 ≥ 0,70,
+lahvička ≥ suchá + 0,25 pF).
+
+| soubor | provedeno |
+|---|---|
+| `level_detector.h/.cpp` | nový, přepis detektoru ze sketche testu 12 |
+| `capacitive.h/.cpp` | 3 kanály v pF, mapa `CH_*_CIN`, zápis konfigurace se zastaveným měřením, autokalibrace CAPDAC, hlídání zamrznutí C1/C3, kalibrace = suché hodnoty |
+| `state_machine.h/.cpp` | nové pod-kroky tlačení (`PushPhase`), kontrola lahvičky a výchozího stavu, předtlak, detektor, okamžité zavření pacienta, chyby senzoru a hladiny |
+| `config.h` | `LVL_*`, `PRECOMP_*`, `CH_*_CIN`, FDC konstanty; odstraněno `CAP_CRITICAL_PERCENT`, `FLUID_DRAIN_MS` |
+| `logger.h/.cpp` | Predtlak lahvicky, Lahvicka chybi!, Hladina nizko!, Chyba hladiny!, Chyba senzoru!, Prubeh mimo sablonu |
+
+**Ověření bez zařízení:** `tools/level_stop/analyza/replay.cpp` přehraje
+logy testů 9–12 přes produkční `level_detector.cpp`. Test 12 (stejná
+pravidla): zastavení na **stejném vzorku** jako sketch ve všech 5 cyklech.
+Testy 9–11: stejně, jen oba cykly 6 ml z testu 11 o jeden koš dřív
+(podíl se teď hlídá od začátku – záměr).
+
+**Překlad (`avr-g++`):** flash 23 264 B (71,0 %), SRAM 800 B (39,1 %),
+bez varování.
+
+### Odchylky od dřívější produkce (podle testovaných podmínek)
+
+1. **Doplnění vzduchu uprostřed tlačení bez odvzdušnění lahvičky.**
+   Pacient se zavře, vzduchový ventil S↔F (rameno lahvičky zaslepené),
+   nasátí, S↔V, otevření pacienta. Dřív šlo doplnění přes
+   `EQUALIZE` (odvzdušnění). Všechny testy jely bez odvzdušnění.
+   `EQUALIZE` zůstává mezi iteracemi (po přidání roztoku).
+2. **Žádné čekání na dotečení** – pacient se zavírá hned při zastavení
+   i před doplněním vzduchu (test 2, CLAUDE.md).
+3. **Chybějící lahvička se čeká** (měření klidu se opakuje, na displeji
+   `Lahvicka chybi!`), protože obsluha ji vkládá až po kalibraci.
+   Nízký výchozí stav (C3/C1 < 0,70) → `ST_ERROR`.
+4. Kalibrace (`ST_CALIBRATING`) měří **suché hodnoty v prázdné studně**.
+
+### Otevřené – ověřit na zařízení
+
+- ⚠️ **Hlídání stagnace (`NO_FLOW_TIMEOUT_MS`)** podle svislé elektrody:
+  na logu testu 12 by bez poklesu o 0,3 % během 3 s pozastavilo tlačení
+  **1–15× za cyklus** (svislá elektroda při poklesu hladiny často roste).
+  Pauza je bezpečná a podle šumu by se brzy sama obnovila, tlačení ale
+  bude trhané. Ponecháno na pokyn obsluhy.
+- Pauza uprostřed sestupu C3, skutečný tlak pacienta.
+- Celý průběh Fáze 1 + iterací (zbytek ≈ 4,1 ml + 3 ml roztoku ≈ 7 ml –
+  start ověřen testy 10–12).

@@ -26,6 +26,12 @@ enum LogMsg : uint8_t {
     LOG_EMERGENCY_STOP,
     LOG_COMPLETE,
     LOG_ERROR,
+    LOG_PRECOMPRESS,         // předtlak lahvičky před otevřením pacienta
+    LOG_VIAL_MISSING,        // klid pod suchou hodnotou + práh: lahvička chybí / prázdná
+    LOG_LEVEL_LOW,           // C3/C1 v klidu nízko: hladina už pod horním prstencem
+    LOG_LEVEL_FAULT,         // skok C1 - porucha snímání hladiny
+    LOG_SENSOR_FAULT,        // FDC1004 neměří (zamrzlý / neodpovídá)
+    LOG_FIT_WARN,            // průběh nekopíruje šablonu (jen informace)
     LOG_MSG_COUNT
 };
 

@@ -87,11 +87,6 @@
                                         // rychlejší (nic se netlačí do pacienta);
                                         // 2 = dvojnásobná rychlost proti FLOW_S_PER_ML
 
-// Doba, po kterou zůstane pacientský ventil OTEVŘENÝ i po dotlačení
-// vzduchu - kapalina dotéká hadičkou do pacienta. Teprve pak se uzavírá.
-// Hodnota zatím není ověřená na přestavěné sestavě.
-#define FLUID_DRAIN_MS      5000UL
-
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
 #define VOL_SAL_TOTAL_ML        60.0f   // 60ml stříkačka (viz SAL_SYR_ML_PER_MM)
@@ -119,7 +114,56 @@
 
 // === KAPACITNÍ SENZOR FDC1004 ===
 #define FDC1004_ADDR          0x50
-#define CAP_CRITICAL_PERCENT    15      // % pokles kapacity hladinové elektrody = kritická hladina
+#define FDC_RESET_MS            10      // po softwarovém resetu čipu
+#define FDC_STOP_MS              5      // po zastavení měření, než se zapíše konfigurace
+#define FDC_START_MS            30      // po spuštění REPEAT, než jsou první výsledky
+#define FDC_FROZEN_LIMIT        10      // tolik bitově stejných vzorků za sebou = čip neměří
+#define CAPDAC_STEP_PF       3.125f     // krok CAPDAC
+#define CAPDAC_MAX              31
+#define FDC_RAW_PER_PF   524288.0f      // 2^19 LSB na pF
+#define FDC_RAW_NEAR_FULL 7000000L      // nad tímto se zvýší CAPDAC (autokalibrace)
+
+// Mapa kanálů: který vstup FDC1004 (1-3) čte kterou elektrodu. Ověřuje se
+// DOTYKOVÝM TESTEM (prst na elektrodě = kanál ~16 pF), ne popisky.
+// Testy 6-12 (studna 3/3/3 mm): spodní CIN1, svislá CIN2, horní CIN3.
+#define CH_LOWER_CIN             1      // spodní prstenec (C1)
+#define CH_VERT_CIN              2      // svislá elektroda (C2, jen hlídání průtoku)
+#define CH_UPPER_CIN             3      // horní prstenec (C3)
+
+// === DETEKCE HLADINY (tools/level_stop, testy 9-12: 8,65 +- 0,23 mm) ===
+// Jen porovnání hodnot signálu – žádný čas, rychlost ani objem vzduchu.
+// Vzorky jen s otevřeným pacientem; filtr: koš LVL_BIN_SAMPLES vzorků,
+// klouzavé okno LVL_WIN_BINS košů. Naladěno na rychlost FLOW_S_PER_ML = 5.
+#define LVL_BIN_SAMPLES         12      // koš = 12 vzorků (0,6 s při 20 vz./s)
+#define LVL_WIN_BINS             8      // okno = 8 košů
+#define LVL_STOP_Q_MAX       0.68f      // stop: C3/C1 <= 0,68 (od začátku tlačení)
+#define LVL_ARM_FRAC         0.85f      // aktivace: C3 <= 0,85 x vlastní maximum
+#define LVL_STOP_C3_FRAC     0.78f      // stop (šablona): C3 <= 0,78 x vlastní maximum
+#define LVL_PEAK_DROP        0.10f      // záloha: C1 - C3 pokles o 10 % výšky hrbu
+#define LVL_STEP_DROP        0.15f      // poslední záchrana: koš C1 o 15 % pod větším ze 2 předchozích
+#define LVL_MAX_Q_MIN        0.80f      // C3/C1 v okamžiku maxima C3 (jen zápis do logu)
+#define LVL_FIT_C1_MIN       0.95f      // shoda: C1 >= 0,95 x max C1 ...
+#define LVL_FIT_C3_ZONE      0.65f      // ... dokud C3 > 0,65 x max C3
+#define LVL_FIT_CHECK_C3     0.80f      // shoda: při C3 = 0,80 x max C3 ...
+#define LVL_FIT_RISE_MIN     0.15f      // ... musí (C1 - C3) - d0 >= 0,15 x max C3
+
+// Kontrola před každým tlačením (lahvička uzavřená, pacient izolován)
+#define LVL_START_Q_MIN      0.70f      // C3/C1 >= 0,70 (v mezeře 0,5-0,6)
+#define LVL_VIAL_MIN_PF      0.25f      // C1 i C3 >= suchá hodnota + 0,25 pF (prázdná lahvička +0,05)
+#define LVL_REST_MS          5000UL     // klid pro kontrolu před tlačením
+#define LVL_VALVE_SETTLE_MS  1500UL     // po přejezdu ventilu navíc, než se měří / tlačí
+#define LVL_OPEN_SETTLE_MS   5000UL     // klid po otevření pacienta, před tlačením
+
+// === PŘEDTLAK (před otevřením pacienta, pacient izolován) ===
+// Objem = plyn v systému x (tlak hadičky + žilní tlak) / nízký tlak okolí.
+// Počítá se s prázdnou lahvičkou (nejvíc plynu = konzervativní směr).
+#define PRECOMP_VIAL_ML       30.0f     // objem lahvičky po okraj (odhad)
+#define PRECOMP_DEAD_ML        1.0f     // mrtvý objem vzduchové cesty (odhad)
+#define PRECOMP_PATIENT_CM    40.0f     // pacient max. o délku hadičky výš
+#define PRECOMP_VENOUS_CM     20.0f     // horní odhad periferního žilního tlaku
+#define PRECOMP_KPA_PER_CMH2O 0.0981f
+#define PRECOMP_P_ATM_KPA     90.0f     // konzervativně nízký tlak okolí (~1000 m n. m.)
+#define PRECOMP_SETTLE_MS     3000UL    // klid po předtlaku, pacient ještě izolován
 
 // === OLED SH1106 128x64 ===
 #define OLED_ADDR             0x3C

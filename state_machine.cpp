@@ -22,6 +22,23 @@ static const char *const STATE_NAMES[ST_STATE_COUNT] PROGMEM = {
     SN_DONE, SN_PAUSED, SN_ALARM, SN_ESTOP, SN_ERROR
 };
 
+// Pod-kroky ST_P1_PUSH_AIR / ST_ITER_PUSH_AIR (phase_).
+enum PushPhase : uint8_t {
+    PP_AIR_VALVE = 0,    // vzduchový ventil S<->V (lahvička uzavřena, pacient izolován)
+    PP_AIR_SETTLE,       // dojezd ventilu
+    PP_VALVE_WAIT,       // ustálení po ventilu
+    PP_REST,             // klid: kontrola lahvičky a výchozího stavu
+    PP_PRECOMP,          // předtlak (pacient izolován)
+    PP_PRECOMP_SETTLE,   // klid po předtlaku
+    PP_OPEN_WAIT,        // pacient otevřen, detektor běží, klid před tlačením
+    PP_RESUME_OPEN,      // po doplnění vzduchu: otevírání pacienta
+    PP_RESUME_WAIT,      // ustálení po otevření
+    PP_PUSH,             // tlačení, detektor běží
+    PP_REFILL_CLOSE,     // stříkačka prázdná: pacient se zavírá, pak doplnění
+    PP_STOPPED,          // kritická hladina: pacient se zavírá (povel už dán)
+    PP_VENT              // odtlakování lahvičky V<->F
+};
+
 // ============================================================
 //  Inicializace
 // ============================================================
@@ -107,10 +124,16 @@ void PumpController::update() {
     airSyr_.update();
     salSyr_.update();
     cap_.update();
+    sampleFresh_ = cap_.takeSample();
     kb_.update();
     enc_.update();
     ser_.update();
     handleGlobalKeys();
+    serviceLevel();
+    if (cap_.frozen() && state_ >= ST_CALIBRATING && state_ <= ST_PAUSED
+            && state_ != ST_COMPLETE) {
+        sensorFault();
+    }
 
     switch (state_) {
         case ST_INIT:            handleInit();            break;
@@ -147,6 +170,7 @@ void PumpController::changeState(State s) {
 }
 
 void PumpController::safeValves() {
+    lvlFeed_ = false;                    // pacient izolován - konec vzorků detektoru
     patientValve_.moveTo(angles_.patientIsolate);
     airValve_.moveTo(angles_.airVialToFilter);
 }
@@ -236,6 +260,7 @@ void PumpController::startAirPush() {
     dispDirty_ = true;
     refreshDisplay();                    // překreslit, dokud motor stojí
     airSyr_.startMove(pushable, true);
+    pushActive_ = true;
     armFlowWatch();
 }
 
@@ -244,6 +269,7 @@ void PumpController::startAirPush() {
 void PumpController::finishAirMove(bool push) {
     float moved = airSyr_.movedMl();
     if (push) {
+        pushActive_ = false;
         airMl_ -= moved;
     } else {
         airMl_ += moved;
@@ -271,6 +297,116 @@ bool PumpController::flowStalled() {
         return false;
     }
     return (millis() - flowT_) > NO_FLOW_TIMEOUT_MS;
+}
+
+// Detektor dostává vzorky jen s otevřeným pacientem - i v pauze, protože
+// hladina se může hýbat i se stojícím motorem (zbytkový přetlak).
+void PumpController::serviceLevel() {
+    if (!lvlFeed_ || !sampleFresh_) {
+        return;
+    }
+    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf());
+    uint8_t fit = lvl_.fitFlags();
+    if (fit & ~fitLogged_) {
+        fitLogged_ |= fit;
+        logEvent(LOG_FIT_WARN);          // jen informace, nezastavuje
+    }
+    if (r != LVL_NONE) {
+        onLevelResult(r);
+    }
+}
+
+// Zastavení: motor stojí a pacient se zavírá OKAMŽITĚ (bez čekání na
+// dotečení - test 2), teprve potom se lahvička odtlakuje (PP_STOPPED).
+void PumpController::onLevelResult(LevelResult r) {
+    airSyr_.stop();
+    if (pushActive_) {
+        finishAirMove(true);
+    }
+    lvlFeed_ = false;
+    pushResume_ = false;
+    patientValve_.moveTo(angles_.patientIsolate);
+    if (state_ == ST_PAUSED) {           // zastavení přišlo v pauze
+        state_ = savedState_;
+        salSyr_.resume();
+    }
+#if DEBUG
+    Serial.print(F("Hladina: vysledek ")); Serial.print((uint8_t)r);
+    Serial.print(F(" C1=")); Serial.print(lvl_.winC1(), 3);
+    Serial.print(F(" C3=")); Serial.print(lvl_.winC3(), 3);
+    Serial.print(F(" C3/max=")); Serial.println(lvl_.winC3() / lvl_.maxC3(), 3);
+#endif
+    if (r == LVL_FAULT_STEP) {
+        safeValves();
+        logEvent(LOG_LEVEL_FAULT);
+        changeState(ST_ERROR);
+        return;
+    }
+    logEvent(LOG_CRITICAL_LEVEL);
+    phase_ = PP_STOPPED;
+    dispDirty_ = true;
+}
+
+void PumpController::sensorFault() {
+    airSyr_.stop();
+    salSyr_.stop();
+    safeValves();
+    logEvent(LOG_SENSOR_FAULT);
+    changeState(ST_ERROR);
+}
+
+// Předtlak: plyn v systému (prázdná lahvička = nejvíc plynu, konzervativní
+// směr) krát poměr nejhoršího tlaku v hadičce k nízkému tlaku okolí.
+float PumpController::precompMl() const {
+    float gasMl = PRECOMP_VIAL_ML + airMl_ + PRECOMP_DEAD_ML;
+    float dpKpa = (PRECOMP_PATIENT_CM + PRECOMP_VENOUS_CM) * PRECOMP_KPA_PER_CMH2O;
+    float ml = gasMl * dpKpa / PRECOMP_P_ATM_KPA;
+    return (ml < airMl_) ? ml : airMl_;
+}
+
+// Klid před tlačením (lahvička uzavřená, pacient izolován): lahvička musí
+// být na místě (prstence nad suchou hodnotou) a hladina nad horním
+// prstencem (C3/C1). Chybějící lahvička se čeká - obsluha ji teprve
+// vkládá (vkládá se až po kalibraci).
+void PumpController::restStartCheck() {
+    if (sampleFresh_) {
+        restSumC1_ += cap_.lowerPf();
+        restSumC3_ += cap_.upperPf();
+        restN_++;
+    }
+    if (millis() - phaseT_ < LVL_REST_MS || restN_ == 0) {
+        return;
+    }
+    float c1 = restSumC1_ / restN_;
+    float c3 = restSumC3_ / restN_;
+    restSumC1_ = restSumC3_ = 0.0f;
+    restN_ = 0;
+    phaseT_ = millis();
+#if DEBUG
+    Serial.print(F("Klid: C1=")); Serial.print(c1, 3);
+    Serial.print(F(" C3=")); Serial.print(c3, 3);
+    Serial.print(F(" C3/C1=")); Serial.println(c3 / c1, 3);
+#endif
+    bool vial = c1 >= cap_.dryLower() + LVL_VIAL_MIN_PF
+             && c3 >= cap_.dryUpper() + LVL_VIAL_MIN_PF;
+    if (!vial) {
+        if (!vialMissingLogged_) {
+            vialMissingLogged_ = true;
+            logEvent(LOG_VIAL_MISSING);
+        }
+        return;                          // měřit znovu, dokud lahvička není
+    }
+    vialMissingLogged_ = false;
+    if (c3 < LVL_START_Q_MIN * c1) {
+        safeValves();
+        logEvent(LOG_LEVEL_LOW);
+        changeState(ST_ERROR);
+        return;
+    }
+    logEvent(LOG_PRECOMPRESS);
+    airSyr_.startMove(precompMl(), true);
+    pushActive_ = true;
+    phase_ = PP_PRECOMP;
 }
 
 // ============================================================
@@ -321,6 +457,10 @@ void PumpController::handleSetVolume() {
 // kalibrace přechází rovnou do Fáze 1.
 void PumpController::handleCalibrating() {
     if (phase_ == 0) {
+        if (!cap_.present()) {
+            sensorFault();
+            return;
+        }
         cap_.startCalibration();
         phase_ = 1;
     } else if (!cap_.calibrating()) {
@@ -334,38 +474,85 @@ void PumpController::handleCalibrating() {
 // ============================================================
 
 // Tlačení vzduchu do lahvičky (Fáze 1 i iterace – shodná logika).
+// Postup převzatý ze sketche tools/level_stop (testy 9-12): klid s
+// kontrolou -> předtlak -> otevření pacienta -> tlačení do zastavení
+// detektorem. Stříkačka se doplňuje BEZ odvzdušnění lahvičky (vzduchový
+// ventil S<->F zaslepí rameno lahvičky) a detektor si drží stav.
 void PumpController::handlePushAir(bool phase1) {
     switch (phase_) {
-        case 0:                          // vzduchový ventil: S<->V
+        case PP_AIR_VALVE:
             logEvent(LOG_VALVE_AIR_MOVE);
             airValve_.moveTo(angles_.airSyrToVial);
-            phase_ = 1;
+            phase_ = PP_AIR_SETTLE;
             break;
-        case 1:                          // pacientský ventil: otevřít k pacientovi
+        case PP_AIR_SETTLE:
             if (airValve_.settled()) {
+                phaseT_ = millis();
+                phase_ = PP_VALVE_WAIT;
+            }
+            break;
+        case PP_VALVE_WAIT:
+            if (millis() - phaseT_ < LVL_VALVE_SETTLE_MS) {
+                break;
+            }
+            phaseT_ = millis();
+            if (pushResume_) {           // po doplnění vzduchu: rovnou otevřít
                 logEvent(LOG_VALVE_PATIENT_MOVE);
                 patientValve_.moveTo(angles_.patientOpen);
-                phase_ = 2;
+                phase_ = PP_RESUME_OPEN;
+            } else {
+                restSumC1_ = restSumC3_ = 0.0f;
+                restN_ = 0;
+                phase_ = PP_REST;
             }
             break;
-        case 2:                          // start tlačení
-            if (patientValve_.settled()) {
-                startAirPush();
-                phase_ = 3;
-            }
+        case PP_REST:
+            restStartCheck();
             break;
-        case 3: {                        // monitorování průběhu
-            bool targetReached = cap_.criticalLevel();
-            if (targetReached) {
-                airSyr_.stop();
+        case PP_PRECOMP:
+            if (airSyr_.idle()) {
                 finishAirMove(true);
-                logEvent(LOG_CRITICAL_LEVEL);
-                // Ventil k pacientovi zůstává OTEVŘENÝ - stlačený vzduch
-                // v lahvičce ještě dotlačuje kapalinu hadičkou (viz phase 7).
-                pushDone_ = true;
                 phaseT_ = millis();
-                phase_ = 7;
-            } else if (airSyr_.idle()) { // stříkačka prázdná – nutné doplnění
+                phase_ = PP_PRECOMP_SETTLE;
+            }
+            break;
+        case PP_PRECOMP_SETTLE:
+            if (millis() - phaseT_ >= PRECOMP_SETTLE_MS) {
+                // Detektor běží od povelu k otevření (jako ve sketchi) -
+                // přebytek předtlaku teče k pacientovi hned.
+                lvl_.reset();
+                fitLogged_ = 0;
+                refills_ = 0;
+                logEvent(LOG_VALVE_PATIENT_MOVE);
+                patientValve_.moveTo(angles_.patientOpen);
+                lvlFeed_ = true;
+                phaseT_ = millis();
+                phase_ = PP_OPEN_WAIT;
+            }
+            break;
+        case PP_OPEN_WAIT:
+            if (millis() - phaseT_ >= LVL_OPEN_SETTLE_MS) {
+                startAirPush();
+                phase_ = PP_PUSH;
+            }
+            break;
+        case PP_RESUME_OPEN:
+            if (patientValve_.settled()) {
+                phaseT_ = millis();
+                phase_ = PP_RESUME_WAIT;
+            }
+            break;
+        case PP_RESUME_WAIT:
+            if (millis() - phaseT_ >= LVL_VALVE_SETTLE_MS) {
+                pushResume_ = false;
+                lvl_.flowBreak();
+                lvlFeed_ = true;
+                startAirPush();
+                phase_ = PP_PUSH;
+            }
+            break;
+        case PP_PUSH:                    // zastavení řeší serviceLevel()
+            if (airSyr_.idle()) {        // stříkačka prázdná – doplnit
                 finishAirMove(true);
                 refills_++;
                 if (refills_ > MAX_AIR_REFILLS) {
@@ -375,31 +562,32 @@ void PumpController::handlePushAir(bool phase1) {
                     logEvent(LOG_ALARM_EXCESS_AIR);
                     changeState(ST_ALARM_EXCESS_AIR);
                 } else {
-                    // I před dočasným uzavřením kvůli doplnění vzduchu musí
-                    // kapalina z už vytlačeného vzduchu stihnout dotéct -
-                    // stejná prodleva jako při finálním dosažení cíle.
-                    pushDone_ = false;
-                    phaseT_ = millis();
-                    phase_ = 7;
+                    // Pacient se zavírá JAKO PRVNÍ, lahvička zůstává pod
+                    // tlakem (bez odvzdušnění), detektor si drží stav.
+                    lvlFeed_ = false;
+                    lvl_.flowBreak();
+                    logEvent(LOG_VALVE_PATIENT_MOVE);
+                    patientValve_.moveTo(angles_.patientIsolate);
+                    pushResume_ = true;
+                    phase_ = PP_REFILL_CLOSE;
                 }
             } else if (flowStalled()) {
                 pauseSystem(true);
             }
             break;
-        }
-        case 4:                          // kritická hladina: uzavřít i vzduch
+        case PP_REFILL_CLOSE:
+            if (patientValve_.settled()) {
+                changeState(phase1 ? ST_P1_FILL_AIR : ST_ITER_FILL_AIR);
+            }
+            break;
+        case PP_STOPPED:                 // pacient už zavřen - odtlakovat lahvičku
             if (patientValve_.settled()) {
                 logEvent(LOG_VALVE_AIR_MOVE);
                 airValve_.moveTo(angles_.airVialToFilter);
-                phase_ = 6;
+                phase_ = PP_VENT;
             }
             break;
-        case 5:                          // k doplnění vzduchu přes vyrovnání tlaku
-            if (patientValve_.settled()) {
-                changeState(phase1 ? ST_P1_EQUALIZE : ST_ITER_EQUALIZE);
-            }
-            break;
-        case 6:                          // hotovo -> fyziologický roztok
+        case PP_VENT:
             if (airValve_.settled()) {
                 if (!phase1 && iter_ > ITER_COUNT) {
                     // Závěrečné vytlačení: po POSLEDNÍM doplnění roztoku se
@@ -413,18 +601,6 @@ void PumpController::handlePushAir(bool phase1) {
                 } else {
                     changeState(phase1 ? ST_P1_ADD_SALINE : ST_ITER_ADD_SALINE);
                 }
-            }
-            break;
-        case 7:                          // dotékání kapaliny hadičkou k pacientovi
-            // Motor už stojí, ale v lahvičce zůstal přetlak, který dál
-            // vytlačuje kapalinu. Ventil k pacientovi proto zůstává
-            // otevřený ještě FLUID_DRAIN_MS, teprve pak se uzavírá - a to
-            // i před dočasným uzavřením kvůli doplnění vzduchu (pushDone_
-            // rozhoduje, jestli pak jde na dokončení, nebo na refill).
-            if (millis() - phaseT_ >= FLUID_DRAIN_MS) {
-                logEvent(LOG_VALVE_PATIENT_MOVE);
-                patientValve_.moveTo(angles_.patientIsolate);
-                phase_ = pushDone_ ? 4 : 5;
             }
             break;
     }

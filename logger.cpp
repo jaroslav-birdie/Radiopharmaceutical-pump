@@ -23,13 +23,21 @@ static const char MSG_EXCESS_AIR[]    PROGMEM = "ALARM: unik vzduchu";
 static const char MSG_EMERGENCY[]     PROGMEM = "NOUZOVY STOP";
 static const char MSG_COMPLETE[]      PROGMEM = "HOTOVO";
 static const char MSG_ERROR[]         PROGMEM = "CHYBA SYSTEMU";
+static const char MSG_PRECOMP[]       PROGMEM = "Predtlak lahvicky";
+static const char MSG_VIAL_MISSING[]  PROGMEM = "Lahvicka chybi!";
+static const char MSG_LEVEL_LOW[]     PROGMEM = "Hladina nizko!";
+static const char MSG_LEVEL_FAULT[]   PROGMEM = "Chyba hladiny!";
+static const char MSG_SENSOR_FAULT[]  PROGMEM = "Chyba senzoru!";
+static const char MSG_FIT_WARN[]      PROGMEM = "Prubeh mimo sablonu";
 
 static const char *const MSG_TABLE[LOG_MSG_COUNT] PROGMEM = {
     MSG_BOOT, MSG_VALVES_SAFE, MSG_WAIT_READY, MSG_SET_VOLUME,
     MSG_CALIBRATING, MSG_CALIB_DONE, MSG_VALVE_PAT, MSG_VALVE_AIR,
     MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE,
     MSG_ITER, MSG_CRITICAL, MSG_PAUSED, MSG_RESUMED,
-    MSG_NO_FLOW, MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR
+    MSG_NO_FLOW, MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR,
+    MSG_PRECOMP, MSG_VIAL_MISSING, MSG_LEVEL_LOW, MSG_LEVEL_FAULT,
+    MSG_SENSOR_FAULT, MSG_FIT_WARN
 };
 
 static LogMsg lastMsg = LOG_BOOT;

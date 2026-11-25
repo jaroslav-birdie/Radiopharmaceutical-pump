@@ -2,43 +2,62 @@
 #include <Arduino.h>
 #include "config.h"
 
-// Vlastní minimální driver FDC1004 (I2C, adresa 0x50).
-// Kanál CIN1 (MEAS1) = hladinová elektroda nad kritickou hladinou.
-// Kanál CIN2 (MEAS2) = svislá elektroda sledující pokles hladiny.
-// Senzor běží v režimu REPEAT (100 vzorků/s), čte se každých CAP_SAMPLE_MS.
-// Žádná externí knihovna – jen Wire.
+// Vlastní minimální driver FDC1004 (I2C, adresa 0x50), jen Wire.
+// Tři kanály MEAS1-3 = CIN1-3, mapované na elektrody podle CH_*_CIN:
+//   spodní prstenec (C1), svislá elektroda (C2), horní prstenec (C3).
+// Hodnoty v pF (raw / 2^19 + CAPDAC x 3,125) – podíly C3/C1 v detekci
+// potřebují absolutní hodnotu. REPEAT 400 S/s, čte se každých CAP_SAMPLE_MS.
+//
+// Konfigurace se zapisuje JEN se zastaveným měřením (FDC_CONF = 0, ~5 ms,
+// zápis CONF_MEASx, pak REPEAT) – zápis do běžícího převodu čip zasekne
+// (potvrzeno testem 6, viz CLAUDE.md).
 
 class CapSensor {
 public:
-    bool begin();                        // true = senzor odpověděl (ID 0x1004)
+    bool begin();                        // reset, autokalibrace CAPDAC, start měření
     void update();                       // periodické čtení výsledků
 
-    void startCalibration();             // průměrování po dobu CALIBRATION_MS
+    // Kalibrace = suché hodnoty prstenců v PRÁZDNÉ studně (lahvička se
+    // vkládá až po kalibraci). Slouží ke kontrole, že lahvička je na místě.
+    void startCalibration();
     bool calibrating() const { return calibrating_; }
     bool calibrated() const { return calibrated_; }
+    float dryLower() const { return dryLower_; }
+    float dryUpper() const { return dryUpper_; }
 
-    int32_t levelRaw() const { return levelRaw_; }
-    int32_t vertRaw() const { return vertRaw_; }
+    bool  takeSample();                  // true = od posledního volání nový vzorek
+    float lowerPf() const { return pf_[0]; }     // C1 spodní prstenec
+    float upperPf() const { return pf_[2]; }     // C3 horní prstenec
+    int32_t vertRaw() const { return vertRaw_; } // C2 svislá (jen relativní změny)
     int32_t flowEpsRaw() const { return flowEpsRaw_; }   // práh "hladina klesá"
-
-    bool criticalLevel() const;          // pokles hladinové elektrody >= CAP_CRITICAL_PERCENT
+    bool  frozen() const { return frozen_; }     // C1 nebo C3 se přestal měnit
+    bool  present() const { return present_; }
 
 private:
     void     writeReg(uint8_t reg, uint16_t value);
     uint16_t readReg(uint8_t reg);
-    int32_t  readMeasurement(uint8_t msbReg);
+    int32_t  readRaw(uint8_t cin);       // cin = 0..2
+    void     applyConfig();
+    void     autoCapdac(uint8_t cin);
+    void     watchFrozen();
 
-    int32_t  levelRaw_ = 0;
+    uint8_t  capdac_[3] = {0, 0, 0};
+    float    pf_[3] = {0.0f, 0.0f, 0.0f};  // podle elektrod: [0]=C1, [1]=C2, [2]=C3
+    float    prevPf_[3] = {0.0f, 0.0f, 0.0f};
+    uint8_t  same_[3] = {0, 0, 0};
     int32_t  vertRaw_ = 0;
-    float    levelBaseline_ = 0.0f;
-    float    vertBaseline_ = 0.0f;
-    int32_t  flowEpsRaw_ = 0;
-    float    calibSumLevel_ = 0.0f;
-    float    calibSumVert_ = 0.0f;
-    uint16_t calibCount_ = 0;
-    uint32_t calibStart_ = 0;
+    int32_t  flowEpsRaw_ = 1;
+    float    dryLower_ = 0.0f;
+    float    dryUpper_ = 0.0f;
+    float    calSumLower_ = 0.0f;
+    float    calSumUpper_ = 0.0f;
+    float    calSumVert_ = 0.0f;
+    uint16_t calCount_ = 0;
+    uint32_t calStart_ = 0;
     uint32_t lastSample_ = 0;
+    bool     newSample_ = false;
     bool     present_ = false;
+    bool     frozen_ = false;
     bool     calibrating_ = false;
     bool     calibrated_ = false;
 };

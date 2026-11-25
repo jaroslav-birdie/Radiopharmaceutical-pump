@@ -5,6 +5,7 @@
 #include "servo_valve.h"
 #include "stepper.h"
 #include "capacitive.h"
+#include "level_detector.h"
 #include "display.h"
 #include "keyboard.h"
 #include "encoder.h"
@@ -16,17 +17,17 @@ enum State : uint8_t {
     ST_INIT = 0,         // zapnutí; serva okamžitě do izolačních poloh
     ST_WAIT_READY,       // čekání na osazení systému a volbu 10/20 ml
     ST_SET_VOLUME,       // jemné doladění objemu (enkodér/Serial), START spustí
-    ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička, 10 s)
+    ST_CALIBRATING,      // kalibrace senzoru = suché hodnoty v PRÁZDNÉ studně (10 s)
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
-    ST_P1_PUSH_AIR,      // tlačení vzduchu, dokud senzor nehlásí kritickou hladinu
+    ST_P1_PUSH_AIR,      // kontrola lahvičky, předtlak, tlačení do kritické hladiny
     ST_P1_EQUALIZE,      // vyrovnání tlaku přes filtr (před doplněním vzduchu)
     ST_P1_FILL_AIR,      // nasátí vzduchu do stříkačky z atmosféry
     ST_P1_ADD_SALINE,    // přidání 3 ml fyziologického roztoku
 
     // Iterativní cyklus – 9x
     ST_ITER_EQUALIZE,    // vyrovnání přetlaku přes filtr
-    ST_ITER_FILL_AIR,    // nasátí vzduchu (1. iterace 5 ml, dále naučený objem)
+    ST_ITER_FILL_AIR,    // doplnění vzduchové stříkačky na plný objem
     ST_ITER_PUSH_AIR,    // vytlačení kapaliny k pacientovi na kritickou hladinu
     ST_ITER_ADD_SALINE,  // přidání 3 ml fyziologického roztoku
 
@@ -67,6 +68,11 @@ private:
     void finishAirMove(bool push);       // aktualizace bilance objemu vzduchu
     void armFlowWatch();
     bool flowStalled();
+    void serviceLevel();                 // detektor hladiny - vzorky s otevřeným pacientem
+    void onLevelResult(LevelResult r);   // zastavení / porucha z detektoru
+    void restStartCheck();               // klid před tlačením - lahvička a výchozí stav
+    float precompMl() const;             // objem předtlaku
+    void sensorFault();
     void refreshDisplay();
     bool inputPressed(Key k);            // klávesnice NEBO Serial
     int8_t inputDelta();                 // enkodér NEBO Serial
@@ -91,6 +97,7 @@ private:
     StepperMotor airSyr_;
     StepperMotor salSyr_;
     CapSensor    cap_;
+    LevelDetector lvl_;
     PumpDisplay  disp_;
     Keyboard     kb_;
     EncoderInput enc_;
@@ -108,7 +115,15 @@ private:
 
     uint8_t  iter_ = 0;                  // 0 = Fáze 1, 1-9 = iterace
     uint8_t  refills_ = 0;               // doplnění vzduchu v aktuálním kroku
-    bool     pushDone_ = false;          // po prodlevě na dotečení: true=hotovo, false=doplnit vzduch
+    bool     pushResume_ = false;        // tlačení pokračuje po doplnění vzduchu (bez kontrol a předtlaku)
+    bool     pushActive_ = false;        // vzduchová stříkačka tlačí (bilance po dojezdu)
+    bool     lvlFeed_ = false;           // pacient otevřen - vzorky jdou do detektoru
+    bool     sampleFresh_ = false;       // v této smyčce je nový vzorek FDC1004
+    bool     vialMissingLogged_ = false;
+    uint8_t  fitLogged_ = 0;             // už zapsané příznaky kontroly shody
+    float    restSumC1_ = 0.0f;          // klid před tlačením
+    float    restSumC3_ = 0.0f;
+    uint16_t restN_ = 0;
     float    airMl_ = VOL_AIR_SYRINGE_MAX_ML;   // obsah vzduchové stříkačky (jen pro plnění)
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
     uint16_t volumeDml_ = 100;           // zadaný objem lahvičky (desetiny ml)

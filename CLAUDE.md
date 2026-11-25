@@ -241,7 +241,18 @@ dosedací plochy dna (= vnější dno lahvičky):
   startu 6 / 7 / 9–14 / 20 ml, s i bez stínění, i s doplněním vzduchu po
   aktivaci. Podíl od začátku zastavil u 6 ml před aktivací, nikde předčasně.
   Lahvička: prázdná +0,05 pF, s kapalinou +0,58 až +1,98 pF → práh 0,25 pF
-  sedí. Kritérium připravené k převodu (`PLAN_PREVODU.md` aktualizovat).
+  sedí.
+- **Převedeno do produkce** (`tools/level_stop/PLAN_PREVODU.md`, stav):
+  `level_detector.h/.cpp` = přepis detektoru ze sketche testu 12; přehrání
+  logů testů 9–12 přes produkční kód (`tools/level_stop/analyza/replay.cpp`)
+  zastaví na **stejném vzorku** jako sketch. Tlačení: klid 5 s s kontrolou
+  lahvičky (čeká se, dokud lahvička není) a C3/C1 ≥ 0,70 → předtlak →
+  otevření pacienta (detektor běží) → tlačení; při zastavení **ihned
+  `PATIENT_VALVE_ISOLATE`**, pak `V↔F` (`FLUID_DRAIN_MS` zrušen). Doplnění
+  vzduchu uprostřed tlačení **bez odvzdušnění** lahvičky (jako v testech),
+  detektor drží stav. ⚠️ Hlídání stagnace (`NO_FLOW_TIMEOUT_MS`, svislá
+  elektroda) by podle logu testu 12 zbytečně pozastavilo 1–15× za tlačení –
+  ponecháno na pokyn obsluhy, ověřit na zařízení.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
@@ -349,8 +360,8 @@ CIN2    konec svislé elektrody
   (ověřeno testem 2); přetlak se pak projeví jen malým skokem hladiny
   **nahoru** při dalším otevření – bezpečný směr. Produkční postup proto má
   být: detekce → **ihned** `PATIENT_VALVE_ISOLATE` → teprve pak odtlakování
-  `AIR_VALVE_VIAL_TO_FILTER`. *(V `state_machine.cpp` zatím není – stále
-  čeká `FLUID_DRAIN_MS`.)*
+  `AIR_VALVE_VIAL_TO_FILTER`. *(V `state_machine.cpp` od převodu detekce
+  hladiny – `FLUID_DRAIN_MS` zrušen.)*
 
 > **`SHLD1`/`SHLD2` se nekonfigurují.** Jsou to trvale buzené výstupy, které
 > kopírují potenciál snímací elektrody – v registrové mapě pro ně nic není.
@@ -453,7 +464,7 @@ enum State {
                          // poloh – NIKOLI do syrového 0° servo-defaultu
     ST_WAIT_READY,       // čekání na osazení systému a stisk START
     ST_SET_VOLUME,       // zadávání objemu enkodérem, potvrzení stiskem
-    ST_CALIBRATING,      // kalibrace kapacitního senzoru (plná lahvička)
+    ST_CALIBRATING,      // kalibrace senzoru = suché hodnoty v PRÁZDNÉ studně
 
     // Fáze 1 – jednorázová, sjednocená pro 10 ml i 20 ml
     ST_P1_PUSH_AIR,      // tlačení vzduchu do lahvičky, dokud FDC1004 nehlásí
@@ -642,7 +653,8 @@ radiopharmaceutical-pump/
 ├── state_machine.h / .cpp        # hlavní stavový automat
 ├── stepper.h / .cpp              # řízení krokových motorů
 ├── servo_valve.h / .cpp          # řízení ventilů servomotory
-├── capacitive.h / .cpp           # FDC1004 kapacitní senzor
+├── capacitive.h / .cpp           # FDC1004 kapacitní senzor (3 kanály v pF)
+├── level_detector.h / .cpp       # detekce kritické hladiny (čistá logika, i na PC)
 ├── display.h / .cpp              # OLED displej
 ├── keyboard.h / .cpp             # 5-tlačítková klávesnice (10ml, 20ml, START, PAUSE, STOP)
 ├── encoder.h / .cpp              # rotační enkodér
@@ -660,7 +672,7 @@ radiopharmaceutical-pump/
 | `EEPROM` | Arduino standard | Uložení úhlů ventilů |
 | — (vlastní driver) | `servo_valve.cpp` | Serva přímo přes Timer1 HW PWM (OC1A/OC1B na D9/D10) – nulový jitter, bez knihovny Servo |
 | — (vlastní driver) | `display.cpp` | SH1106 128×64 textově po stránkách, bez framebufferu (~0 B SRAM), font 5×7 v PROGMEM |
-| — (vlastní driver) | `capacitive.cpp` | FDC1004 přímo přes Wire (REPEAT režim 100 S/s) |
+| — (vlastní driver) | `capacitive.cpp` | FDC1004 přímo přes Wire (3 kanály, REPEAT 400 S/s, čtení po 50 ms) |
 
 > Externí knihovny (U8g2, FDC1004, Servo) se **nepoužívají** – nahrazeny
 > vlastními minimálními drivery bez `String`/`malloc` a bez závislostí.
@@ -796,7 +808,9 @@ má mírně jinou mechanickou nulu serva.
 
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
-#define CAP_CRITICAL_PERCENT   15    // % pokles kapacity = kritická hladina
+#define CH_LOWER_CIN 1 / CH_VERT_CIN 2 / CH_UPPER_CIN 3   // mapa kanálů (dotykový test)
+// Detekce hladiny: LVL_* (podíl 0,68, šablona 0,78, aktivace 0,85, ...)
+// a předtlak PRECOMP_* – viz skutečný config.h
 
 // === BAUD RATE ===
 #define BAUD_RATE             9600
