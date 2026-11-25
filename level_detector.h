@@ -17,6 +17,7 @@
 //   šablona  C3 <= LVL_STOP_C3_FRAC x vlastní maximum - po aktivaci
 //   vrchol   C1 - C3 kleslo o LVL_PEAK_DROP výšky hrbu (záloha)
 //   skok     koš C1 o LVL_STEP_DROP pod větším ze 2 předchozích = porucha
+//            (jen po aktivaci - před ní ho spouští otevření ventilu)
 // Aktivace: C3 (okno) <= LVL_ARM_FRAC x vlastní maximum.
 
 enum LevelResult : uint8_t {

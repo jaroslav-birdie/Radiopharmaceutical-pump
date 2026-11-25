@@ -502,7 +502,9 @@ void PumpController::onLevelResult(LevelResult r) {
     sayVal(F("#   C1="), lvl_.winC1(), 3);
     sayVal(F(" C3="), lvl_.winC3(), 3);
     sayVal(F(" pF  C3/C1="), lvl_.winC3() / lvl_.winC1(), 3);
-    sayVal(F("  C3/max="), lvl_.winC3() / lvl_.maxC3(), 3);
+    if (lvl_.maxC3() > 0.0f) {           // maximum existuje až s plným oknem
+        sayVal(F("  C3/max="), lvl_.winC3() / lvl_.maxC3(), 3);
+    }
     sayVal(F("  vzduch ve strikacce "), airMl_, 1);
     Serial.println(F(" ml"));
     if (r == LVL_FAULT_STEP) {

@@ -45,9 +45,15 @@ LevelResult LevelDetector::feed(float c1, float c3) {
 
 // Hotový koš: nejdřív skok C1 proti většímu ze dvou předchozích košů
 // (skok se často rozdělí do dvou košů), pak klouzavé okno.
+// Skok se hlídá až PO AKTIVACI: chrání před pádem hladiny pod spodní
+// prstenec, a k tomu může dojít jen po průchodu horním prstencem (C3
+// kleslo = aktivace). Před aktivací je hladina nad prstenci a přechodový
+// jev při otevření pacienta s předtlakem (C1 vyskočí a vrátí se) by
+// pojistku falešně spustil (zařízení 25. 11.: C1 2,40 -> >= 3,27 -> 2,78 pF).
+// Start pod horním prstencem odmítne kontrola C3/C1 a hlídá podíl.
 LevelResult LevelDetector::bin(float c1, float c3) {
     float ref = (prevBinC1_ > prev2BinC1_) ? prevBinC1_ : prev2BinC1_;
-    if (prev2BinC1_ > 0.0f && c1 < (1.0f - LVL_STEP_DROP) * ref) {
+    if (armed_ && prev2BinC1_ > 0.0f && c1 < (1.0f - LVL_STEP_DROP) * ref) {
         w1_ = c1;
         w3_ = c3;
         return LVL_FAULT_STEP;

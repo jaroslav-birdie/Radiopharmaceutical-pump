@@ -253,6 +253,10 @@ dosedací plochy dna (= vnější dno lahvičky):
   detektor drží stav. ⚠️ Hlídání stagnace (`NO_FLOW_TIMEOUT_MS`, svislá
   elektroda) by podle logu testu 12 zbytečně pozastavilo 1–15× za tlačení –
   ponecháno na pokyn obsluhy, ověřit na zařízení.
+  **Zařízení 25. 11.:** falešná porucha „skok C1" 2 s po otevření pacienta
+  (C1 2,40 → ≥ 3,27 → 2,78 pF, okno ještě neplné) – přechodový jev otevření
+  s předtlakem. Skok C1 se proto hlídá **až po aktivaci** (pád pod spodní
+  prstenec je možný jen po průchodu horním); přehrání testů 9–12 beze změny.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
