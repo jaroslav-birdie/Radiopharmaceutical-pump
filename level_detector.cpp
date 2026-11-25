@@ -3,14 +3,15 @@
 #define LVL_FIT_CHECKED      0x04   // interní: kontrola nárůstu už proběhla
 
 void LevelDetector::reset() {
-    accC1_ = accC3_ = 0.0f;
+    accC1_ = accC3_ = accC2_ = 0.0f;
     accN_ = 0;
     binHead_ = binCount_ = 0;
     prevBinC1_ = prev2BinC1_ = -1.0f;
     armed_ = haveD0_ = false;
     d0_ = 0.0f;
     dMax_ = c1Max_ = c3Max_ = -1e9f;
-    qAtMax_ = w1_ = w3_ = 0.0f;
+    qAtMax_ = w1_ = w3_ = w2_ = 0.0f;
+    c2Max_ = -1e9f;
     fitMask_ = 0;
     done_ = false;
 }
@@ -19,26 +20,31 @@ void LevelDetector::reset() {
 // se zahodí - přepnutí ventilu dělá skoky. Okno a maxima zůstávají,
 // pauza ani doplnění vzduchu stav hledání nezmění.
 void LevelDetector::flowBreak() {
-    accC1_ = accC3_ = 0.0f;
+    accC1_ = accC3_ = accC2_ = 0.0f;
     accN_ = 0;
     prevBinC1_ = prev2BinC1_ = -1.0f;
 }
 
-LevelResult LevelDetector::feed(float c1, float c3) {
+LevelResult LevelDetector::feed(float c1, float c3, float c2) {
     if (done_) {
         return LVL_NONE;
     }
     accC1_ += c1;
     accC3_ += c3;
+    accC2_ += c2;
     accN_++;
     if (accN_ < LVL_BIN_SAMPLES) {
         return LVL_NONE;
     }
-    LevelResult r = bin(accC1_ / accN_, accC3_ / accN_);
-    accC1_ = accC3_ = 0.0f;
+    LevelResult r = bin(accC1_ / accN_, accC3_ / accN_, accC2_ / accN_);
+    accC1_ = accC3_ = accC2_ = 0.0f;
     accN_ = 0;
     if (r != LVL_NONE) {
         done_ = true;
+        // Nezávislá kontrola: C2 při zastavení pod vlastním maximem
+        if (w2_ > (1.0f - LVL_C2_DROP_MIN) * c2Max_) {
+            fitMask_ |= LVL_FIT_C2_FLAT;
+        }
     }
     return r;
 }
@@ -51,7 +57,7 @@ LevelResult LevelDetector::feed(float c1, float c3) {
 // jev při otevření pacienta s předtlakem (C1 vyskočí a vrátí se) by
 // pojistku falešně spustil (zařízení 25. 11.: C1 2,40 -> >= 3,27 -> 2,78 pF).
 // Start pod horním prstencem odmítne kontrola C3/C1 a hlídá podíl.
-LevelResult LevelDetector::bin(float c1, float c3) {
+LevelResult LevelDetector::bin(float c1, float c3, float c2) {
     float ref = (prevBinC1_ > prev2BinC1_) ? prevBinC1_ : prev2BinC1_;
     if (armed_ && prev2BinC1_ > 0.0f && c1 < (1.0f - LVL_STEP_DROP) * ref) {
         w1_ = c1;
@@ -62,6 +68,7 @@ LevelResult LevelDetector::bin(float c1, float c3) {
     prevBinC1_ = c1;
     binC1_[binHead_] = c1;
     binC3_[binHead_] = c3;
+    binC2_[binHead_] = c2;
     binHead_ = (binHead_ + 1) % LVL_WIN_BINS;
     if (binCount_ < LVL_WIN_BINS) {
         binCount_++;
@@ -72,13 +79,18 @@ LevelResult LevelDetector::bin(float c1, float c3) {
 // Okno přes posledních LVL_WIN_BINS košů. Všechna kritéria jsou poměrová -
 // nezávisí na společném zisku prstenců (samolepka, okolí, stínění).
 LevelResult LevelDetector::window() {
-    float s1 = 0.0f, s3 = 0.0f;
+    float s1 = 0.0f, s3 = 0.0f, s2 = 0.0f;
     for (uint8_t i = 0; i < LVL_WIN_BINS; i++) {
         s1 += binC1_[i];
         s3 += binC3_[i];
+        s2 += binC2_[i];
     }
     w1_ = s1 / LVL_WIN_BINS;
     w3_ = s3 / LVL_WIN_BINS;
+    w2_ = s2 / LVL_WIN_BINS;
+    if (w2_ > c2Max_) {
+        c2Max_ = w2_;
+    }
     float d = w1_ - w3_;
     if (!haveD0_) {
         d0_ = d;

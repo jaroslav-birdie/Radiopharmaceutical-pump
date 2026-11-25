@@ -255,6 +255,9 @@ dosedací plochy dna (= vnější dno lahvičky):
   na zařízení 25. 11. potvrzeno (2 pauzy za 7 s) → **vypnuto** (`NO_FLOW_WATCH 0`).
   Svislá elektroda se za celé tlačení změní jen o 0,1–0,4 pF (v testu 11
   cyklus 2 dokonce vzroste), za 3 s ≈ 0,01 pF proti šumu 0,1–0,5 pF.
+  **Náhrada (jen zápis):** při zastavení musí být okno C2 aspoň o 1 %
+  (`LVL_C2_DROP_MIN`) pod vlastním maximem z tlačení – bez času; testy
+  9–12: pokles 1,6–17 %, žádné falešné varování; log `kontrola C2`.
   **Zařízení 25. 11.:** falešná porucha „skok C1" 2 s po otevření pacienta
   (C1 2,40 → ≥ 3,27 → 2,78 pF, okno ještě neplné) – přechodový jev otevření
   s předtlakem. Skok C1 se proto hlídá **až po aktivaci** (pád pod spodní

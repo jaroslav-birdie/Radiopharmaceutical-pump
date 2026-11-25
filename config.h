@@ -151,6 +151,7 @@
 #define LVL_FIT_C1_MIN       0.95f      // shoda: C1 >= 0,95 x max C1 ...
 #define LVL_FIT_C3_ZONE      0.65f      // ... dokud C3 > 0,65 x max C3
 #define LVL_FIT_CHECK_C3     0.80f      // shoda: při C3 = 0,80 x max C3 ...
+#define LVL_C2_DROP_MIN      0.01f      // nezávislá kontrola: při zastavení C2 <= (1 - 0,01) x max C2 (jen zápis)
 #define LVL_FIT_RISE_MIN     0.15f      // ... musí (C1 - C3) - d0 >= 0,15 x max C3
 
 // Kontrola před každým tlačením (lahvička uzavřená, pacient izolován)

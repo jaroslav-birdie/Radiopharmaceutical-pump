@@ -28,6 +28,7 @@ public:
     bool  takeSample();                  // true = od posledního volání nový vzorek
     float lowerPf() const { return pf_[0]; }     // C1 spodní prstenec
     float upperPf() const { return pf_[2]; }     // C3 horní prstenec
+    float vertPf() const { return pf_[1]; }      // C2 svislá (jen relativní změny)
     int32_t vertRaw() const { return vertRaw_; } // C2 svislá (jen relativní změny)
     int32_t flowEpsRaw() const { return flowEpsRaw_; }   // práh "hladina klesá"
     bool  frozen() const { return frozen_; }     // C1 nebo C3 se přestal měnit

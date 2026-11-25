@@ -460,7 +460,7 @@ void PumpController::serviceLevel() {
     if (!lvlFeed_ || !sampleFresh_) {
         return;
     }
-    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf());
+    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf(), cap_.vertPf());
     uint8_t fit = lvl_.fitFlags();
     if (fit & ~fitLogged_) {
         fitLogged_ |= fit;
@@ -470,6 +470,7 @@ void PumpController::serviceLevel() {
         if (fit & LVL_FIT_C1_EARLY) Serial.print(F(" C1 klesa predcasne"));
         if (fit & LVL_FIT_NO_RISE)  Serial.print(F(" C1-C3 neroste"));
         if (fit & LVL_FIT_MAX_OFF)  Serial.print(F(" max mimo plato"));
+        if (fit & LVL_FIT_C2_FLAT)  Serial.print(F(" *** C2 neklesla"));
         Serial.println();
     }
     if (r != LVL_NONE) {
@@ -507,6 +508,8 @@ void PumpController::onLevelResult(LevelResult r) {
     }
     sayVal(F("  vzduch ve strikacce "), airMl_, 1);
     Serial.println(F(" ml"));
+    sayVal(F("#   kontrola C2: pokles pod maximum "), lvl_.maxC2() - lvl_.winC2(), 3);
+    Serial.println((lvl_.fitFlags() & LVL_FIT_C2_FLAT) ? F(" pF *** HLADINA NEKLESLA?") : F(" pF OK"));
     if (r == LVL_FAULT_STEP) {
         safeValves();
         logEvent(LOG_LEVEL_FAULT);
