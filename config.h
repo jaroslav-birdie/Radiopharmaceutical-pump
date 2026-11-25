@@ -94,7 +94,9 @@
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
 #define VOL_SAL_TOTAL_ML        60.0f   // 60ml stříkačka (viz SAL_SYR_ML_PER_MM)
-#define VOL_SAL_ITER_ML          3.0f   // dávka fyziologického roztoku na 1 krok
+#define VOL_SAL_ITER_ML          4.25f  // dávka roztoku na 1 krok: zbytek po zastavení ~4,15 ml
+                                        // (hladina ~8,8 mm) -> ředění zhruba na polovinu;
+                                        // 12 dávek (Fáze 1 + 11 iterací) = 51 ml z 60 ml
 #define ITER_COUNT               11      // počet iterativních cyklů po Fázi 1
 
 // === ZADÁVÁNÍ PŘESNÉHO OBJEMU (krok 0,1 ml; hodnoty v desetinách ml) ===

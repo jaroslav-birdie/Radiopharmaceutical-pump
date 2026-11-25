@@ -930,7 +930,7 @@ void PumpController::handleAddSaline() {
                 break;
             }
             sayPrefix();
-            sayVal(F("Pridani "), VOL_SAL_ITER_ML, 1);
+            sayVal(F("Pridani "), VOL_SAL_ITER_ML, 2);
             sayVal(F(" ml roztoku, zbyva "), salMl_, 1);
             Serial.println(F(" ml"));
             logEvent(LOG_SALINE_PUSH);
@@ -950,6 +950,11 @@ void PumpController::handleAddSaline() {
                 // (case 6), kde se pozná, že iter_ > ITER_COUNT, a další
                 // roztok se už nepřidává.
                 logEvent(LOG_ITER_START);
+                if (state_ == ST_P1_ADD_SALINE && stepMode_) {
+                    // Fáze 1 potvrzena krok po kroku, iterace běží samy
+                    stepMode_ = false;
+                    Serial.println(F("# Iterace bezi automaticky (k = krokovani)"));
+                }
                 changeState(ST_ITER_EQUALIZE);
             }
             break;

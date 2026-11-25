@@ -729,7 +729,8 @@ a nezávislý na tom, zda je klávesnice/enkodér fyzicky připojen.
 
 Výpis: řádky `# …` popisují, co systém právě dělá, `>>> …` čeká na Enter.
 Krokovací režim čeká před každým krokem procesu (vyrovnání, nasátí,
-tlačení, roztok) – vždy jen **mezi** kroky, s izolovaným pacientem
+tlačení, roztok) **jen ve Fázi 1**; od první iterace běží proces sám
+(krokování se vypne, `k` ho lze znovu zapnout) – vždy jen **mezi** kroky, s izolovaným pacientem
 a stojícími motory; PAUSE/STOP a hlídání senzoru běží i během čekání.
 Obrazovky OLED se doladí později.
 
@@ -815,7 +816,7 @@ má mírně jinou mechanickou nulu serva.
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
 #define VOL_SAL_TOTAL_ML       30.0f
-#define VOL_SAL_ITER_ML         3.0f   // dávka fyziologického roztoku na 1 iteraci
+#define VOL_SAL_ITER_ML         4.25f  // dávka roztoku na 1 krok (zbytek ~4,15 ml -> ředění ~1/2)
 #define VOL_REMAIN_CRITICAL_ML  3.0f   // kritický zbytkový objem v lahvičce
 #define ITER_COUNT               9
 
