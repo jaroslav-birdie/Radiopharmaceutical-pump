@@ -93,6 +93,7 @@ private:
     void handleEqualize(bool phase1);
     void handleFillAir(bool phase1);
     void handleAddSaline();
+    void finalAirFill();
     void handlePaused();
 
     // --- hardware ---

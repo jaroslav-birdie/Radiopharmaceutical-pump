@@ -72,7 +72,9 @@ enum PushPhase : uint8_t {
     PP_REFILL_CLOSE,     // stříkačka prázdná: pacient se zavírá, pak doplnění
     PP_STOPPED,          // kritická hladina: pacient se zavírá (povel už dán)
     PP_VENT,             // odtlakování lahvičky V<->F
-    PP_VIAL_WAIT         // lahvička chybí: čeká se na obsluhu (Enter)
+    PP_VIAL_WAIT,        // lahvička chybí: čeká se na obsluhu (Enter)
+    PP_FINAL_VALVE,      // konec procedury: vzduch S<->F (lahvička zaslepena)
+    PP_FINAL_FILL        // konec procedury: stříkačka se plní na plný objem
 };
 
 // ============================================================
@@ -771,22 +773,52 @@ void PumpController::handlePushAir(bool phase1) {
                 phase_ = PP_VENT;
             }
             break;
+        case PP_FINAL_VALVE:
+        case PP_FINAL_FILL:
+            finalAirFill();
+            break;
         case PP_VENT:
             if (airValve_.settled()) {
                 if (!phase1 && iter_ > ITER_COUNT) {
                     // Závěrečné vytlačení: po POSLEDNÍM doplnění roztoku se
                     // ještě jednou projde EQUALIZE -> FILL_AIR -> PUSH_AIR a
                     // tento objem se vytlačí pacientovi. Další roztok už se
-                    // nepřidává - procedura tímto končí.
-                    safeValves();
-                    disableSteppers();
-                    logEvent(LOG_COMPLETE);
-                    changeState(ST_COMPLETE);
+                    // nepřidává. Na úplný konec se vzduchová stříkačka
+                    // naplní na plný objem (výchozí stav pro další použití).
+                    logEvent(LOG_VALVE_AIR_MOVE);
+                    airValve_.moveTo(angles_.airSyrToFilter);
+                    phase_ = PP_FINAL_VALVE;
                 } else {
                     changeState(phase1 ? ST_P1_ADD_SALINE : ST_ITER_ADD_SALINE);
                 }
             }
             break;
+    }
+}
+
+// Konec procedury: naplnění vzduchové stříkačky z atmosféry (S<->F,
+// pacient izolován), pak bezpečné polohy ventilů a motory DISABLED.
+void PumpController::finalAirFill() {
+    if (phase_ == PP_FINAL_VALVE) {
+        if (!airValve_.settled()) {
+            return;
+        }
+        float target = VOL_AIR_SYRINGE_MAX_ML - airMl_;
+        if (target < 0.0f) {
+            target = 0.0f;
+        }
+        sayPrefix();
+        sayVal(F("Naplneni strikacky "), target, 1);
+        Serial.println(F(" ml vzduchu (S-F)"));
+        logEvent(LOG_AIR_FILL);
+        airSyr_.startMove(target, false, AIR_FILL_SPEED_FACTOR);
+        phase_ = PP_FINAL_FILL;
+    } else if (airSyr_.idle()) {
+        finishAirMove(false);
+        safeValves();
+        disableSteppers();
+        logEvent(LOG_COMPLETE);
+        changeState(ST_COMPLETE);
     }
 }
 

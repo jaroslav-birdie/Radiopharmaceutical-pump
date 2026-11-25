@@ -517,7 +517,9 @@ enum State {
 > **Závěrečné vytlačení:** po **posledním** doplnění fyziologického roztoku
 > se procedura nekončí – projde se ještě jednou `ST_ITER_EQUALIZE` →
 > `ST_ITER_FILL_AIR` → `ST_ITER_PUSH_AIR`, aby se i tento objem dostal
-> k pacientovi. Teprve pak `ST_COMPLETE`; další roztok se už nepřidává.
+> k pacientovi. Po odtlakování lahvičky se ještě **vzduchová stříkačka
+> naplní na plný objem** (S↔F, pacient izolován), pak bezpečné polohy
+> ventilů, motory DISABLED a `ST_COMPLETE`; další roztok se už nepřidává.
 > Celkem tedy proběhne `ITER_COUNT + 1` vytlačení, ale jen `ITER_COUNT`
 > doplnění roztoku v iteracích (plus jedno ve Fázi 1).
 
