@@ -734,7 +734,9 @@ a nezávislý na tom, zda je klávesnice/enkodér fyzicky připojen.
 Výpis: řádky `# …` popisují, co systém právě dělá, `>>> …` čeká na Enter.
 Krokovací režim čeká před každým krokem procesu (vyrovnání, nasátí,
 tlačení, roztok) **jen ve Fázi 1**; od první iterace běží proces sám
-(krokování se vypne, `k` ho lze znovu zapnout) – vždy jen **mezi** kroky, s izolovaným pacientem
+(krokování se vypne, `k` ho lze znovu zapnout); doplnění vzduchu uprostřed
+tlačení se nepotvrzuje nikdy (lahvička pod tlakem); závěrečné vytlačení
+se vypisuje jako `[Zaverecne vytlaceni]` – vždy jen **mezi** kroky, s izolovaným pacientem
 a stojícími motory; PAUSE/STOP a hlídání senzoru běží i během čekání.
 Obrazovky OLED se doladí později.
 

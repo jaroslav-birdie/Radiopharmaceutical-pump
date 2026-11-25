@@ -245,11 +245,13 @@ void PumpController::announceState(State prev) {
         Serial.println(buf);
         return;
     }
-    if (stepMode_ && isProcessState(prev)) {
+    // Doplnění vzduchu uprostřed tlačení (pushResume_) běží bez potvrzení -
+    // lahvička je pod tlakem, čekat nemá smysl.
+    if (stepMode_ && isProcessState(prev) && !pushResume_) {
         stepWait_ = true;
         ser_.flush();
         Serial.print(F(">>> "));
-        Serial.print(iter_ == 0 ? F("[Faze 1] ") : F("[Iterace] "));
+        Serial.print(iter_ == 0 ? F("[Faze 1] ") : iter_ > ITER_COUNT ? F("[Zaverecne vytlaceni] ") : F("[Iterace] "));
         Serial.print(F("Dalsi krok: "));
         Serial.print((const __FlashStringHelper *)desc);
         Serial.println(F(". Enter = pokracovat"));
@@ -263,10 +265,11 @@ void PumpController::announceState(State prev) {
 void PumpController::sayPrefix() {
     if (iter_ == 0) {
         Serial.print(F("# [Faze 1] "));
+    } else if (iter_ > ITER_COUNT) {
+        Serial.print(F("# [Zaverecne vytlaceni] "));
     } else {
-        uint8_t shown = (iter_ > ITER_COUNT) ? (uint8_t)ITER_COUNT : iter_;
         Serial.print(F("# [Iterace "));
-        Serial.print(shown);
+        Serial.print(iter_);
         Serial.print('/');
         Serial.print((uint8_t)ITER_COUNT);
         Serial.print(F("] "));
@@ -950,12 +953,11 @@ void PumpController::refreshDisplay() {
         e = appendText(buf, PSTR("Faze 1  Vz:"));
         e = appendTenths(e, (uint16_t)(airMl_ * 10.0f + 0.5f));
         appendText(e, PSTR(" ml"));
+    } else if (iter_ > ITER_COUNT) {     // po posledním roztoku
+        appendText(buf, PSTR("Zaverecne vytlaceni"));
     } else {
-        // Při závěrečném vytlačení je iter_ o 1 vyšší než ITER_COUNT -
-        // na displeji se ořízne, aby neukazoval např. "12/11".
-        uint8_t shown = (iter_ > ITER_COUNT) ? (uint8_t)ITER_COUNT : iter_;
         e = appendText(buf, PSTR("Iterace: "));
-        e = appendUint(e, shown);
+        e = appendUint(e, iter_);
         *e++ = '/';
         appendUint(e, (uint8_t)ITER_COUNT);
     }
