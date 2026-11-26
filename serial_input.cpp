@@ -50,6 +50,10 @@ void SerialInput::handleLine() {
         status_ = true;
     } else {
         confirm_ = true;                 // Enter nebo jakýkoli text
+        if (len_ > 0) {                  // text (např. změřená výška) do logu
+            Serial.print(F("# obsluha: "));
+            Serial.println(line_);
+        }
     }
 }
 

@@ -276,6 +276,12 @@ dosedací plochy dna (= vnější dno lahvičky):
   První běh 26. 11. zkreslil **cínový můstek mezi prstenci**; po opravě
   dotykový test: **spodní prstenec = CIN3, horní = CIN1** → `CH_LOWER_CIN 3`,
   `CH_UPPER_CIN 1` (C1/C3 ve výpisech dál znamenají spodní/horní).
+- **Měřicí pauza a zrychlení (26. 11.):** `LEVEL_MEASURE_PAUSE 1` – po
+  každém zastavení (pacient izolován, lahvička odtlakována) výzva změřit
+  výšku hladiny, napsaný text se zapíše do logu (`# obsluha: 8.7`), Enter
+  pokračuje. Mimo tlačení k pacientovi rychleji: nasátí vzduchu 4×, předtlak
+  4×, dávka roztoku 3× proti 1 ml / 5 s; tlačení k pacientovi beze změny
+  (detekce). Odhad ~13,5 min bez čekání na obsluhu (dřív ~20,5 min).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

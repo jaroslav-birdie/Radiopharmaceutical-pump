@@ -74,7 +74,9 @@ enum PushPhase : uint8_t {
     PP_VENT,             // odtlakování lahvičky V<->F
     PP_VIAL_WAIT,        // lahvička chybí: čeká se na obsluhu (Enter)
     PP_FINAL_VALVE,      // konec procedury: vzduch S<->F (lahvička zaslepena)
-    PP_FINAL_FILL        // konec procedury: stříkačka se plní na plný objem
+    PP_FINAL_FILL,       // konec procedury: stříkačka se plní na plný objem
+    PP_MEASURE,          // měřicí pauza: obsluha změří výšku hladiny (Enter)
+    PP_AFTER_VENT        // po odtlakování: roztok, nebo konec procedury
 };
 
 // ============================================================
@@ -554,7 +556,7 @@ void PumpController::restStartCheck() {
     Serial.print(pre, 2);
     Serial.println(F(" ml (pacient uzavren)"));
     logEvent(LOG_PRECOMPRESS);
-    airSyr_.startMove(pre, true);
+    airSyr_.startMove(pre, true, PRECOMP_SPEED_FACTOR);
     pushActive_ = true;
     phase_ = PP_PRECOMP;
 }
@@ -749,6 +751,16 @@ void PumpController::handlePushAir(bool phase1) {
             break;
         case PP_VENT:
             if (airValve_.settled()) {
+                phase_ = LEVEL_MEASURE_PAUSE ? PP_MEASURE : PP_AFTER_VENT;
+            }
+            break;
+        case PP_MEASURE:                 // pacient izolován, lahvička odtlakována
+            if (confirmed(F("ZMER vysku hladiny (napis mm, napr. 8.7)."))) {
+                phase_ = PP_AFTER_VENT;
+            }
+            break;
+        case PP_AFTER_VENT:
+            {
                 if (!phase1 && iter_ > ITER_COUNT) {
                     // Závěrečné vytlačení: po POSLEDNÍM doplnění roztoku se
                     // ještě jednou projde EQUALIZE -> FILL_AIR -> PUSH_AIR a
@@ -884,7 +896,7 @@ void PumpController::handleAddSaline() {
             logEvent(LOG_SALINE_PUSH);
             dispDirty_ = true;
             refreshDisplay();
-            salSyr_.startMove(VOL_SAL_ITER_ML, true);
+            salSyr_.startMove(VOL_SAL_ITER_ML, true, SAL_SPEED_FACTOR);
             phase_ = 1;
             break;
         case 1:

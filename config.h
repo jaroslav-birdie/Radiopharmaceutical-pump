@@ -87,9 +87,11 @@
 
 // === RYCHLOST APLIKACE ===
 #define FLOW_S_PER_ML          5        // 1 ml za 5 sekund (obě stříkačky)
-#define AIR_FILL_SPEED_FACTOR  2        // nasávání vzduchu zpět do stříkačky je
-                                        // rychlejší (nic se netlačí do pacienta);
-                                        // 2 = dvojnásobná rychlost proti FLOW_S_PER_ML
+#define AIR_FILL_SPEED_FACTOR  4        // nasávání vzduchu z atmosféry (nic se netlačí do pacienta)
+#define PRECOMP_SPEED_FACTOR   4        // předtlak do uzavřené lahvičky (pacient izolován, detekce stojí)
+#define SAL_SPEED_FACTOR       3        // dávka roztoku do lahvičky (odvzdušněna přes filtr)
+                                        // Tlačení k pacientovi zůstává vždy 1 ml / 5 s (detekce).
+#define LEVEL_MEASURE_PAUSE    1        // 1 = po každém zastavení čekat na Enter (měření výšky hladiny)
 
 // === OBJEMY (ml) ===
 #define VOL_AIR_SYRINGE_MAX_ML  10.0f
