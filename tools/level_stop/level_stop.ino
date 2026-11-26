@@ -919,12 +919,8 @@ static bool measureDry() {
     dryC1 = c1Rest; dryC3 = c3Rest;
     Serial.print(F("# suche hodnoty: C1=")); Serial.print(dryC1, 3);
     Serial.print(F(" C3=")); Serial.println(dryC3, 3);
-    // Prazdna sucha lahvicka: jen zapis, urci prah kontroly lahvicky
-    // (sklo bez kapaliny musi zustat pod nim, plna lahvicka nad nim).
-    if (!waitConfirm(F("vlozit PRAZDNOU SUCHOU lahvicku, potvrdit"))) return false;
-    if (!restWithStats()) return false;
-    Serial.print(F("# prazdna lahvicka nad suchou: C1 +")); Serial.print(c1Rest - dryC1, 3);
-    Serial.print(F(" C3 +")); Serial.println(c3Rest - dryC3, 3);
+    // Prazdna sucha lahvicka uz se nemeri (test 12: sklo +0,05 pF, prah
+    // kontroly lahvicky 0,25 pF uz je stanoven).
     return true;
 }
 
@@ -1027,10 +1023,10 @@ static void printHelp() {
     Serial.println(F("# 2) MAPA: 'm', prst na spodni / horni prstenec"));
     Serial.println(F("#    -> 16 pF musi ukazat C1 / C3 (C2 nepripojeno)."));
     Serial.println(F("#    Jinak 'n<s><v><h>' (vychozi n321) a znovu 'm'."));
-    Serial.println(F("# 3) 'S' STATICKY: prazdna studna, prazdna lahvicka,"));
-    Serial.println(F("#    pak lahvicka s 2,3,4,5,6,7,8,10 ml (strikackou)"));
+    Serial.println(F("# 3) 'S' STATICKY: prazdna studna, pak lahvicka"));
+    Serial.println(F("#    s 2,3,4,5,6,7,8,10 ml (strikackou pridavat)"));
     Serial.println(F("# 4) 't' = vzduchova strikacka je plna, 'i' kontrola"));
-    Serial.println(F("# 5) 'g': suche hodnoty, prazdna lahvicka, 5 cyklu"));
+    Serial.println(F("# 5) 'g': suche hodnoty (prazdna studna), 5 cyklu"));
     Serial.println(F("#    po 10 ml, prah f = 0.90/0.85/0.80/0.75/0.70"));
     Serial.println(F("# 6) po zastaveni a 30 s klidu ZMERIT vysku hladiny"));
     Serial.println(F("# 7) hladina < 6 mm -> dalsi cykly nespoustet ('x')"));

@@ -29,12 +29,13 @@ Prahy je potřeba odvodit znovu z měřených výšek.
 2. `m` – prst na **spodní** prstenec musí přebít **C1**, na **horní** **C3**.
    Jinak `n<spodní><svislá><horní>` (výchozí `n321`).
 3. **Statický žebříček `S`** (bez tlačení, ventily v klidu):
-   - prázdná studna → suché hodnoty, prázdná suchá lahvička → zápis,
-   - pak postupně lahvička s **2, 3, 4, 5, 6, 7, 8, 10 ml** (objem odměřit
-     stříkačkou do suché lahvičky, lahvičku vždy zasunout až na dno),
+   - prázdná studna → suché hodnoty (suchá lahvička není potřeba),
+   - pak lahvička s **2, 3, 4, 5, 6, 7, 8, 10 ml**: začít 2 ml a stříkačkou
+     **přidávat** do stejné lahvičky (nalévat ke dnu, ať se stěna nad
+     hladinou zbytečně nesmáčí), lahvičku vždy zasunout až na dno,
    - každý krok: vložit, potvrdit, 5 s klid → řádek `# staticky V=… L1 L3 L3/L1`.
 4. `t` (stříkačka plná), `i` (kontrola režimu).
-5. **Dynamická série `g`:** suché hodnoty, prázdná lahvička, pak 5 cyklů,
+5. **Dynamická série `g`:** suché hodnoty (prázdná studna), pak 5 cyklů,
    **pokaždé 10 ml** roztoku. Po zastavení a 30 s klidu **změřit výšku hladiny**
    od vnějšího dna a poslat číslo.
 6. Pokud některý cyklus zastaví pod **6 mm**, další cykly nespouštět (`x`).
