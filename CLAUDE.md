@@ -303,6 +303,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   objemů 2–10 ml (`S`) a dynamická série se šablonou `L3 ≤ f × max`,
   f = 0,90/0,85/0,80/0,75/0,70, s měřením výšky; čistý roztok i inkoust.
   Do vyhodnocení **produkci s pacientskou cestou nespouštět**.
+  **První běh testu 13 (15:07):** mapa byla **prohozená** – při tlačení se
+  první odkrývá CIN3 → **horní = CIN3, spodní = CIN1** (sketch `n123`;
+  dotykový test zopakovat). Šablona tak hlídala spodní prstenec (5,5
+  a 4,5 mm). Podíl horní/spodní `L3/L1` se staticky i dynamicky kryje
+  (start 0,89, 8,5 mm 0,30, 7 mm 0,255, 5,5 mm 0,23–0,24) → **test 13b**
+  zastavuje podílem, r = 0,45/0,40/0,35/0,31/0,28; cíl ≈ 0,31.
+  Produkční `config.h` má ještě starou mapu (CIN3 spodní) – upravit až po 13b.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,

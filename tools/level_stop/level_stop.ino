@@ -1,22 +1,25 @@
 // ============================================================
-//  TEST 13 – KALIBRACE PLNE KRUHOVYCH PRSTENCU (26. 11.)
+//  TEST 13b – KALIBRACE PLNE KRUHOVYCH PRSTENCU (26. 11.)
 //  (studna 3/3/3 mm, prstence doplnene na cely obvod, svisla odebrana)
 //
 //  Prahy testu 9-12 (stare prstence) zastavily s novymi prstenci hladinu
-//  ve 4,5 mm misto ~8,7 mm. Test 13 je odvodi znovu z merenych vysek.
+//  ve 4,5 mm misto ~8,7 mm. Test 13 (15:07) ukazal prohozenou mapu:
+//  CIN3 se pri tlaceni odkryva prvni = HORNI prstenec, CIN1 = spodni.
+//  Podil L3/L1 (horni/spodni) pak sedi staticky i dynamicky (5,5 mm:
+//  0,23 / 0,24). Test 13b zastavuje podilem a meri vysky.
 //
 //  Vse nad PRISPEVKEM KAPALINY L = C - sucha hodnota (prazdna studna).
 //  Detekce jen s otevrenym pacientem ('p', 'w'), kose 12 vzorku, okno 8.
 //  Rychlost tlaceni vzdy 1 ml / 5 s, predtlak 3 ml (jako produkce).
-//    sablona   L3 (okno) <= f x vlastni maximum - f podle cyklu:
-//              cyklus 1..5 = 0,90 / 0,85 / 0,80 / 0,75 / 0,70 (q<f> = pevne)
-//              hlida se od zacatku tlaceni (i nad aktivaci)
-//    podil     L3/L1 - JEN ZAPIS (dava druhou kalibracni krivku)
+//    podil     L3/L1 (okno) <= r - r podle cyklu:
+//              cyklus 1..5 = 0,45 / 0,40 / 0,35 / 0,31 / 0,28 (q<r> = pevne)
+//              hlida se od zacatku tlaceni
+//    sablona   L3/max L3 - JEN ZAPIS (vypise se pri zastaveni)
 //    vrchol    L1 - L3 kleslo o 10 % vysky hrbu (zaloha)
 //    skok      L1 (kos) o 25 % niz nez vetsi ze 2 predchozich, jen po
 //              aktivaci (L3 <= 0,85 x max) = posledni zachrana
 //  Pred tlacenim: L1 i L3 >= 0,25 pF (lahvicka), L3/L1 >= 0,60.
-//  Po kazdem zastaveni obsluha zmeri vysku hladiny -> mapa f -> vyska.
+//  Po kazdem zastaveni obsluha zmeri vysku hladiny -> mapa r -> vyska.
 //
 //  Staticky zebricek 'S': lahvicka s 2/3/4/5/6/7/8/10 ml (bez tlaceni),
 //  klid 5 s -> L1, L3, L3/L1 pro kazdy objem (vyska z tabulky v CLAUDE.md).
@@ -51,9 +54,10 @@
 // pro zkusebni lahvicku z testu 5 (spodni CIN2, svisla CIN3, horni CIN1).
 // Sloupce C1/C2/C3 v logu i detekce znamenaji vzdy spodni/svislou/horni
 // elektrodu.
-#define CH_LOWER_CIN      3   // spodni prstenec (dotykovy test 26. 11.)
+#define CH_LOWER_CIN      1   // spodni prstenec (podle prubehu testu 13, 26. 11.:
+                              // CIN3 se odkryva prvni = horni)
 #define CH_VERT_CIN       2   // svisla elektroda - odebrana, nepripojeno
-#define CH_UPPER_CIN      1   // horni prstenec
+#define CH_UPPER_CIN      3   // horni prstenec
 static_assert(((1 << CH_LOWER_CIN) | (1 << CH_VERT_CIN) | (1 << CH_UPPER_CIN)) == 0x0E,
               "mapa kanalu musi byt permutace CIN1..CIN3");
 #define BAUD             115200UL
@@ -157,9 +161,11 @@ static const uint16_t samplePeriodMs = 50;   // 20 vzorku/s (DET_MED_N je na to 
 static uint8_t  cycleCount     = 5;     // pocet cyklu
 static uint8_t  flowSecPerMl   = 5;     // rychlost tlaceni
 static float    precompManualMl = 3.0f;  // predtlak 3 ml jako produkce (r = vypocet)
-static float    tplFixed       = 0.0f;  // >0 = pevny prah sablony (q<f>), 0 = tabulka
-static float    curTpl         = 0.90f; // prah sablony v tomto cyklu
-static const float TPL_TABLE[5] = { 0.90f, 0.85f, 0.80f, 0.75f, 0.70f };
+static float    tplFixed       = 0.0f;  // >0 = pevny prah podilu (q<r>), 0 = tabulka
+static float    curTpl         = 0.45f; // prah podilu L3/L1 v tomto cyklu
+// Test 13b: zastaveni podilem L3/L1 <= r. Staticky zebricek: 0,39 = 10 mm,
+// 0,30 = 8,5 mm, 0,255 = 7 mm. Zacina se vysoko (bezpecny smer).
+static const float TPL_TABLE[5] = { 0.45f, 0.40f, 0.35f, 0.31f, 0.28f };
 static float    profileAirMl   = 0.0f;  // >0 = PROFIL: vytlacit tolik vzduchu, detekce
                                         // jen zapisuje (stin); 0 = zastaveni detekci (v<ml>)
 
@@ -623,7 +629,7 @@ static float median(const float *src) {
 
 static void detectStart() {
     curTpl = tplFixed > 0.0f ? tplFixed : TPL_TABLE[(cycleNo - 1) % 5];
-    Serial.print(F("# prah sablony f=")); Serial.println(curTpl, 2);
+    Serial.print(F("# prah podilu L3/L1 r=")); Serial.println(curTpl, 2);
     accC1 = accC3 = 0; accN = 0;
     binHead = binCount = 0; prevBinC1 = prev2BinC1 = -1.0f; prevPhase = 0;
     armed = haveD0 = false;
@@ -648,7 +654,7 @@ static void printEvent(const __FlashStringHelper *prefix, uint8_t kind) {
     Serial.print(F(" d0=")); Serial.print(d0, 3);
     Serial.print(F(" dmax=")); Serial.print(dMax, 3);
     Serial.print(F(" @ t=")); Serial.println(dMaxMs);
-    Serial.print(F("#   f=")); Serial.print(curTpl, 2);
+    Serial.print(F("#   r=")); Serial.print(curTpl, 2);
     Serial.print(F(" L3/maxL3=")); Serial.print(hitC3 / c3Max, 3);
     Serial.print(F(" L3/L1=")); Serial.print(hitC3 / hitC1, 3);
     Serial.print(F(" L1/maxL1=")); Serial.print(hitC1 / c1Max, 3);
@@ -710,9 +716,9 @@ static void detectWindow() {
         // zapis: podceneni maxima uz nevadi, podil zastavi nezavisle na nem.
         if (qAtMax < MAX_Q_MIN) fitWarn(8, F("maximum C3 mimo plato"));
     }
-    // Test 13: sablona od zacatku tlaceni (prahy 0,90/0,85 lezi nad
-    // aktivaci), podil L3/L1 jen do logu (vypise se pri zastaveni).
-    if (w3 <= curTpl * c3Max) detectFire(HIT_C3);
+    // Test 13b: podil L3/L1 od zacatku tlaceni (na startu ~0,9, klesa
+    // monotonne), sablona L3/maxL3 jen do logu (vypise se pri zastaveni).
+    if (w1 > 0.05f && w3 <= curTpl * w1) detectFire(HIT_Q);
     if (detMode == DET_OFF || !armed) return;
     if (d > dMax) { dMax = d; dMaxMs = millis() - cycleT0; }
     checkFit(w1, w3, d);
@@ -992,9 +998,9 @@ static void printInfo() {
         Serial.print(F("# REZIM: PROFIL, vzduch na cyklus ")); Serial.print(profileAirMl, 1);
         Serial.println(F(" ml, detekce jen zapisuje (STIN)"));
     } else {
-        Serial.print(F("# REZIM test 13: L = C - sucha, sablona f="));
-        if (tplFixed > 0.0f) Serial.print(tplFixed, 2); else Serial.print(F("0.90/0.85/0.80/0.75/0.70"));
-        Serial.println(F(", podil jen zapis"));
+        Serial.print(F("# REZIM test 13b: L = C - sucha, podil L3/L1 r="));
+        if (tplFixed > 0.0f) Serial.print(tplFixed, 2); else Serial.print(F("0.45/0.40/0.35/0.31/0.28"));
+        Serial.println(F(", sablona jen zapis"));
     }
     Serial.print(F("# predtlak: "));
     if (precompManualMl >= 0.0f) {
@@ -1017,17 +1023,17 @@ static void printInfo() {
 
 // Napoveda: postup testu 12 krok za krokem, pak prehled prikazu.
 static void printHelp() {
-    Serial.println(F("# ================ POSTUP TESTU 13 ================"));
+    Serial.println(F("# =============== POSTUP TESTU 13b ==============="));
     Serial.println(F("# 1) PRIPRAVA: vzduch. strikacka PLNA, ventily+strikacka"));
     Serial.println(F("#    osazene, hadicka naplnena, studna PRAZDNA, log bezi"));
     Serial.println(F("# 2) MAPA: 'm', prst na spodni / horni prstenec"));
     Serial.println(F("#    -> 16 pF musi ukazat C1 / C3 (C2 nepripojeno)."));
-    Serial.println(F("#    Jinak 'n<s><v><h>' (vychozi n321) a znovu 'm'."));
+    Serial.println(F("#    Jinak 'n<s><v><h>' (vychozi n123) a znovu 'm'."));
     Serial.println(F("# 3) 'S' STATICKY: prazdna studna, pak lahvicka"));
     Serial.println(F("#    s 2,3,4,5,6,7,8,10 ml (strikackou pridavat)"));
     Serial.println(F("# 4) 't' = vzduchova strikacka je plna, 'i' kontrola"));
     Serial.println(F("# 5) 'g': suche hodnoty (prazdna studna), 5 cyklu"));
-    Serial.println(F("#    po 10 ml, prah f = 0.90/0.85/0.80/0.75/0.70"));
+    Serial.println(F("#    po 10 ml, prah r = 0.45/0.40/0.35/0.31/0.28"));
     Serial.println(F("# 6) po zastaveni a 30 s klidu ZMERIT vysku hladiny"));
     Serial.println(F("# 7) hladina < 6 mm -> dalsi cykly nespoustet ('x')"));
     Serial.println(F("# 8) log poslat jako soubor (S i g zvlast nebo spolu)"));
@@ -1037,7 +1043,7 @@ static void printHelp() {
     Serial.println(F("# j/k jog vzduch +-0.5 ml  u0/u1 pacient ISOL/OTEV"));
     Serial.println(F("# u2/u3/u4 vzduch S-V/S-F/V-F  #<text> znacka do logu"));
     Serial.println(F("# v<ml> profil (v0=zastaveni)  c<n> cykly  s<s> s/ml"));
-    Serial.println(F("# r<ml>/r predtlak rucne/vypoctem  q<f>/q0 prah sablony"));
+    Serial.println(F("# r<ml>/r predtlak rucne/vypoctem  q<r>/q0 prah podilu"));
     Serial.println(F("# S staticky zebricek objemu"));
 }
 
@@ -1164,8 +1170,8 @@ static void handleLine() {
             break;
         case 'q': {
             float v = atof(&line[1]);
-            if (v == 0.0f || (v >= 0.5f && v <= 0.98f)) { tplFixed = v; printInfo(); }
-            else Serial.println(F("# CHYBA: q0 (tabulka) nebo q0.5..q0.98"));
+            if (v == 0.0f || (v >= 0.2f && v <= 0.7f)) { tplFixed = v; printInfo(); }
+            else Serial.println(F("# CHYBA: q0 (tabulka) nebo q0.2..q0.7"));
             break;
         }
         case '#': break;
