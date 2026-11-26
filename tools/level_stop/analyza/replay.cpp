@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
         char line[512];
         LevelDetector det;
         int cyc = -1; char prev = 0; bool done = false; long logStop = -1;
-        long hit = -1; LevelResult res = LVL_NONE; unsigned fit = 0; float q = 0, c3n = 0;
+        long hit = -1, lastT = -1; LevelResult res = LVL_NONE; unsigned fit = 0; float q = 0, c3n = 0;
         auto report = [&]() {
             if (cyc > 0)
                 printf("%s c%d: log STOP t=%ld | replay %s t=%ld  (rozdil %ld ms) L3/max=%.3f fit=%u qmax=%.3f\n",
@@ -32,6 +32,11 @@ int main(int argc, char **argv) {
             p = p ? p + 3 : line;
             char *sh = strstr(p, "suche hodnoty: C1=");
             if (sh) { sscanf(sh, "suche hodnoty: C1=%f C3=%f", &dry1, &dry3); continue; }
+            // produkcni firmware: zastaveni = posledni vzorek pred hlasenim
+            if (strstr(p, "KRITICKA HLADINA") || strstr(p, "SKOK C1")) {
+                if (logStop < 0) logStop = lastT;
+                continue;
+            }
             if (!strncmp(p, "# STOP", 6) || !strncmp(p, "# *** SKOK", 10)) {
                 char *t = strstr(p, "@ t=");
                 if (t && logStop < 0) logStop = atol(t + 4);
@@ -39,6 +44,7 @@ int main(int argc, char **argv) {
             }
             int c; long t; char ph; float ml, c1, c2, c3;
             if (sscanf(p, "%d;%ld;%c;%f;%f;%f;%f", &c, &t, &ph, &ml, &c1, &c2, &c3) != 7 || c == 0) continue;
+            lastT = t;
             if (c != cyc) { report(); cyc = c; det.reset(); prev = 0; done = false; logStop = -1; hit = -1; res = LVL_NONE; }
             bool flow = (ph == 'p' || ph == 'w');
             if (flow && !(prev == 'p' || prev == 'w')) det.flowBreak();

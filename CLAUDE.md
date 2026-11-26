@@ -289,6 +289,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   skok 25 %, start `L3/L1 ≥ 0,60`. Přehrání testů 10–12: hrubé pF při zisku
   ×0,7 nezastaví 0/20, L při ×0,5/×1/×2 stejný vzorek, odhad 8,9 ± 0,26 mm
   (`tools/level_stop/ANALYZA_LMODE.md`). **Ověřit na zařízení s měřením výšek.**
+- **Zápis vzorků (26. 11.):** `SAMPLE_LOG 1` – při každém tlačení řádek
+  `cyklus;t_ms;faze;vzduch_ml;C1;0;C3` každých 50 ms (formát sketche,
+  fáze `k` klid, `r` předtlak, `p`/`w` pacient otevřen = vzorky detektoru,
+  `e` ostatní); řádek `# suche hodnoty:` po kalibraci. Přehrání:
+  `replay.cpp` (i `-g<zisk>`) a `analyza/lmode/det.py`, které čtou i produkční
+  log (zastavení = `KRITICKA HLADINA`, výška = `# obsluha:`). **Sériová
+  linka 115200 Bd** (dřív 9600) – Serial Monitor nastavit stejně.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
@@ -862,7 +869,7 @@ má mírně jinou mechanickou nulu serva.
 // a předtlak PRECOMP_* – viz skutečný config.h
 
 // === BAUD RATE ===
-#define BAUD_RATE             9600
+#define BAUD_RATE           115200   // kvůli zápisu vzorků
 ```
 
 ---

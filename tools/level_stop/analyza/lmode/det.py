@@ -1,7 +1,7 @@
 import re, sys
 BIN=12; WIN=8
 def load(fn):
-    dry=None; cyc={}; heights={}; stops={}; cur=None
+    dry=None; cyc={}; heights={}; stops={}; cur=None; last=None
     for L in open(fn, errors='ignore'):
         m=re.search(r'suche hodnoty: C1=([\d.]+) C3=([\d.]+)',L)
         if m: dry=(float(m[1]),float(m[2]))
@@ -9,12 +9,17 @@ def load(fn):
         if m: cur=int(m[1])
         m=re.search(r'# STOP \S+.*?@ t=(\d+)',L)
         if m and cur: stops[cur]=int(m[1])
+        # produkcni firmware: cyklus = posledni vzorek, zastaveni = 'KRITICKA HLADINA'
+        if ('KRITICKA HLADINA' in L or 'SKOK C1' in L) and last and last[0] not in stops:
+            stops[last[0]]=last[1]; cur=last[0]
         m=re.search(r'obsluha: ([\d]+[.,]?\d*)\s*$',L)
         if m and cur and cur not in heights:
             try: heights[cur]=float(m[1].replace(',','.'))
             except: pass
         m=re.search(r'-> (\d+);(\d+);(\w);([-\d.]+);([-\d.]+);([-\d.]+);([-\d.]+)',L)
-        if m: cyc.setdefault(int(m[1]),[]).append((int(m[2]),m[3],float(m[5]),float(m[7])))
+        if m:
+            cyc.setdefault(int(m[1]),[]).append((int(m[2]),m[3],float(m[5]),float(m[7])))
+            last=(int(m[1]),int(m[2]))
     return dry,cyc,heights,stops
 
 class Det:

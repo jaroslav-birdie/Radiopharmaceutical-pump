@@ -91,6 +91,8 @@
 #define PRECOMP_SPEED_FACTOR   4        // předtlak do uzavřené lahvičky (pacient izolován, detekce stojí)
 #define SAL_SPEED_FACTOR       3        // dávka roztoku do lahvičky (odvzdušněna přes filtr)
                                         // Tlačení k pacientovi zůstává vždy 1 ml / 5 s (detekce).
+#define SAMPLE_LOG             1        // 1 = zápis vzorků při tlačení: cyklus;t_ms;faze;vzduch_ml;C1;0;C3
+                                        // (formát sketche level_stop, přehrání replay.cpp / lmode)
 #define LEVEL_MEASURE_PAUSE    1        // 1 = po každém zastavení čekat na Enter (měření výšky hladiny)
 
 // === OBJEMY (ml) ===
@@ -172,4 +174,4 @@
                                      // zkus 0 nebo 4)
 
 // === SÉRIOVÁ LINKA ===
-#define BAUD_RATE             9600
+#define BAUD_RATE           115200     // 115200 kvůli zápisu vzorků (20 řádků/s); Serial Monitor nastavit stejně

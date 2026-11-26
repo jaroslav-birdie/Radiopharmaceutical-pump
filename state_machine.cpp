@@ -178,6 +178,7 @@ void PumpController::update() {
     }
     handleGlobalKeys();
     serviceLevel();
+    logSample();
     if (cap_.frozen() && state_ >= ST_CALIBRATING && state_ <= ST_PAUSED
             && state_ != ST_COMPLETE) {
         sensorFault();
@@ -430,6 +431,30 @@ void PumpController::finishAirMove(bool push) {
 }
 
 // Detektor dostává vzorky jen s otevřeným pacientem - i v pauze, protože
+// Zápis vzorku ve formátu sketche level_stop (cyklus;t_ms;faze;vzduch;C1;C2;C3),
+// aby se běh dal přehrát (replay.cpp, lmode). Fáze: 'w' tlačení a 'p' pacient
+// otevřen bez motoru (detektor dostává vzorky), 'k' klid před tlačením,
+// 'r' předtlak, 'e' ostatní (ventily, doplnění). C2 = 0 (svislá odebrána).
+void PumpController::logSample() {
+    if (!SAMPLE_LOG || !sampleFresh_ || logCycle_ == 0) {
+        return;
+    }
+    bool push = state_ == ST_P1_PUSH_AIR || state_ == ST_ITER_PUSH_AIR
+             || (state_ == ST_PAUSED && (savedState_ == ST_P1_PUSH_AIR || savedState_ == ST_ITER_PUSH_AIR));
+    if (!push) {
+        return;
+    }
+    char ph = lvlFeed_ ? (pushActive_ ? 'w' : 'p')
+            : (phase_ == PP_REST ? 'k' : (phase_ == PP_PRECOMP ? 'r' : 'e'));
+    float air = airMl_ - (pushActive_ ? airSyr_.movedMl() : 0.0f);
+    Serial.print(logCycle_); Serial.print(';');
+    Serial.print(millis() - logT0_); Serial.print(';');
+    Serial.print(ph); Serial.print(';');
+    Serial.print(air, 2); Serial.print(F(";"));
+    Serial.print(cap_.lowerPf(), 4); Serial.print(F(";0;"));
+    Serial.println(cap_.upperPf(), 4);
+}
+
 // hladina se může hýbat i se stojícím motorem (zbytkový přetlak).
 void PumpController::serviceLevel() {
     if (!lvlFeed_ || !sampleFresh_) {
@@ -606,7 +631,7 @@ void PumpController::handleCalibrating() {
     } else if (phase_ == 1) {
         if (!cap_.calibrating()) {
             logEvent(LOG_CALIB_DONE);
-            sayVal(F("# Suche hodnoty: C1="), cap_.dryLower(), 3);
+            sayVal(F("# suche hodnoty: C1="), cap_.dryLower(), 3);
             sayVal(F(" C3="), cap_.dryUpper(), 3);
             Serial.println(F(" pF"));
             phase_ = 2;
@@ -647,6 +672,8 @@ void PumpController::handlePushAir(bool phase1) {
             } else {
                 restSumC1_ = restSumC3_ = 0.0f;
                 restN_ = 0;
+                logCycle_++;             // nové tlačení = nový cyklus v zápisu vzorků
+                logT0_ = millis();
                 sayPrefix();
                 Serial.println(F("Klid (vzduch S-V): kontrola lahvicky"));
                 phase_ = PP_REST;

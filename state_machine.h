@@ -76,7 +76,8 @@ private:
     bool confirmed(const __FlashStringHelper *prompt);   // výzva + čekání na Enter
     void sayPrefix();                    // "# [Faze 1] " / "# [Iterace i/N] "
     void announceState(State prev);      // název stavu, v krokovacím režimu výzva
-    void printStatus();                  // příkaz '?'
+    void printStatus();
+    void logSample();                    // zápis vzorku pro přehrání (SAMPLE_LOG)                  // příkaz '?'
     void refreshDisplay();
     bool inputPressed(Key k);            // klávesnice NEBO Serial
 
@@ -116,6 +117,8 @@ private:
 
     uint8_t  iter_ = 0;                  // 0 = Fáze 1, 1-9 = iterace
     uint8_t  refills_ = 0;               // doplnění vzduchu v aktuálním kroku
+    uint8_t  logCycle_ = 0;               // číslo tlačení v zápisu vzorků
+    uint32_t logT0_ = 0;
     bool     pushResume_ = false;        // tlačení pokračuje po doplnění vzduchu (bez kontrol a předtlaku)
     bool     pushActive_ = false;        // vzduchová stříkačka tlačí (bilance po dojezdu)
     bool     lvlFeed_ = false;           // pacient otevřen - vzorky jdou do detektoru
