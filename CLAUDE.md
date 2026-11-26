@@ -296,6 +296,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   `replay.cpp` (i `-g<zisk>`) a `analyza/lmode/det.py`, které čtou i produkční
   log (zastavení = `KRITICKA HLADINA`, výška = `# obsluha:`). **Sériová
   linka 115200 Bd** (dřív 9600) – Serial Monitor nastavit stejně.
+- **Plně kruhové prstence zastavují níž (26. 11., 13:47):** produkční běh
+  s prahy z testů 9–12 zastavil hladinu ve **4,5 mm** (cíl ~8,7 mm); stará
+  verze (hrubé pF, šablona 0,78) by zastavila stejně. Prahy jsou z jiné
+  geometrie → **test 13** (`tools/level_stop/TEST13.md`): statický žebříček
+  objemů 2–10 ml (`S`) a dynamická série se šablonou `L3 ≤ f × max`,
+  f = 0,90/0,85/0,80/0,75/0,70, s měřením výšky; čistý roztok i inkoust.
+  Do vyhodnocení **produkci s pacientskou cestou nespouštět**.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
