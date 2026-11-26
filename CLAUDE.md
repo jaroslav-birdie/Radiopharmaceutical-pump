@@ -273,6 +273,9 @@ dosedací plochy dna (= vnější dno lahvičky):
   i kontrola C2 zrušeny; přehrání testů 9–12 beze změny. Prahy detekce
   (0,68 / 0,78 / 0,85, start 0,70, lahvička +0,25 pF) jsou z původních
   prstenců – **ověřit výšku hladiny** po zastavení s novými prstenci.
+  První běh 26. 11. zkreslil **cínový můstek mezi prstenci**; po opravě
+  dotykový test: **spodní prstenec = CIN3, horní = CIN1** → `CH_LOWER_CIN 3`,
+  `CH_UPPER_CIN 1` (C1/C3 ve výpisech dál znamenají spodní/horní).
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
@@ -840,8 +843,8 @@ má mírně jinou mechanickou nulu serva.
 
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
-#define CH_LOWER_CIN           1   // spodní prstenec (mapa kanálů – dotykový test)
-#define CH_UPPER_CIN           3   // horní prstenec
+#define CH_LOWER_CIN           3   // spodní prstenec (mapa kanálů – dotykový test 26. 11.)
+#define CH_UPPER_CIN           1   // horní prstenec
 // Detekce hladiny: LVL_* (podíl 0,68, šablona 0,78, aktivace 0,85, ...)
 // a předtlak PRECOMP_* – viz skutečný config.h
 

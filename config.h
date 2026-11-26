@@ -124,9 +124,10 @@
 // Mapa kanálů: který vstup FDC1004 (1-3) čte kterou elektrodu. Ověřuje se
 // DOTYKOVÝM TESTEM (prst na elektrodě = kanál ~16 pF), ne popisky.
 // Testy 6-12 (studna 3/3/3 mm): spodní CIN1, horní CIN3. Od 26. 11. plně
-// kruhové prstence, svislá elektroda (CIN2) odebrána.
-#define CH_LOWER_CIN             1      // spodní prstenec (C1)
-#define CH_UPPER_CIN             3      // horní prstenec (C3)
+// kruhové prstence, svislá elektroda (CIN2) odebrána. Dotykový test 26. 11.
+// (po odstranění cínového můstku): spodní prstenec CIN3, horní CIN1.
+#define CH_LOWER_CIN             3      // spodní prstenec (C1)
+#define CH_UPPER_CIN             1      // horní prstenec (C3)
 
 // === DETEKCE HLADINY (tools/level_stop, testy 9-12: 8,65 +- 0,23 mm) ===
 // Jen porovnání hodnot signálu – žádný čas, rychlost ani objem vzduchu.
