@@ -435,7 +435,11 @@ void PumpController::serviceLevel() {
     if (!lvlFeed_ || !sampleFresh_) {
         return;
     }
-    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf());
+    // Detektor dostává PŘÍSPĚVEK KAPALINY (hodnota - suchá z kalibrace):
+    // podíly pak nezávisí na zisku (náplň, inkoust, stínění), suchý základ
+    // kabelu je nevychyluje.
+    LevelResult r = lvl_.feed(cap_.lowerPf() - cap_.dryLower(),
+                              cap_.upperPf() - cap_.dryUpper());
     uint8_t fit = lvl_.fitFlags();
     if (fit & ~fitLogged_) {
         fitLogged_ |= fit;
@@ -474,11 +478,11 @@ void PumpController::onLevelResult(LevelResult r) {
         default:                Serial.print(F("*** SKOK C1 - porucha")); break;
     }
     Serial.println(F(" - pacient UZAVREN"));
-    sayVal(F("#   C1="), lvl_.winC1(), 3);
-    sayVal(F(" C3="), lvl_.winC3(), 3);
-    sayVal(F(" pF  C3/C1="), lvl_.winC3() / lvl_.winC1(), 3);
+    sayVal(F("#   kapalina L1="), lvl_.winC1(), 3);
+    sayVal(F(" L3="), lvl_.winC3(), 3);
+    sayVal(F(" pF  L3/L1="), lvl_.winC3() / lvl_.winC1(), 3);
     if (lvl_.maxC3() > 0.0f) {           // maximum existuje až s plným oknem
-        sayVal(F("  C3/max="), lvl_.winC3() / lvl_.maxC3(), 3);
+        sayVal(F("  L3/max="), lvl_.winC3() / lvl_.maxC3(), 3);
     }
     sayVal(F("  vzduch ve strikacce "), airMl_, 1);
     Serial.println(F(" ml"));
@@ -530,19 +534,20 @@ void PumpController::restStartCheck() {
     sayPrefix();
     sayVal(F("Klid: C1="), c1, 3);
     sayVal(F(" C3="), c3, 3);
-    sayVal(F(" pF (nad suchou +"), c1 - cap_.dryLower(), 2);
-    sayVal(F(" / +"), c3 - cap_.dryUpper(), 2);
-    Serial.print(F("), C3/C1=")); Serial.println(c3 / c1, 3);
-    bool vial = c1 >= cap_.dryLower() + LVL_VIAL_MIN_PF
-             && c3 >= cap_.dryUpper() + LVL_VIAL_MIN_PF;
+    float l1 = c1 - cap_.dryLower();     // příspěvek kapaliny
+    float l3 = c3 - cap_.dryUpper();
+    sayVal(F(" pF, kapalina L1="), l1, 2);
+    sayVal(F(" L3="), l3, 2);
+    Serial.print(F(", L3/L1=")); Serial.println(l3 / l1, 3);
+    bool vial = l1 >= LVL_VIAL_MIN_PF && l3 >= LVL_VIAL_MIN_PF;
     if (!vial) {
         logEvent(LOG_VIAL_MISSING);
         phase_ = PP_VIAL_WAIT;           // obsluha vloží lahvičku, pak znovu klid
         return;
     }
-    if (c3 < LVL_START_Q_MIN * c1) {
+    if (l3 < LVL_START_Q_MIN * l1) {
         sayPrefix();
-        Serial.print(F("Hladina POD hornim prstencem (C3/C1 < "));
+        Serial.print(F("Hladina POD hornim prstencem (L3/L1 < "));
         Serial.print(LVL_START_Q_MIN, 2);
         Serial.println(F(") - STOP"));
         safeValves();

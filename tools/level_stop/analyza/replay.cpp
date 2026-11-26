@@ -2,15 +2,20 @@
 // Preklad (z korene repozitare):
 //   g++ -std=c++11 -Itools/level_stop/analyza/host_stub -I.
 //       tools/level_stop/analyza/replay.cpp level_detector.cpp -o replay
-// Pouziti: ./replay <log1> [log2 ...] - pro kazdy cyklus porovna STOP v logu
-// s okamzikem, kdy zastavi produkcni detektor.
+// Pouziti: ./replay [-g<zisk>] <log1> [log2 ...] - pro kazdy cyklus porovna STOP
+// v logu s okamzikem, kdy zastavi produkcni detektor. Detektor dostava
+// prispevek kapaliny (C - sucha hodnota z radku '# suche hodnoty:'),
+// -g0.5 zeslabi prispevek kapaliny (test nezavislosti na zisku).
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include "level_detector.h"
 static const char *NAMES[] = {"-", "podil", "sablona", "vrchol", "SKOK"};
 int main(int argc, char **argv) {
+    float gain = 1.0f;
     for (int a = 1; a < argc; a++) {
+        if (!strncmp(argv[a], "-g", 2)) { gain = (float)atof(argv[a] + 2); continue; }
+        float dry1 = 0.0f, dry3 = 0.0f;
         FILE *f = fopen(argv[a], "r");
         if (!f) { perror(argv[a]); return 1; }
         char line[512];
@@ -19,12 +24,14 @@ int main(int argc, char **argv) {
         long hit = -1; LevelResult res = LVL_NONE; unsigned fit = 0; float q = 0, c3n = 0;
         auto report = [&]() {
             if (cyc > 0)
-                printf("%s c%d: log STOP t=%ld | replay %s t=%ld  (rozdil %ld ms) C3/max=%.3f fit=%u qmax=%.3f\n",
+                printf("%s c%d: log STOP t=%ld | replay %s t=%ld  (rozdil %ld ms) L3/max=%.3f fit=%u qmax=%.3f\n",
                        argv[a], cyc, logStop, NAMES[res], hit, hit - logStop, c3n, fit, q);
         };
         while (fgets(line, sizeof line, f)) {
             char *p = strstr(line, "-> ");
             p = p ? p + 3 : line;
+            char *sh = strstr(p, "suche hodnoty: C1=");
+            if (sh) { sscanf(sh, "suche hodnoty: C1=%f C3=%f", &dry1, &dry3); continue; }
             if (!strncmp(p, "# STOP", 6) || !strncmp(p, "# *** SKOK", 10)) {
                 char *t = strstr(p, "@ t=");
                 if (t && logStop < 0) logStop = atol(t + 4);
@@ -37,7 +44,7 @@ int main(int argc, char **argv) {
             if (flow && !(prev == 'p' || prev == 'w')) det.flowBreak();
             prev = ph;
             if (!flow || done) continue;
-            LevelResult r = det.feed(c1, c3);
+            LevelResult r = det.feed((c1 - dry1) * gain, (c3 - dry3) * gain);
             if (r != LVL_NONE) { done = true; res = r; hit = t; fit = det.fitFlags(); q = det.qAtMax(); c3n = det.winC3() / det.maxC3(); }
         }
         report();

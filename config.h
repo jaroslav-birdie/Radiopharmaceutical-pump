@@ -133,24 +133,29 @@
 
 // === DETEKCE HLADINY (tools/level_stop, testy 9-12: 8,65 +- 0,23 mm) ===
 // Jen porovnání hodnot signálu – žádný čas, rychlost ani objem vzduchu.
+// Od 26. 11. vše nad PŘÍSPĚVKEM KAPALINY L = C - suchá hodnota (kalibrace):
+// podíly nezávisí na zisku (náplň, inkoust). Prahy z přehrání testů 10-12
+// (20 cyklů, tools/level_stop/analyza/lmode): odhad 8,9 +- 0,26 mm, stejné
+// zastavení při zisku x0,5 / x1 / x2. Hrubé pF při zisku x0,7 nezastavily.
 // Vzorky jen s otevřeným pacientem; filtr: koš LVL_BIN_SAMPLES vzorků,
 // klouzavé okno LVL_WIN_BINS košů. Naladěno na rychlost FLOW_S_PER_ML = 5.
 #define LVL_BIN_SAMPLES         12      // koš = 12 vzorků (0,6 s při 20 vz./s)
 #define LVL_WIN_BINS             8      // okno = 8 košů
-#define LVL_STOP_Q_MAX       0.68f      // stop: C3/C1 <= 0,68 (od začátku tlačení)
+#define LVL_STOP_Q_MAX       0.52f      // stop: L3/L1 <= 0,52 (od začátku tlačení; při zastavení 0,46-0,52)
 #define LVL_ARM_FRAC         0.85f      // aktivace: C3 <= 0,85 x vlastní maximum
-#define LVL_STOP_C3_FRAC     0.78f      // stop (šablona): C3 <= 0,78 x vlastní maximum
+#define LVL_STOP_C3_FRAC     0.65f      // stop (šablona): L3 <= 0,65 x vlastní maximum
 #define LVL_PEAK_DROP        0.10f      // záloha: C1 - C3 pokles o 10 % výšky hrbu
-#define LVL_STEP_DROP        0.15f      // poslední záchrana: koš C1 o 15 % pod větším ze 2 předchozích
-#define LVL_MAX_Q_MIN        0.80f      // C3/C1 v okamžiku maxima C3 (jen zápis do logu)
+#define LVL_STEP_DROP        0.25f      // poslední záchrana: koš L1 o 25 % pod větším ze 2 předchozích
+                                        // (15 % na L dalo 1 falešný skok v testu 11)
+#define LVL_MAX_Q_MIN        0.60f      // L3/L1 v okamžiku maxima L3 (jen zápis; data 0,68-0,95)
 #define LVL_FIT_C1_MIN       0.95f      // shoda: C1 >= 0,95 x max C1 ...
 #define LVL_FIT_C3_ZONE      0.65f      // ... dokud C3 > 0,65 x max C3
 #define LVL_FIT_CHECK_C3     0.80f      // shoda: při C3 = 0,80 x max C3 ...
 #define LVL_FIT_RISE_MIN     0.15f      // ... musí (C1 - C3) - d0 >= 0,15 x max C3
 
 // Kontrola před každým tlačením (lahvička uzavřená, pacient izolován)
-#define LVL_START_Q_MIN      0.70f      // C3/C1 >= 0,70 (v mezeře 0,5-0,6)
-#define LVL_VIAL_MIN_PF      0.25f      // C1 i C3 >= suchá hodnota + 0,25 pF (prázdná lahvička +0,05)
+#define LVL_START_Q_MIN      0.60f      // L3/L1 >= 0,60 na startu (data 0,70-1,07, v mezeře ~0,5)
+#define LVL_VIAL_MIN_PF      0.25f      // L1 i L3 >= 0,25 pF (prázdná lahvička +0,05)
 #define LVL_REST_MS          2000UL     // klid pro kontrolu před tlačením (rezervy prahů >> šum průměru)
 #define LVL_RESUME_SETTLE_MS 1500UL     // po znovuotevření pacienta (doplnění) bez vzorků - jako
                                         // ve sketchi testů 9-12 (přechodový jev ventilu)

@@ -282,6 +282,13 @@ dosedací plochy dna (= vnější dno lahvičky):
   pokračuje. Mimo tlačení k pacientovi rychleji: nasátí vzduchu 4×, předtlak
   4×, dávka roztoku 3× proti 1 ml / 5 s; tlačení k pacientovi beze změny
   (detekce). Odhad ~13,5 min bez čekání na obsluhu (dřív ~20,5 min).
+- **Detekce nad příspěvkem kapaliny (26. 11.):** běh s inkoustem (signál
+  kapaliny ~poloviční) nezastavil – hrubé pF obsahují suchý základ, podíly
+  se posouvají k poměru suchých hodnot. Detektor i kontrola startu teď
+  pracují s `L = C − suchá`: stop `L3/L1 ≤ 0,52`, šablona `L3 ≤ 0,65 × max`,
+  skok 25 %, start `L3/L1 ≥ 0,60`. Přehrání testů 10–12: hrubé pF při zisku
+  ×0,7 nezastaví 0/20, L při ×0,5/×1/×2 stejný vzorek, odhad 8,9 ± 0,26 mm
+  (`tools/level_stop/ANALYZA_LMODE.md`). **Ověřit na zařízení s měřením výšek.**
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
