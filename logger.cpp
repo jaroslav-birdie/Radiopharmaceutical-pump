@@ -17,7 +17,6 @@ static const char MSG_ITER[]          PROGMEM = "Nova iterace";
 static const char MSG_CRITICAL[]      PROGMEM = "Kriticka hladina";
 static const char MSG_PAUSED[]        PROGMEM = "PAUSE - kontrola";
 static const char MSG_RESUMED[]       PROGMEM = "Pokracovani";
-static const char MSG_NO_FLOW[]       PROGMEM = "Hladina neklesa!";
 static const char MSG_EXCESS_AIR[]    PROGMEM = "ALARM: unik vzduchu";
 static const char MSG_EMERGENCY[]     PROGMEM = "NOUZOVY STOP";
 static const char MSG_COMPLETE[]      PROGMEM = "HOTOVO";
@@ -34,7 +33,7 @@ static const char *const MSG_TABLE[LOG_MSG_COUNT] PROGMEM = {
     MSG_CALIBRATING, MSG_CALIB_DONE, MSG_VALVE_PAT, MSG_VALVE_AIR,
     MSG_AIR_PUSH, MSG_AIR_FILL, MSG_EQUALIZE, MSG_SALINE,
     MSG_ITER, MSG_CRITICAL, MSG_PAUSED, MSG_RESUMED,
-    MSG_NO_FLOW, MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR,
+    MSG_EXCESS_AIR, MSG_EMERGENCY, MSG_COMPLETE, MSG_ERROR,
     MSG_PRECOMP, MSG_VIAL_MISSING, MSG_LEVEL_LOW, MSG_LEVEL_FAULT,
     MSG_SENSOR_FAULT, MSG_FIT_WARN
 };

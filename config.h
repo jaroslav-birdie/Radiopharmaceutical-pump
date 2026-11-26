@@ -102,10 +102,6 @@
 
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          3      // max. doplnění vzduchu (Fáze 1 i každá iterace zvlášť); testy 9-12 max. 2
-#define NO_FLOW_WATCH            0      // hlídání stagnace svislou elektrodou: 0 = vypnuto
-                                        // (falešné pauzy 1-15x za tlačení, test 12 / zařízení 25. 11.)
-#define NO_FLOW_TIMEOUT_MS    3000UL    // bez poklesu hladiny déle -> ST_PAUSED (doladit!)
-#define CAP_FLOW_EPS_PERMILLE    3      // promile poklesu kapacity = "hladina klesá"
 
 // === ČASOVÁNÍ PROCESU ===
 #define EQUALIZE_TIME_MS      1000UL    // vyrovnání tlaku přes filtr (po roztoku / po nasátí; ověřit)
@@ -127,9 +123,9 @@
 
 // Mapa kanálů: který vstup FDC1004 (1-3) čte kterou elektrodu. Ověřuje se
 // DOTYKOVÝM TESTEM (prst na elektrodě = kanál ~16 pF), ne popisky.
-// Testy 6-12 (studna 3/3/3 mm): spodní CIN1, svislá CIN2, horní CIN3.
+// Testy 6-12 (studna 3/3/3 mm): spodní CIN1, horní CIN3. Od 26. 11. plně
+// kruhové prstence, svislá elektroda (CIN2) odebrána.
 #define CH_LOWER_CIN             1      // spodní prstenec (C1)
-#define CH_VERT_CIN              2      // svislá elektroda (C2, jen hlídání průtoku)
 #define CH_UPPER_CIN             3      // horní prstenec (C3)
 
 // === DETEKCE HLADINY (tools/level_stop, testy 9-12: 8,65 +- 0,23 mm) ===
@@ -147,7 +143,6 @@
 #define LVL_FIT_C1_MIN       0.95f      // shoda: C1 >= 0,95 x max C1 ...
 #define LVL_FIT_C3_ZONE      0.65f      // ... dokud C3 > 0,65 x max C3
 #define LVL_FIT_CHECK_C3     0.80f      // shoda: při C3 = 0,80 x max C3 ...
-#define LVL_C2_DROP_MIN      0.01f      // nezávislá kontrola: při zastavení C2 <= (1 - 0,01) x max C2 (jen zápis)
 #define LVL_FIT_RISE_MIN     0.15f      // ... musí (C1 - C3) - d0 >= 0,15 x max C3
 
 // Kontrola před každým tlačením (lahvička uzavřená, pacient izolován)

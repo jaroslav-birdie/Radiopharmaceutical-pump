@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
             if (flow && !(prev == 'p' || prev == 'w')) det.flowBreak();
             prev = ph;
             if (!flow || done) continue;
-            LevelResult r = det.feed(c1, c3, c2);
+            LevelResult r = det.feed(c1, c3);
             if (r != LVL_NONE) { done = true; res = r; hit = t; fit = det.fitFlags(); q = det.qAtMax(); c3n = det.winC3() / det.maxC3(); }
         }
         report();

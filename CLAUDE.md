@@ -268,6 +268,11 @@ dosedací plochy dna (= vnější dno lahvičky):
   (dřív 3 + 5 s), vyrovnání přes filtr 1 s (dřív 3 s), kalibrace 3 s.
   Ponecháno 1,5 s bez vzorků po znovuotevření pacienta při doplnění vzduchu
   (stejně jako ve sketchi testů 9–12). Ověřit na zařízení.
+- **Svislá elektroda odebrána, prstence plně kruhové (26. 11.):** firmware
+  měří jen 2 kanály (MEAS1 = CIN1, MEAS2 = CIN3), hlídání stagnace
+  i kontrola C2 zrušeny; přehrání testů 9–12 beze změny. Prahy detekce
+  (0,68 / 0,78 / 0,85, start 0,70, lahvička +0,25 pF) jsou z původních
+  prstenců – **ověřit výšku hladiny** po zastavení s novými prstenci.
 - **Papírová samolepka na ~60 % obvodu, natočení lahvičky náhodné.**
   Prstence (téměř celý obvod) vidí vždy podobný podíl samolepky a v C3/C1
   se vliv vykrátí – v testu 6 (náhodné vkládání) plató C3/C1 0,54–0,57,
@@ -300,9 +305,9 @@ adresa `0x50`) paralelně s OLED.
 
 | Vývod | Připojeno | Účel |
 |-------|-----------|------|
-| **CIN1** | **spodní** kruhová elektroda (výška 2 mm), obepínající téměř celý obvod lahvičky | hlídání **spodní kritické hladiny** |
-| **CIN2** | svislá elektroda, končí **4 mm pod** spodní kruhovou elektrodou | kontrola **pohybu hladiny** – při plnění i vytlačování se signál musí měnit (detekce stagnace) |
-| **CIN3** | **horní** kruhová elektroda (výška 2 mm), stejného typu jako CIN1, **4 mm nad** ní | hlídání **horní kritické hladiny** |
+| **CIN1** | **spodní** prstenec, od 26. 11. **plně kruhový** | hlídání **spodní kritické hladiny** |
+| **CIN2** | nepoužito – svislá elektroda **odebrána 26. 11.** (signál 0,1–0,4 pF za tlačení, pohyb hladiny neukazovala) | – |
+| **CIN3** | **horní** prstenec, stejného typu jako CIN1, od 26. 11. **plně kruhový** | hlídání **horní kritické hladiny** |
 | **SHLD1** | opletení **všech** koaxiálních kabelů | aktivní stínění kabeláže |
 | **SHLD2** | plošné elektrody naproti sobě, **nad oběma** kruhovými elektrodami | **aktivní shield** snímacího prostoru |
 | CIN4 | nepoužito | volné |
@@ -321,8 +326,6 @@ SHLD2   plošné elektrody (aktivní shield)
 CIN3    horní prstenec      2 mm
         mezera              4 mm
 CIN1    spodní prstenec     2 mm
-        mezera              4 mm
-CIN2    konec svislé elektrody
 ```
 
 > **Proč dva prstence:** samotný CIN1 nedává při průchodu hladiny zlom, ale
@@ -509,8 +512,8 @@ enum State {
 };
 ```
 
-> `ST_PAUSED` se používá jak pro ruční stisk **PAUSE**, tak pro automatickou
-> reakci na chybějící pokles hladiny během `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR`.
+> `ST_PAUSED` se používá pro ruční stisk **PAUSE** (automatické pozastavení
+> při stagnaci hladiny bylo zrušeno spolu se svislou elektrodou).
 > Po zmáčknutí **PLAY** se automat vrací do stavu, ze kterého byl pozastaven,
 > a pokračuje bez zásahu obsluhy.
 
@@ -593,7 +596,7 @@ je neznámý tlakový stav samotné **stříkačky** po ručním osazení pístu
 - ✅ Při `ST_EMERGENCY_STOP`: okamžitě `PATIENT_VALVE_ISOLATE`, `AIR_VALVE_VIAL_TO_FILTER`, zastavit oba krokové motory
 - ✅ Při `ST_PAUSED`: zastavit oba krokové motory, ventily ponechat v aktuální poloze (na rozdíl od STOP se nemusí uzavírat, protože PAUSE má pokračovat automaticky ve stejném kroku)
 - ✅ Pokud FDC1004 hlásí kritickou hladinu při stlačování vzduchu → okamžitě stop motor, `PATIENT_VALVE_ISOLATE`
-- ✅ Pokud hladina neklesá při `ST_P1_PUSH_AIR` / `ST_ITER_PUSH_AIR` déle než `NO_FLOW_TIMEOUT_MS` → přejít do `ST_PAUSED`, výzva obsluze; po obnovení poklesu (nebo stisku PLAY) pokračovat automaticky
+- ⚠️ Hlídání stagnace hladiny (ucpaná jehla) **zatím není** – svislá elektroda odebrána, kapacitou z prstenců nejde (nad elektrodami signál stojí, v pásmu prstenců šum předstírá pohyb). Spolehlivé řešení = tlakový senzor na I2C (zatím není). Do té doby obsluha hlídá tok vizuálně, limit `MAX_AIR_REFILLS` = 3
 - ✅ Počet cyklů doplnění vzduchu (`ST_P1_EQUALIZE`/`ST_ITER_EQUALIZE` → `ST_P1_FILL_AIR`/`ST_ITER_FILL_AIR`) se počítá **jak ve Fázi 1, tak v každé jednotlivé iteraci zvlášť**; po překročení `MAX_AIR_REFILLS` bez dosažení kritické hladiny → `ST_ALARM_EXCESS_AIR` (chování jako `ST_EMERGENCY_STOP`, indikuje možnou netěsnost systému)
 - ✅ **O ukončení tlačení rozhoduje výhradně detekce změn kapacity** (FDC1004), nikdy objem vytlačeného vzduchu. Vzduch je jen hnací médium; vazba mezi vytlačeným vzduchem a hladinou v lahvičce není stálá (stlačitelnost, tlak v celém systému, měnící se tlak u pacienta). Objem se proto **neučí ani neopakuje** z předchozí iterace – ani po úspěšné detekci v ředicím cyklu se nesmí jen „aplikovat stejné množství vzduchu"
 - ✅ Objem vzduchu ve stříkačce se sleduje (čítáním kroků) **jen kvůli správnému plnění stříkačky**: poznat, že dochází a je třeba doplnit, a při nasátí **nikdy nepřekročit kapacitu** (`VOL_AIR_SYRINGE_MAX_ML` = 10 ml, výchozí stav plná) – nasátí doplní stříkačku nejvýš na plný objem
@@ -831,9 +834,6 @@ má mírně jinou mechanickou nulu serva.
 // === BEZPEČNOSTNÍ LIMITY ===
 #define MAX_AIR_REFILLS          3    // max. počet doplnění vzduchu (Fáze 1 i každá
                                        // iterace zvlášť) před vyhlášením ST_ALARM_EXCESS_AIR
-#define NO_FLOW_WATCH             0    // hlídání stagnace svislou elektrodou VYPNUTO
-#define NO_FLOW_TIMEOUT_MS     3000    // bez poklesu kapacity déle než toto -> ST_PAUSED
-                                       // (orientační, doladit na reálném prototypu)
 
 // === KALIBRACE ===
 #define CALIBRATION_DURATION_MS 10000  // celková doba kalibrace kapacitního senzoru
@@ -841,7 +841,6 @@ má mírně jinou mechanickou nulu serva.
 // === KAPACITNÍ SENZOR ===
 #define FDC1004_ADDR          0x50
 #define CH_LOWER_CIN           1   // spodní prstenec (mapa kanálů – dotykový test)
-#define CH_VERT_CIN            2   // svislá elektroda
 #define CH_UPPER_CIN           3   // horní prstenec
 // Detekce hladiny: LVL_* (podíl 0,68, šablona 0,78, aktivace 0,85, ...)
 // a předtlak PRECOMP_* – viz skutečný config.h

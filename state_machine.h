@@ -61,12 +61,10 @@ private:
     void disableSteppers();              // fyzicky odpojit oba drivery (nENBL HIGH)
     bool valvesSettled() const;
     void handleGlobalKeys();
-    void pauseSystem(bool byNoFlow);
+    void pauseSystem();
     void resumeSystem();
     void startAirPush();                 // tlačení celého obsahu stříkačky
     void finishAirMove(bool push);       // aktualizace bilance objemu vzduchu
-    void armFlowWatch();
-    bool flowStalled();
     void serviceLevel();                 // detektor hladiny - vzorky s otevřeným pacientem
     void onLevelResult(LevelResult r);   // zastavení / porucha z detektoru
     void restStartCheck();               // klid před tlačením - lahvička a výchozí stav
@@ -115,8 +113,6 @@ private:
     uint32_t phaseT_ = 0;                // časovač pod-kroku
     State    savedState_ = ST_INIT;      // pro návrat z PAUSED
     uint8_t  savedPhase_ = 0;
-    bool     pausedByNoFlow_ = false;
-    int32_t  pauseRefVert_ = 0;
 
     uint8_t  iter_ = 0;                  // 0 = Fáze 1, 1-9 = iterace
     uint8_t  refills_ = 0;               // doplnění vzduchu v aktuálním kroku
@@ -137,8 +133,6 @@ private:
     float    salMl_ = VOL_SAL_TOTAL_ML;         // zbývající fyziologický roztok
 
     // --- hlídání průtoku ---
-    int32_t  flowRefRaw_ = 0;
-    uint32_t flowT_ = 0;
 
     // --- displej ---
     uint32_t lastDisplay_ = 0;

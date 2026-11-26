@@ -19,11 +19,7 @@
 //   skok     koš C1 o LVL_STEP_DROP pod větším ze 2 předchozích = porucha
 //            (jen po aktivaci - před ní ho spouští otevření ventilu)
 // Aktivace: C3 (okno) <= LVL_ARM_FRAC x vlastní maximum.
-//
-// Nezávislá kontrola svislou elektrodou C2 (jen zápis, nezastavuje):
-// při zastavení musí být okno C2 o LVL_C2_DROP_MIN pod vlastním maximem
-// z tohoto tlačení = hladina opravdu klesla. Bez času a rychlosti; testy
-// 9-12: pokles 1,6-17 %. Absolutní hodnota C2 se nepoužívá (samolepka).
+
 
 enum LevelResult : uint8_t {
     LVL_NONE = 0,
@@ -37,39 +33,35 @@ enum LevelResult : uint8_t {
 #define LVL_FIT_C1_EARLY     0x01   // C1 klesá dřív, než C3 dosáhlo LVL_FIT_C3_ZONE
 #define LVL_FIT_NO_RISE      0x02   // C1 - C3 nevzrostlo, ač C3 kleslo
 #define LVL_FIT_MAX_OFF      0x08   // maximum C3 nebylo z plató (C3/C1 v maximu nízko)
-#define LVL_FIT_C2_FLAT      0x10   // nezávislá kontrola: C2 při zastavení neklesla pod své maximum
 
 class LevelDetector {
 public:
     void reset();                        // nové tlačení (Fáze 1 / iterace)
     void flowBreak();                    // pacient zavřen - přerušení toku
-    LevelResult feed(float c1, float c3, float c2);   // vzorek s otevřeným pacientem
+    LevelResult feed(float c1, float c3);   // vzorek s otevřeným pacientem
 
-    uint8_t fitFlags() const { return fitMask_ & (LVL_FIT_C1_EARLY | LVL_FIT_NO_RISE | LVL_FIT_MAX_OFF | LVL_FIT_C2_FLAT); }
+    uint8_t fitFlags() const { return fitMask_ & (LVL_FIT_C1_EARLY | LVL_FIT_NO_RISE | LVL_FIT_MAX_OFF); }
     bool  armed() const { return armed_; }
     float winC1() const { return w1_; }       // okno při posledním vyhodnocení
     float winC3() const { return w3_; }
     float maxC3() const { return c3Max_; }
     float qAtMax() const { return qAtMax_; }
-    float winC2() const { return w2_; }       // svislá elektroda - jen kontrola
-    float maxC2() const { return c2Max_; }
 
 private:
-    LevelResult bin(float c1, float c3, float c2);
+    LevelResult bin(float c1, float c3);
     LevelResult window();
     void checkFit(float d);
 
-    float    accC1_ = 0.0f, accC3_ = 0.0f, accC2_ = 0.0f;
+    float    accC1_ = 0.0f, accC3_ = 0.0f;
     uint8_t  accN_ = 0;
     float    binC1_[LVL_WIN_BINS];
     float    binC3_[LVL_WIN_BINS];
-    float    binC2_[LVL_WIN_BINS];
     uint8_t  binHead_ = 0, binCount_ = 0;
     float    prevBinC1_ = -1.0f, prev2BinC1_ = -1.0f;
     bool     armed_ = false, haveD0_ = false;
     float    d0_ = 0.0f, dMax_ = -1e9f;
     float    c1Max_ = -1e9f, c3Max_ = -1e9f, qAtMax_ = 0.0f;
-    float    w1_ = 0.0f, w3_ = 0.0f, w2_ = 0.0f, c2Max_ = -1e9f;
+    float    w1_ = 0.0f, w3_ = 0.0f;
     uint8_t  fitMask_ = 0;               // bit 0x04 = kontrola nárůstu provedena
     bool     done_ = false;              // výsledek už vydán
 };

@@ -366,23 +366,17 @@ void PumpController::handleGlobalKeys() {
         if (state_ == ST_PAUSED) {
             resumeSystem();
         } else if (state_ >= ST_P1_PUSH_AIR && state_ <= ST_ITER_ADD_SALINE) {
-            pauseSystem(false);
+            pauseSystem();
         }
     }
 }
 
-void PumpController::pauseSystem(bool byNoFlow) {
+void PumpController::pauseSystem() {
     savedState_ = state_;
     savedPhase_ = phase_;
-    pausedByNoFlow_ = byNoFlow;
-    pauseRefVert_ = cap_.vertRaw();
     airSyr_.pause();
     salSyr_.pause();
     // Ventily zůstávají v aktuální poloze – PAUSE pokračuje ve stejném kroku
-    if (byNoFlow) {
-        Serial.println(F("# Hladina 3 s neklesa (svisla el.) - pauza, pokracuje sama"));
-        logEvent(LOG_NO_FLOW);
-    }
     logEvent(LOG_PAUSED);
     Serial.println(F(">>> PAUZA: p = pokracovat, x = STOP"));
     state_ = ST_PAUSED;
@@ -395,7 +389,6 @@ void PumpController::resumeSystem() {
     phaseT_ = millis();
     airSyr_.resume();
     salSyr_.resume();
-    armFlowWatch();
     logEvent(LOG_RESUMED);
     dispDirty_ = true;
 }
@@ -414,7 +407,6 @@ void PumpController::startAirPush() {
     refreshDisplay();                    // překreslit, dokud motor stojí
     airSyr_.startMove(pushable, true);
     pushActive_ = true;
-    armFlowWatch();
 }
 
 // Po skončení pohybu vzduchové stříkačky aktualizuje obsah stříkačky –
@@ -435,30 +427,13 @@ void PumpController::finishAirMove(bool push) {
     }
 }
 
-void PumpController::armFlowWatch() {
-    flowRefRaw_ = cap_.vertRaw();
-    flowT_ = millis();
-}
-
-// Hlídání poklesu hladiny: svislá elektroda musí klesat, jinak stagnace.
-bool PumpController::flowStalled() {
-    if (!cap_.calibrated()) {
-        return false;
-    }
-    if (cap_.vertRaw() < flowRefRaw_ - cap_.flowEpsRaw()) {
-        armFlowWatch();                  // hladina klesá – posun reference
-        return false;
-    }
-    return (millis() - flowT_) > NO_FLOW_TIMEOUT_MS;
-}
-
 // Detektor dostává vzorky jen s otevřeným pacientem - i v pauze, protože
 // hladina se může hýbat i se stojícím motorem (zbytkový přetlak).
 void PumpController::serviceLevel() {
     if (!lvlFeed_ || !sampleFresh_) {
         return;
     }
-    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf(), cap_.vertPf());
+    LevelResult r = lvl_.feed(cap_.lowerPf(), cap_.upperPf());
     uint8_t fit = lvl_.fitFlags();
     if (fit & ~fitLogged_) {
         fitLogged_ |= fit;
@@ -468,7 +443,6 @@ void PumpController::serviceLevel() {
         if (fit & LVL_FIT_C1_EARLY) Serial.print(F(" C1 klesa predcasne"));
         if (fit & LVL_FIT_NO_RISE)  Serial.print(F(" C1-C3 neroste"));
         if (fit & LVL_FIT_MAX_OFF)  Serial.print(F(" max mimo plato"));
-        if (fit & LVL_FIT_C2_FLAT)  Serial.print(F(" *** C2 neklesla"));
         Serial.println();
     }
     if (r != LVL_NONE) {
@@ -506,8 +480,6 @@ void PumpController::onLevelResult(LevelResult r) {
     }
     sayVal(F("  vzduch ve strikacce "), airMl_, 1);
     Serial.println(F(" ml"));
-    sayVal(F("#   kontrola C2: pokles pod maximum "), lvl_.maxC2() - lvl_.winC2(), 3);
-    Serial.println((lvl_.fitFlags() & LVL_FIT_C2_FLAT) ? F(" pF *** HLADINA NEKLESLA?") : F(" pF OK"));
     if (r == LVL_FAULT_STEP) {
         safeValves();
         logEvent(LOG_LEVEL_FAULT);
@@ -755,8 +727,6 @@ void PumpController::handlePushAir(bool phase1) {
                     pushResume_ = true;
                     phase_ = PP_REFILL_CLOSE;
                 }
-            } else if (NO_FLOW_WATCH && flowStalled()) {
-                pauseSystem(true);
             }
             break;
         case PP_REFILL_CLOSE:
@@ -939,13 +909,8 @@ void PumpController::handleAddSaline() {
     }
 }
 
-// Pozastaveno: PLAY řeší handleGlobalKeys; při zástavě průtoku se
-// pokračuje automaticky, jakmile hladina znovu začne klesat.
+// Pozastaveno: PLAY řeší handleGlobalKeys, tady se nic neděje.
 void PumpController::handlePaused() {
-    if (pausedByNoFlow_
-            && cap_.vertRaw() < pauseRefVert_ - cap_.flowEpsRaw()) {
-        resumeSystem();
-    }
 }
 
 // ============================================================
